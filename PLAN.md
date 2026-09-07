@@ -274,6 +274,17 @@ Hosts the backend the pad talks to, and is the thing on camera.
 | G16 *(new)* | 1inch route unusable | **OPEN** — no `ONEINCH_API_KEY`. The keyless Uniswap route keeps fills real meanwhile |
 | G18 *(new)* | Proposals ignored the wallet balance — a \$50 buy on a 13.96 USDC balance reverted with `STF` | **CLOSED** — `spendable()` guard in `dex.swap()`, and the executor clamps an over-sized order down to the balance instead of reverting |
 | G17 *(new)* | Every Groq model blocked | **OPEN** — key authenticates, all models `model_permission_blocked_project`. Claude Code CLI is the brain instead |
+| G19 *(new)* | **The kill switch did not stop the human path** — `KILL` gated only the automated pass, so `BUY → YES` still executed. Proven with a mined fill while `armed:false` | **CLOSED** — `yes` is refused while disarmed, `pending` kept so the same ✓ stands after re-arming |
+| G20 *(new)* | **`armed` was a one-way latch** — nothing ever set it back, so one KILL bricked the pad until restart | **CLOSED** — `POST /arm` plus a deliberate UI affordance; KILL and `/panic` stay pure-disarm |
+| G21 *(new)* | `/reflect/accept` 500ed on a malformed body | **CLOSED** — 400 with a readable message |
+| G22 *(new)* | **The Activity pane was blind** — the server logged every action but never exposed it, so the UI showed only its own clicks; pad presses and ticks were invisible and a refresh erased the history | **CLOSED** — `GET /log`, rendered from the server each poll |
+| G23 *(new)* | The signal card kept offering YES/NO after a fill, and kept a stale verdict after a wipe | **CLOSED** — the card settles to the outcome, and a wipe states the verdict was voided |
+| G24 *(new)* | Raw 17-digit floats were being **read aloud** by the speech layer and shown in the log | **CLOSED** — rounded at both sites |
+| G25 *(new)* | `spendable("ETH")` ignored WETH, so the agent could not sell what a buy had just delivered | **CLOSED** — counts native (less gas) plus WETH |
+| G26 *(new)* | **The "conservative" no-memory fallback was identical to the normal limits** — the code claimed a wiped memory was restrictive; it was equally permissive | **CLOSED** — split into `DEFAULT_LIMITS` and `NO_MEMORY_LIMITS` ($10/trade, $25/day, ETH+USDC); asserted stricter |
+| G27 *(new)* | **A wipe did not void an outstanding ✓** — YES then filled against limits that had just been deleted | **CLOSED** — the wipe clears `pending` and reports `pendingVoided` |
+| G28 *(new)* | A wrong token threw an uncaught TypeError every 4s and showed a blank app | **CLOSED** — guarded fetches, a visible banner, a poll loop that cannot die |
+| G29 *(new)* | **A mis-heard ticker silently turned a spoken order into chit-chat** — Deepgram renders "E T H" as "an e t" | **CLOSED** — spelled-out letters glued, aliases, and a fall back to the active market when the verb and amount are unambiguous |
 
 ### Non-gaps (deliberate, don't "fix")
 - The `mock` hits in `cad/` are the **mock knob** — a snap-fit display dial,
