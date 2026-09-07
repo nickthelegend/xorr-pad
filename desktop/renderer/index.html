@@ -69,6 +69,10 @@ function render_signal(r){
     (ok?`<div style="margin-top:8px"><button class="g" onclick="press('yes')">YES — execute</button>
          <button class="r" onclick="press('no')">NO</button></div>`:"");
 }
+async function acceptRule(p){
+  await fetch("/reflect/accept",{method:"POST",headers:H,body:JSON.stringify({proposal:p})});
+  note("learned: "+p.text); refresh();
+}
 async function wipe(){
   await fetch("/memory/wipe",{method:"POST",headers:H});
   note("MEMORY WIPED — limits, positions and rules are gone"); refresh();
@@ -98,6 +102,13 @@ async function refresh(){
     + row("positions", Object.keys(m.positions).length ? Object.entries(m.positions).map(([s,v])=>`${s} ${(+v.qty).toFixed(5)} @ ${(+v.avg_entry_usd).toFixed(0)}`).join("<br>") : "none")
     + row("learned rules", m.rules.length ? m.rules.map(r=>r.id).join(", ") : "none")
     + row("journal", m.journal_recent.length + " events");
+
+  const rf = await fetch("/reflect",{headers:H}).then(r=>r.json()).catch(()=>({proposals:[]}));
+  if (rf.proposals?.length) {
+    el("mem").innerHTML += `<h2 style="margin-top:14px">Learned from your yes/no</h2>` +
+      rf.proposals.map((p,i)=>`<div class="row"><span>${p.text}</span>
+        <span><button class="g" onclick='acceptRule(${JSON.stringify(p)})'>ACCEPT</button></span></div>`).join("");
+  }
 }
 refresh(); setInterval(refresh, 4000);
 </script>

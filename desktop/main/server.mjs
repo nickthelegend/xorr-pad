@@ -20,6 +20,7 @@ import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
 import { swap } from "./dex.mjs";
 import { IS_FORK } from "./chain.mjs";
+import { reflect, acceptRule, rejectRule } from "./reflect.mjs";
 import { readFile } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 
@@ -125,6 +126,17 @@ export function createServer(mem) {
         note("MEMORY WIPED — the agent has forgotten its limits, positions and rules");
         return send(200, out);
       }
+
+      if (url.pathname === "/reflect" && req.method === "GET")
+        return send(200, await reflect(mem));
+
+      if (url.pathname === "/reflect/accept" && req.method === "POST") {
+        const r = await acceptRule(mem, body.proposal);
+        note(`learned a rule: ${r.text}`);
+        return send(200, r);
+      }
+      if (url.pathname === "/reflect/reject" && req.method === "POST")
+        return send(200, await rejectRule(mem, body.proposal));
 
       if (url.pathname === "/portfolio")
         return send(200, await snapshot(mem));
