@@ -1,0 +1,8 @@
+.venv/
+.sibyl/
+node_modules/
+*.bak
+.env
+__pycache__/
+*.pyc
+.DS_Store

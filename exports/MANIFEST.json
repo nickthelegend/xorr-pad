@@ -1,0 +1,406 @@
+{
+  "generated": "2026-09-07T12:04:00+00:00",
+  "files": [
+    {
+      "path": "exports/orchestrator-pad-assembled.glb",
+      "bytes": 5895556,
+      "triangles": 69876,
+      "watertight": true
+    },
+    {
+      "path": "exports/orchestrator-pad-exploded.glb",
+      "bytes": 5895524,
+      "triangles": 69876,
+      "watertight": true
+    },
+    {
+      "path": "exports/tray.stl",
+      "bytes": 534484,
+      "triangles": 10688,
+      "watertight": true
+    },
+    {
+      "path": "exports/plate.stl",
+      "bytes": 765284,
+      "triangles": 15304,
+      "watertight": true
+    },
+    {
+      "path": "exports/switch-deck.stl",
+      "bytes": 934684,
+      "triangles": 18692,
+      "watertight": true
+    },
+    {
+      "path": "exports/caps-all.stl",
+      "bytes": 835284,
+      "triangles": 16704,
+      "watertight": true
+    },
+    {
+      "path": "exports/legends-all.stl",
+      "bytes": 248884,
+      "triangles": 4976,
+      "watertight": true
+    },
+    {
+      "path": "exports/knob.stl",
+      "bytes": 175684,
+      "triangles": 3512,
+      "watertight": true
+    }
+  ],
+  "totals": {
+    "files": 8,
+    "bytes": 15285384,
+    "triangles": 209628,
+    "watertight": true
+  },
+  "items": [
+    {
+      "name": "tray",
+      "triangles": 10688,
+      "shells": 48,
+      "volume_mm3": 56019.37,
+      "watertight": true
+    },
+    {
+      "name": "plate",
+      "triangles": 15304,
+      "shells": 24,
+      "volume_mm3": 16485.93,
+      "watertight": true
+    },
+    {
+      "name": "switch-deck",
+      "triangles": 18692,
+      "shells": 1,
+      "volume_mm3": 6501.28,
+      "watertight": true
+    },
+    {
+      "name": "dca",
+      "triangles": 884,
+      "shells": 3,
+      "volume_mm3": 1027.93,
+      "watertight": true
+    },
+    {
+      "name": "dca-legend",
+      "triangles": 36,
+      "shells": 3,
+      "volume_mm3": 19.97,
+      "watertight": true
+    },
+    {
+      "name": "grid",
+      "triangles": 1004,
+      "shells": 3,
+      "volume_mm3": 1022.72,
+      "watertight": true
+    },
+    {
+      "name": "grid-legend",
+      "triangles": 108,
+      "shells": 9,
+      "volume_mm3": 23.09,
+      "watertight": true
+    },
+    {
+      "name": "momentum",
+      "triangles": 964,
+      "shells": 3,
+      "volume_mm3": 1037.4,
+      "watertight": true
+    },
+    {
+      "name": "momentum-legend",
+      "triangles": 132,
+      "shells": 1,
+      "volume_mm3": 14.28,
+      "watertight": true
+    },
+    {
+      "name": "rebalance",
+      "triangles": 1864,
+      "shells": 3,
+      "volume_mm3": 1035.69,
+      "watertight": true
+    },
+    {
+      "name": "rebalance-legend",
+      "triangles": 1024,
+      "shells": 2,
+      "volume_mm3": 15.31,
+      "watertight": true
+    },
+    {
+      "name": "yield",
+      "triangles": 1876,
+      "shells": 5,
+      "volume_mm3": 1022.84,
+      "watertight": true
+    },
+    {
+      "name": "yield-legend",
+      "triangles": 1044,
+      "shells": 3,
+      "volume_mm3": 23.02,
+      "watertight": true
+    },
+    {
+      "name": "risk",
+      "triangles": 1100,
+      "shells": 5,
+      "volume_mm3": 1018.54,
+      "watertight": true
+    },
+    {
+      "name": "risk-legend",
+      "triangles": 284,
+      "shells": 1,
+      "volume_mm3": 25.6,
+      "watertight": true
+    },
+    {
+      "name": "base",
+      "triangles": 1040,
+      "shells": 3,
+      "volume_mm3": 1008.58,
+      "watertight": true
+    },
+    {
+      "name": "base-legend",
+      "triangles": 208,
+      "shells": 1,
+      "volume_mm3": 31.57,
+      "watertight": true
+    },
+    {
+      "name": "buy",
+      "triangles": 856,
+      "shells": 3,
+      "volume_mm3": 1032.54,
+      "watertight": true
+    },
+    {
+      "name": "buy-legend",
+      "triangles": 24,
+      "shells": 1,
+      "volume_mm3": 17.2,
+      "watertight": true
+    },
+    {
+      "name": "sell",
+      "triangles": 856,
+      "shells": 3,
+      "volume_mm3": 1032.54,
+      "watertight": true
+    },
+    {
+      "name": "sell-legend",
+      "triangles": 24,
+      "shells": 1,
+      "volume_mm3": 17.2,
+      "watertight": true
+    },
+    {
+      "name": "yes",
+      "triangles": 968,
+      "shells": 3,
+      "volume_mm3": 1040.97,
+      "watertight": true
+    },
+    {
+      "name": "yes-legend",
+      "triangles": 136,
+      "shells": 1,
+      "volume_mm3": 12.14,
+      "watertight": true
+    },
+    {
+      "name": "no",
+      "triangles": 1052,
+      "shells": 3,
+      "volume_mm3": 1031.92,
+      "watertight": true
+    },
+    {
+      "name": "no-legend",
+      "triangles": 220,
+      "shells": 1,
+      "volume_mm3": 17.57,
+      "watertight": true
+    },
+    {
+      "name": "portfolio",
+      "triangles": 1152,
+      "shells": 3,
+      "volume_mm3": 1017.33,
+      "watertight": true
+    },
+    {
+      "name": "portfolio-legend",
+      "triangles": 320,
+      "shells": 1,
+      "volume_mm3": 26.33,
+      "watertight": true
+    },
+    {
+      "name": "mic",
+      "triangles": 1620,
+      "shells": 3,
+      "volume_mm3": 1033.8,
+      "watertight": true
+    },
+    {
+      "name": "mic-legend",
+      "triangles": 780,
+      "shells": 2,
+      "volume_mm3": 16.44,
+      "watertight": true
+    },
+    {
+      "name": "kill",
+      "triangles": 1468,
+      "shells": 3,
+      "volume_mm3": 1027.05,
+      "watertight": true
+    },
+    {
+      "name": "kill-legend",
+      "triangles": 636,
+      "shells": 1,
+      "volume_mm3": 20.49,
+      "watertight": true
+    },
+    {
+      "name": "knob",
+      "triangles": 3512,
+      "shells": 20,
+      "volume_mm3": 3416.06,
+      "watertight": true
+    }
+  ],
+  "legend": {
+    "parts": {
+      "tray": "#AEB4BC",
+      "plate": "#F4F5F7",
+      "knob": "#E8E9EB"
+    },
+    "keys": [
+      {
+        "id": "dca",
+        "glyph": "dca",
+        "units": 1,
+        "x": -9.525,
+        "y": 28.575000000000003,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "grid",
+        "glyph": "grid",
+        "units": 1,
+        "x": 9.525,
+        "y": 28.575000000000003,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "momentum",
+        "glyph": "momentum",
+        "units": 1,
+        "x": 28.575000000000003,
+        "y": 28.575000000000003,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "rebalance",
+        "glyph": "rebalance",
+        "units": 1,
+        "x": -28.575000000000003,
+        "y": 9.525,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "yield",
+        "glyph": "yield",
+        "units": 1,
+        "x": -9.525,
+        "y": 9.525,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "risk",
+        "glyph": "risk",
+        "units": 1,
+        "x": 9.525,
+        "y": 9.525,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "base",
+        "glyph": "base",
+        "units": 1,
+        "x": 28.575000000000003,
+        "y": 9.525,
+        "color": "#FFFFFF"
+      },
+      {
+        "id": "buy",
+        "glyph": "buy",
+        "units": 1,
+        "x": -28.575000000000003,
+        "y": -9.525,
+        "color": "#22C55E"
+      },
+      {
+        "id": "sell",
+        "glyph": "sell",
+        "units": 1,
+        "x": -9.525,
+        "y": -9.525,
+        "color": "#EF4444"
+      },
+      {
+        "id": "yes",
+        "glyph": "check",
+        "units": 1,
+        "x": 9.525,
+        "y": -9.525,
+        "color": "#22C55E"
+      },
+      {
+        "id": "no",
+        "glyph": "cross",
+        "units": 1,
+        "x": 28.575000000000003,
+        "y": -9.525,
+        "color": "#EF4444"
+      },
+      {
+        "id": "portfolio",
+        "glyph": "portfolio",
+        "units": 1,
+        "x": -28.575000000000003,
+        "y": -28.575000000000003,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "mic",
+        "glyph": "mic",
+        "units": 1,
+        "x": 0.0,
+        "y": -28.575000000000003,
+        "color": "#F2F3F5"
+      },
+      {
+        "id": "kill",
+        "glyph": "kill",
+        "units": 1,
+        "x": 28.575000000000003,
+        "y": -28.575000000000003,
+        "color": "#EF4444"
+      }
+    ]
+  }
+}
