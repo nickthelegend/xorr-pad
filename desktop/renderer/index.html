@@ -9,35 +9,39 @@ h1{font-size:14px;margin:0;letter-spacing:.06em;text-transform:uppercase}
 .pill{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
 .pill.on{color:var(--grn);border-color:#14532d} .pill.off{color:var(--red);border-color:#7f1d1d}
 .pill.clickable{cursor:pointer} .pill.clickable:hover{background:#2a1010}
-main{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:1px;background:var(--line);height:calc(100vh - 47px)}
+/* Five panes, two columns. Declaring only two rows made the fifth spill into
+   an implicit row that ate the height, collapsing the other four to their
+   headings — so size the rows automatically and give each a real floor. */
+main{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr);
+     gap:1px;background:var(--line);height:calc(100vh - 47px)}
 /* Below a laptop, four panes side by side stop being readable — stack them and
    let the page scroll instead of squeezing every column to nothing. */
 @media (max-width:900px){
   main{grid-template-columns:1fr;grid-template-rows:none;height:auto}
   section{max-height:none}
   header{flex-wrap:wrap;gap:8px}
-  .keys{grid-template-columns:repeat(3,1fr)}
+  .keys{grid-template-columns:repeat(4,1fr)}
 }
 @media (max-width:520px){
-  .keys{grid-template-columns:repeat(2,1fr)}
+  .keys{grid-template-columns:repeat(3,1fr)}
   .row{flex-direction:column;gap:2px}
   .row .mono{word-break:break-all}
 }
-section{background:var(--panel);padding:12px 14px;overflow:auto}
+section{background:var(--panel);padding:12px 14px;overflow:auto;min-height:0}
 h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
 .row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #171c22}
 .k{color:var(--dim)} .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
 #log .row>span:first-child{white-space:nowrap;color:var(--dim)}
-.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
 button{background:#1a2029;color:var(--ink);border:1px solid var(--line);border-radius:7px;
-  padding:9px 4px;font:600 11px system-ui;cursor:pointer}
+  padding:8px 3px;font:600 10.5px system-ui;cursor:pointer;letter-spacing:.02em}
 button:hover{border-color:#33404f} button.g{background:#0f2a1a;border-color:#14532d;color:#4ade80}
 button.r{background:#2a1010;border-color:#7f1d1d;color:#f87171} button.b{background:#0f1e33;border-color:#1e3a5f;color:#60a5fa}
 button.on{outline:2px solid var(--blu)}
 .warn{background:#2a1a0a;border:1px solid #7c4a03;color:#fbbf24;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px}
 .tag{font-size:10px;padding:1px 6px;border-radius:4px;background:#1a2029;color:var(--dim)}
-.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:6px}
-.mkt{background:#12161c;border:1px solid var(--line);border-radius:6px;padding:6px 8px;cursor:pointer;text-align:left}
+.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:5px}
+.mkt{background:#12161c;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;text-align:left}
 .mkt:hover{border-color:#2a3340}
 .mkt.on{border-color:var(--blu);background:#0f1e33}
 .mkt .s{font-weight:600;font-size:12px}
@@ -54,13 +58,13 @@ button.on{outline:2px solid var(--blu)}
 </header>
 <div id="authbar" class="warn" hidden style="margin:10px 12px 0;background:#2a1010;border-color:#7f1d1d;color:#f87171"></div>
 <main>
-  <section><h2>Signals &amp; decision</h2><div id="sig"></div>
-    <h2 style="margin-top:14px">Markets — all on Base</h2>
+  <section><h2>Signals &amp; decision</h2><div id="sig"></div></section>
+  <section><h2>Portfolio</h2><div id="pf"></div></section>
+  <section><h2>Markets — all on Base</h2>
     <div class="mkts" id="mkts"></div>
     <div id="delisted" class="dim" style="font-size:11px;margin-top:6px"></div>
     <h2 style="margin-top:14px">The deck — every key is clickable</h2>
     <div class="keys" id="keys"></div></section>
-  <section><h2>Portfolio</h2><div id="pf"></div></section>
   <section><h2>The book — six measured strategies</h2>
     <div id="scanhead" class="dim" style="font-size:12px;margin-bottom:8px">press SCAN (or BASE) to run the book across every market</div>
     <div id="scan"></div></section>
@@ -264,9 +268,22 @@ async function refresh(){
   if (!MARKETS.__fromServer) {
     const mk = await get("/markets");
     if (mk) { MARKETS = mk.markets; MARKETS.__fromServer = true; activeMarket = mk.active || activeMarket;
-      el("delisted").textContent = "delisted for thin liquidity: " +
-        Object.entries(mk.delisted).map(([k,v])=>`${k} (${v.reason})`).join(" · ");
+      // One line, with the measurements on hover. Six full reasons inline ate
+      // most of the pane and buried the deck below the fold.
+      const d = Object.entries(mk.delisted);
+      el("delisted").innerHTML =
+        `<span title="${d.map(([k,v])=>`${k}: ${v.reason}`).join(String.fromCharCode(10))}">` +
+        `delisted for thin liquidity — ${d.map(([k])=>k).join(", ")} ` +
+        `<span style="text-decoration:underline dotted">(why)</span></span>`;
       drawMarkets(); }
+  }
+
+  // Restore a decision that is still live server-side (e.g. after a refresh,
+  // or one the physical pad raised), but never stomp on a card being read.
+  const pd = await get("/pending");
+  if (pd) {
+    if (pd.pending && !pending) { pending = pd; render_signal(pd); }
+    else if (!pd.pending && pending) { pending = null; }
   }
 
   const lg = await get("/log");

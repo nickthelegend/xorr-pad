@@ -168,6 +168,14 @@ export function createServer(mem) {
         return send(200, r);
       }
 
+      // A live ✓ must survive a page refresh. Without this the signal pane came
+      // back empty while the pad would still have executed on YES — a decision
+      // you can no longer see is not a decision you can consent to.
+      if (url.pathname === "/pending")
+        return send(200, state.pending
+          ? { pending: true, signal: state.pending.sig, verdict: state.pending.verdict }
+          : { pending: false });
+
       if (url.pathname === "/markets")
         return send(200, { markets: MARKETS, delisted: DELISTED, active: state.market });
 

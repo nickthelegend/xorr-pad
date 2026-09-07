@@ -20,7 +20,11 @@ const exec = promisify(execFile);
 
 const DG = process.env.DEEPGRAM_API_KEY || "";
 const GROQ = process.env.GROQ_API_KEY || "";
-const GROQ_MODEL = process.env.LLM_MODEL || "openai/gpt-oss-20b";
+// The models this account can actually reach, newest first. Groq retires model
+// ids often, so try a list rather than pinning one that will 404 next month.
+const GROQ_MODELS = (process.env.GROQ_MODEL || "").split(",").filter(Boolean).length
+  ? process.env.GROQ_MODEL.split(",").map((m) => m.trim())
+  : ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound-mini", "qwen/qwen3.6-27b"];
 const SR = 16000;
 
 export const BRAIN = process.env.BRAIN || "claude";
@@ -84,16 +88,29 @@ async function brainClaude(question, context) {
 }
 
 async function brainGroq(question, context) {
-  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${GROQ}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: GROQ_MODEL, max_tokens: 80, messages: [
-      { role: "system", content: SYSTEM + "\n\n--- pad memory ---\n" + context },
-      { role: "user", content: question }] }),
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.error?.message || `groq ${r.status}`);
-  return j.choices?.[0]?.message?.content?.trim() || "";
+  const refusals = [];
+  for (const model of GROQ_MODELS) {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${GROQ}`, "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 80, messages: [
+        { role: "system", content: SYSTEM + "\n\n--- pad memory ---\n" + context },
+        { role: "user", content: question }] }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return j.choices?.[0]?.message?.content?.trim() || "";
+    const code = j?.error?.code || `http_${r.status}`;
+    refusals.push(`${model}: ${code}`);
+    // A blocked or missing model is worth trying the next one for; anything
+    // else (bad key, rate limit) will fail identically on every model.
+    if (!/model_not_found|model_permission_blocked/.test(code)) break;
+  }
+  // Say what is actually wrong and where to fix it, rather than "groq failed".
+  const blocked = refusals.every((x) => /model_permission_blocked/.test(x));
+  throw new Error(blocked
+    ? `every Groq model is disabled for this project/org — enable them at ` +
+      `console.groq.com > Settings > Model permissions. Tried: ${refusals.join(", ")}`
+    : `groq unavailable — ${refusals.join(", ")}`);
 }
 
 export async function think(question, brief, market) {
@@ -127,11 +144,15 @@ export function parseAmount(t) {
 // together before matching so the pad hears a ticker as a ticker.
 const glue = (s) => s.replace(/\b(?:[a-z][\s.]+)+[a-z]\b/g, (m) => m.replace(/[\s.]/g, ""));
 
+// One alias set per tradeable market, spelled the way people actually say them.
 const ALIASES = {
-  ETH:   /\b(eth|ether|ethereum|eeth|aeth)\b/,
-  USDC:  /\b(usdc|usd\s?c|you\s?s\s?d\s?c)\b/,
-  cbBTC: /\b(cbbtc|bitcoin|btc|cb\s?btc)\b/,
-  DEGEN: /\b(degen|deagan|degan)\b/,
+  ETH:     /\b(eth|ether|ethereum|eeth|aeth)\b/,
+  USDC:    /\b(usdc|usd\s?c|you\s?s\s?d\s?c|dollars?coin)\b/,
+  cbBTC:   /\b(cbbtc|bitcoin|btc|cb\s?btc|bit\s?coin)\b/,
+  EURC:    /\b(eurc|euro|euros|eur|yuroc)\b/,
+  AERO:    /\b(aero|aerodrome|arrow)\b/,
+  MORPHO:  /\b(morpho|morfo|morph)\b/,
+  VIRTUAL: /\b(virtual|virtuals|vertual)\b/,
 };
 
 /** Does this sound like an order? Returns a signal, or null for chit-chat. */

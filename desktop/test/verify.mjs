@@ -376,10 +376,23 @@ section("E. Deepgram + the Claude Code brain");
                          positions: { ETH: { qty: 0.03, avg_entry_usd: 2479 } }, rules: [], watchlist: [] });
   const a1 = await think("what is my per-trade limit?", mk(100), { prices: { ETH: 2479 } });
   const a2 = await think("what is my per-trade limit?", mk(250), { prices: { ETH: 2479 } });
-  const says = (s, n, w) => new RegExp(`${n}|${w}`, "i").test(s);
+  // The reply is spoken, so numbers come back as words and the phrasing varies
+  // run to run ("two hundred fifty" / "two hundred and fifty"). Normalise to
+  // digits and test the CLAIM — that the answer tracks memory — not the wording.
+  const toDigits = (t) => {
+    const W = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10,
+                twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
+    let out = t.toLowerCase().replace(/\band\b/g, " ");
+    // "two hundred fifty" -> 250, "one hundred" -> 100
+    out = out.replace(/\b(one|two|three|four|five|six|seven|eight|nine)\s+hundred(?:\s+(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety))?(?:\s+(one|two|three|four|five|six|seven|eight|nine))?/g,
+      (_m, h, t2, u) => String(W[h] * 100 + (t2 ? W[t2] : 0) + (u ? W[u] : 0)));
+    return out;
+  };
+  const n1 = toDigits(a1), n2 = toDigits(a2);
+  const has = (t, n) => new RegExp(`\\b${n}\\b`).test(t);
   chk("E3 the brain is grounded in memory",
-      says(a1, 100, "one hundred") && says(a2, 250, "two hundred and fifty") && !/\b100\b|one hundred/i.test(a2),
-      "its answer tracks the remembered number, it does not guess");
+      has(n1, 100) && !has(n1, 250) && has(n2, 250) && !has(n2, 100),
+      `remembered 100 → "${a1.slice(0, 42)}…" · remembered 250 → "${a2.slice(0, 42)}…"`);
 
   const r = await fetch(B + "/voice", { method: "POST",
     headers: { authorization: "Bearer " + TOKEN, "content-type": "application/octet-stream" },
