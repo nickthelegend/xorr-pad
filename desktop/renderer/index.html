@@ -1,0 +1,103 @@
+<!doctype html><meta charset="utf-8"><title>xorr-pad</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12161b;--line:#1e242c;--ink:#e6e9ee;--dim:#8b95a3;
+      --grn:#22c55e;--red:#ef4444;--blu:#3b82f6;--amb:#f59e0b}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);
+  font:13px/1.5 -apple-system,system-ui,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:14px;margin:0;letter-spacing:.06em;text-transform:uppercase}
+.pill{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+.pill.on{color:var(--grn);border-color:#14532d} .pill.off{color:var(--red);border-color:#7f1d1d}
+main{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:1px;background:var(--line);height:calc(100vh - 47px)}
+section{background:var(--panel);padding:12px 14px;overflow:auto}
+h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
+.row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #171c22}
+.k{color:var(--dim)} .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+button{background:#1a2029;color:var(--ink);border:1px solid var(--line);border-radius:7px;
+  padding:9px 4px;font:600 11px system-ui;cursor:pointer}
+button:hover{border-color:#33404f} button.g{background:#0f2a1a;border-color:#14532d;color:#4ade80}
+button.r{background:#2a1010;border-color:#7f1d1d;color:#f87171} button.b{background:#0f1e33;border-color:#1e3a5f;color:#60a5fa}
+button.on{outline:2px solid var(--blu)}
+.warn{background:#2a1a0a;border:1px solid #7c4a03;color:#fbbf24;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px}
+.tag{font-size:10px;padding:1px 6px;border-radius:4px;background:#1a2029;color:var(--dim)}
+</style>
+<header>
+  <h1>xorr-pad</h1>
+  <span class="pill" id="mode">…</span><span class="pill" id="armed">…</span>
+  <span class="pill" id="agent">…</span><span class="pill" id="blk">…</span>
+  <span style="flex:1"></span><span class="pill mono" id="addr"></span>
+</header>
+<main>
+  <section><h2>Signals &amp; decision</h2><div id="sig"></div>
+    <h2 style="margin-top:14px">The deck — every key is clickable</h2>
+    <div class="keys" id="keys"></div></section>
+  <section><h2>Portfolio</h2><div id="pf"></div></section>
+  <section><h2>Memory — what Sibyl knows</h2>
+    <div class="warn">Wiping is the demo: the agent forgets its limits, positions and learned rules.</div>
+    <button class="r" style="width:100%;margin-bottom:10px" onclick="wipe()">WIPE MEMORY</button>
+    <div id="mem"></div></section>
+  <section><h2>Activity</h2><div id="log" class="mono"></div></section>
+</main>
+<script>
+const TOKEN = new URLSearchParams(location.search).get("token") || "xorrpad-dev";
+const H = {"content-type":"application/json","authorization":"Bearer "+TOKEN};
+const KEYS = [["dca"],["grid"],["momentum"],["rebalance"],["yield"],["risk"],["base","b"],["portfolio"],
+              ["buy","g"],["sell","r"],["yes","g"],["no","r"],["mic"],["kill","r"]];
+let pending = null;
+const el = (id) => document.getElementById(id);
+const row = (k,v) => `<div class="row"><span class="k">${k}</span><span class="mono">${v}</span></div>`;
+
+function drawKeys(active){
+  el("keys").innerHTML = KEYS.map(([k,c]) =>
+    `<button class="${c||''} ${k===active?'on':''}" onclick="press('${k}')">${k.toUpperCase()}</button>`).join("");
+}
+async function press(id){
+  const r = await fetch("/key",{method:"POST",headers:H,body:JSON.stringify({id})}).then(r=>r.json());
+  if(r.signal){ pending = r; render_signal(r); }
+  if(r.fill) note("FILL "+r.fill.hash.slice(0,14)+"… → "+(+r.fill.received).toFixed(6)+" "+r.fill.receivedSymbol);
+  refresh();
+}
+function render_signal(r){
+  const v = r.verdict, ok = v.action==="EXECUTE";
+  el("sig").innerHTML =
+    `<div class="row"><b>${r.signal.side} ${r.signal.symbol} $${r.signal.sizeUsd}</b>
+      <span class="tag">${r.signal.agent}</span></div>`+
+    `<div class="row"><span class="k">verdict</span>
+      <b style="color:${ok?'var(--grn)':'var(--red)'}">${v.action} $${v.sizeUsd}</b></div>`+
+    v.why.map(w=>`<div class="row"><span class="k">·</span><span>${w}</span></div>`).join("")+
+    (ok?`<div style="margin-top:8px"><button class="g" onclick="press('yes')">YES — execute</button>
+         <button class="r" onclick="press('no')">NO</button></div>`:"");
+}
+async function wipe(){
+  await fetch("/memory/wipe",{method:"POST",headers:H});
+  note("MEMORY WIPED — limits, positions and rules are gone"); refresh();
+}
+function note(m){ el("log").innerHTML = `<div class="row"><span>${new Date().toLocaleTimeString()}</span><span>${m}</span></div>` + el("log").innerHTML; }
+
+async function refresh(){
+  const h = await fetch("/health").then(r=>r.json());
+  el("mode").textContent = h.mode==="fork" ? "Base fork" : "Base MAINNET";
+  el("mode").className = "pill " + (h.mode==="fork"?"on":"off");
+  el("armed").textContent = h.armed?"armed":"disarmed";
+  el("armed").className = "pill " + (h.armed?"on":"off");
+  el("agent").textContent = h.agent; drawKeys(h.agent);
+
+  const p = await fetch("/portfolio",{headers:H}).then(r=>r.json());
+  el("blk").textContent = "block "+p.chain.block;
+  el("addr").textContent = p.chain.address;
+  el("pf").innerHTML = Object.entries(p.balances)
+    .filter(([,v])=>v.amount>0.000001)
+    .map(([k,v])=>row(k, (+v.amount).toFixed(k==="USDC"?2:6))).join("")
+    + row("route", p.route);
+
+  const m = await fetch("/memory",{headers:H}).then(r=>r.json());
+  el("mem").innerHTML =
+    row("limits", m.limits ? `$${m.limits.max_trade_usd}/trade · $${m.limits.max_day_usd}/day` : "<i style='color:var(--red)'>NONE — forgotten</i>")
+    + row("allowlist", m.limits?.allow?.join(", ") || "—")
+    + row("positions", Object.keys(m.positions).length ? Object.entries(m.positions).map(([s,v])=>`${s} ${(+v.qty).toFixed(5)} @ ${(+v.avg_entry_usd).toFixed(0)}`).join("<br>") : "none")
+    + row("learned rules", m.rules.length ? m.rules.map(r=>r.id).join(", ") : "none")
+    + row("journal", m.journal_recent.length + " events");
+}
+refresh(); setInterval(refresh, 4000);
+</script>
