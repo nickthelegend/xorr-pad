@@ -2,43 +2,57 @@
 #include <Arduino.h>
 #include "config.h"
 
-// What each key does. EDIT this grid to match how your keycaps are laid out.
-// One key is the mic (hold-to-talk); the agent keys select/lock that agent in
-// Loom. Each agent gets a status-LED colour so you can see who's selected.
-enum KeyRole { ROLE_NONE, ROLE_MIC, ROLE_AGENT };
+// ─────────────────────────────────────────────────────────────────────────────
+// What each key does on the xorr-pad.
+//
+// IMPORTANT: this grid is indexed by the SCANNED MATRIX CELL, not by where the
+// keycap sits. On this build the two do not agree — the columns are reversed
+// and row 1's last key lands on matrix row 2. That was measured, not guessed,
+// with firmware/keytest (MAP mode), which prints a paste-ready table.
+//
+// Measured on 2026-09-07 by pressing the caps in reading order:
+//
+//   physical (cap)        matrix cell     new duty
+//   r0c1  1st after knob   (0,2)          DCA
+//   r0c2                   (0,1)          GRID
+//   r0c3                   (0,0)          MOMENTUM
+//   r1c0                   (1,2)          REBALANCE
+//   r1c1                   (1,1)          YIELD
+//   r1c2                   (1,0)          RISK
+//   r1c3                   (2,3)          BASE
+//   r2c0                   (2,2)          BUY
+//   r2c1                   DEAD           SELL   <-- cold joint, never fired
+//   r2c2 .. r3c3           NOT YET SWEPT  YES/NO/PORTFOLIO/MIC/KILL
+//
+// Cells still marked UNVERIFIED are best-effort guesses that follow the
+// observed pattern (columns reversed, rows advancing). Re-run keytest and
+// paste its output over this block to make them real.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum KeyRole { ROLE_NONE, ROLE_AGENT, ROLE_ACTION, ROLE_MIC };
 
 struct KeyBind {
   KeyRole     role;
-  const char *agent;      // Loom agent id, for ROLE_AGENT
-  uint8_t     r, g, b;    // status-LED colour when selected
+  const char *id;         // sent verbatim to POST /key {"id": ...}
+  uint8_t     r, g, b;    // status-LED colour
 };
 
-// Matches the physical keycaps as wired on this build, K1..K14 (top-left → right,
-// then down), mapped onto the natural matrix grid:
-//   K1 Cursor  K2 Codex   K3 (none)   —dial—
-//   K4 Grok    K5 Claude  K6 Antigrav K7 opencode
-//   K8 Kiro    K9 boost   K10 yes     K11 no
-//   K12 cmd    K13 MIC    K14 next    —empty—
-// Cursor (K1) and the action caps (boost/yes/no/cmd/next) have no Loom agent
-// yet, so they're left unbound. Rotate the pad and the positions mirror — keep
-// the USB/ESP32 edge oriented as you wired it or this map flips.
+#define A(id, r, g, b) {ROLE_AGENT,  id, r, g, b}
+#define X(id, r, g, b) {ROLE_ACTION, id, r, g, b}
+#define M()            {ROLE_MIC,    "mic", 60, 0, 60}
+#define _()            {ROLE_NONE,   nullptr, 0, 0, 0}
+
 static const KeyBind KEYMAP[MATRIX_ROWS][MATRIX_COLS] = {
-  // C0                                    C1                                    C2                                    C3
-  {{ROLE_NONE, nullptr,       0,0,0},     {ROLE_AGENT,"cursor",     30,30,60},  {ROLE_AGENT,"codex",       0,50,0},   {ROLE_NONE, nullptr, 0,0,0}},    // r0: - · cursor(0,1) · codex(0,2) · -
-  {{ROLE_AGENT,"grok-code",  45,45,45},   {ROLE_AGENT,"claude-code", 70,35,0},  {ROLE_AGENT,"antigravity",15,20,70}, {ROLE_AGENT,"opencode",0,45,45}}, // r1: grok · claude · antigravity · opencode
-  {{ROLE_AGENT,"kiro",       45,0,70},    {ROLE_MIC,  nullptr,      60,0,0},    {ROLE_AGENT,"accept",     0,60,0},   {ROLE_AGENT,"cancel",  60,0,0}},  // r2: kiro · MIC (right of kiro) · accept · cancel
-  {{ROLE_AGENT,"terminal",   40,40,40},   {ROLE_NONE, nullptr,       0,0,0},    {ROLE_MIC,  nullptr,     60,0,0},    {ROLE_NONE, nullptr, 0,0,0}},     // r3: terminal · - · MIC(3,2) · -
+  // col 0                        col 1                     col 2                        col 3
+  { A("momentum", 70,45,0),  A("grid",  40,40,40),  A("dca",       30,30,60),  _() },                    // row 0  (verified)
+  { A("risk",     70,0,0),   A("yield", 0,60,30),   A("rebalance", 0,45,60),   _() },                    // row 1  (verified)
+  { X("no",       60,0,0),   X("yes",   0,60,0),    X("buy",       0,60,0),    X("base", 60,60,60) },    // row 2  (c2,c3 verified; c0,c1 UNVERIFIED)
+  { X("kill",     80,0,0),   M(),                   X("sell",      60,0,0),    X("portfolio", 30,30,30) },// row 3  UNVERIFIED — run keytest
 };
 
-// This build is mounted rotated 180° from the KEYMAP above, so the scanned
-// matrix position is point-reflected (rows AND cols reversed) before lookup —
-// that keeps the KEYMAP readable as the keycaps are labelled. Set to 0 if you
-// ever remount it the other way up.
-#define KEYS_MIRRORED 0
-inline const KeyBind &keyAt(uint8_t r, uint8_t c) {
-#if KEYS_MIRRORED
-  return KEYMAP[MATRIX_ROWS - 1 - r][MATRIX_COLS - 1 - c];
-#else
-  return KEYMAP[r][c];
-#endif
-}
+#undef A
+#undef X
+#undef M
+#undef _
+
+inline const KeyBind &keyAt(uint8_t r, uint8_t c) { return KEYMAP[r][c]; }

@@ -35,6 +35,20 @@ public:
   }
 
   // POST /select {agent} — lock the agent in Loom.
+  // POST /key {"id": "..."} — every press on the deck goes here. The desk app
+  // decides what it means (select an agent, propose a trade, answer yes/no,
+  // panic), so the pad stays dumb and the mapping can change without a reflash.
+  bool key(const String &id) {
+    HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
+    if (!beginReq(http, plain, tls, url("/key"))) return false;
+    auth(http);
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(20000);
+    int code = http.POST(String("{\"id\":\"") + id + "\"}");
+    http.end();
+    return code == 200;
+  }
+
   bool select(const String &agent) {
     HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
     if (!beginReq(http, plain, tls, url("/select"))) return false;

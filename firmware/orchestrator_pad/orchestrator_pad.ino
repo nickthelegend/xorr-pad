@@ -93,32 +93,26 @@ String spokenName(const String &id) {
   return id;
 }
 
-void selectAgent(const KeyBind &kb) {
-  selAgent = kb.agent;
-  selR = kb.r; selG = kb.g; selB = kb.b;
-  led(selR, selG, selB);
-  telnet.logf("  ▸ selected %s\n", selAgent.c_str());
-  // Lock it in the backend, then say the name aloud. Only speak if the select
-  // reached the backend (else net.speak would stall waiting on a dead server).
-  if (net.select(selAgent))
-    net.speak(String("Selected ") + spokenName(selAgent), audio);
-  else
-    telnet.logf("    (select didn't reach the backend)\n");
+void sendKey(const KeyBind &kb) {
+  led(kb.r, kb.g, kb.b);
+  telnet.logf("  > key %s\n", kb.id);
+  if (!net.key(kb.id))
+    telnet.logf("    (didn't reach the desk app)\n");
+  if (kb.role == ROLE_AGENT) { selAgent = kb.id; selR = kb.r; selG = kb.g; selB = kb.b; }
 }
 
 void onKey(uint8_t r, uint8_t c, bool pressed) {
   const KeyBind &kb = keyAt(r, c);
-  if (pressed)   // diagnostic: raw position + current mapping, for remapping the KEYMAP
-    telnet.logf("  [KEY] row=%u col=%u  currently=%s\n", r, c,
-                kb.role == ROLE_MIC ? "MIC" : (kb.agent ? kb.agent : "unbound"));
-  if (kb.role == ROLE_MIC) {
+  if (pressed)   // raw position + duty, so a re-map is one keytest away
+    telnet.logf("  [KEY] row=%u col=%u  duty=%s\n", r, c, kb.id ? kb.id : "unbound");
+
+  if (kb.role == ROLE_MIC) {           // hold to talk
     if (pressed) startRecording();
     else         stopAndSend();
-  } else if (kb.role == ROLE_AGENT && pressed) {
-    selectAgent(kb);
-  } else if (pressed) {
-    telnet.logf("  %s (unbound)\n", matrix.name[r][c]);
+    return;
   }
+  if (!pressed || kb.role == ROLE_NONE) return;
+  sendKey(kb);
 }
 
 // ── telnet commands ──────────────────────────────────────────────────────────
@@ -139,7 +133,7 @@ void onTelnetCommand(const String &line) {
       char line[128] = "";
       for (uint8_t c = 0; c < MATRIX_COLS; c++) {
         const KeyBind &k = keyAt(r, c);
-        const char *nm = (k.role == ROLE_MIC) ? "MIC" : (k.agent ? k.agent : "-");
+        const char *nm = k.id ? k.id : "-";
         strncat(line, nm, sizeof(line) - strlen(line) - 4);
         strncat(line, " | ", sizeof(line) - strlen(line) - 1);
       }

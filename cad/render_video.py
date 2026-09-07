@@ -33,9 +33,8 @@ PERSP_TILT = True                # slight elevation change during explode
 # explode offset (world +Z) per part group, at full explode
 EXPLODE = {"tray": 0.0, "switch-deck": 14.0, "plate": 30.0,
            "cap": 50.0, "knob": 66.0}
-CAP_IDS = {"cursor", "codex", "preset3", "grok", "claude", "antigravity",
-           "opencode", "kiro", "run", "approve", "reject", "prompt",
-           "voice", "send"}
+CAP_IDS = {"dca", "grid", "momentum", "rebalance", "yield", "risk", "base",
+           "buy", "sell", "yes", "no", "portfolio", "mic", "kill"}
 
 BG_TOP = np.array([0.09, 0.10, 0.12])      # dark gradient background
 BG_BOT = np.array([0.04, 0.045, 0.055])

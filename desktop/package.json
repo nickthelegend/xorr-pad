@@ -10,10 +10,15 @@
   "scripts": {
     "test:memory": "node test/memory.test.mjs",
     "test:loadbearing": "node test/loadbearing.test.mjs",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "start": "electron .",
+    "backend": "node main/server.mjs",
+    "fork": "anvil --fork-url https://mainnet.base.org --port 8545 --silent"
   },
   "license": "MIT",
   "dependencies": {
+    "electron": "^44.2.0",
     "viem": "^2.56.3"
-  }
+  },
+  "main": "main/electron.mjs"
 }
