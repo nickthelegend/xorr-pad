@@ -1,19 +1,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// keytest — a standalone key-matrix WIRING tester for the Orchestrator Pad.
+// keytest — key-matrix tester AND guided map builder for the xorr-pad.
 //
-// Flash this INSTEAD of the main firmware to check your hand-wiring. It doesn't
-// touch WiFi, audio, or the backend — it only scans the 4×4 matrix and tells you
-// which keys register.
+// Flash this INSTEAD of the main firmware. No WiFi, no audio, no backend — it
+// only scans the 4×4 matrix. Two modes, switched over the serial monitor:
 //
-// How to use:
-//   1. Arduino IDE → Board: "ESP32S3 Dev Module", USB CDC On Boot: "Enabled".
-//   2. Flash this sketch, then open Tools → Serial Monitor at 115200 baud.
-//   3. Press every key. Each press prints a line, and a grid shows which keys
-//      have registered ( * ) versus never fired ( . ).
-//   4. Any key still shown as ( . ) after you press it has a wiring problem
-//      (cold joint / broken wire / wrong pin). Fix it and it flips to ( * ).
+//   MAP  (default)  It names a key, you press that key, it records which matrix
+//                   cell actually fired. Dead key? Type 's' to skip it. At the
+//                   end it prints a ready-to-paste KEYMAP — so a scrambled or
+//                   half-broken wiring job gets re-mapped in software instead
+//                   of re-soldered.
 //
-// Pins match the real firmware (config.h). Change them here if yours differ.
+//   DIAG            Free-press. Every press prints its cell, and a grid shows
+//                   which cells have EVER fired ( * ) versus never ( . ).
+//                   This is how you find the dead switches.
+//
+// Serial commands (115200 baud, send as a line or single char):
+//   m = restart MAP mode      d = DIAG mode        s = skip current key (dead)
+//   p = print results         r = reset everything
+//
+// Board: "ESP32S3 Dev Module", USB CDC On Boot: "Enabled".
 // ─────────────────────────────────────────────────────────────────────────────
 
 #define ROWS 4
@@ -21,42 +26,137 @@
 const uint8_t ROW_PINS[ROWS] = {10, 11, 12, 13};   // rows: INPUT_PULLUP
 const uint8_t COL_PINS[COLS] = {14,  8, 17, 18};   // cols: driven LOW one at a time
 
-// Key labels, laid out as the matrix is wired. "--" = an unused cell.
-const char *KEYNAME[ROWS][COLS] = {
-  { "K1",  "K2",  "K3",  "--"  },   // row 0  (col3 = dial hole, unused)
-  { "K4",  "K5",  "K6",  "K7"  },   // row 1
-  { "K8",  "K9",  "K10", "K11" },   // row 2
-  { "K12", "K13", "K14", "--"  },   // row 3  (col3 unused)
+// The xorr-pad deck, prompted in reading order. r0c0 is the knob, not a switch.
+//   r0:  --knob--   DCA   GRID   MOMENTUM
+//   r1:  REBALANCE  YIELD RISK   BASE
+//   r2:  BUY        SELL  YES    NO
+//   r3:  PORTFOLIO  MIC(centred)  KILL
+const char *KEYS[] = {
+  "DCA", "GRID", "MOMENTUM",
+  "REBALANCE", "YIELD", "RISK", "BASE",
+  "BUY", "SELL", "YES", "NO",
+  "PORTFOLIO", "MIC", "KILL",
 };
+const uint8_t NKEYS = sizeof(KEYS) / sizeof(KEYS[0]);
 
-bool     held[ROWS][COLS]  = {{false}};
-bool     last[ROWS][COLS]  = {{false}};
-bool     seen[ROWS][COLS]  = {{false}};   // has this cell EVER fired?
-uint32_t tEdge[ROWS][COLS] = {{0}};
+int8_t  mapR[NKEYS], mapC[NKEYS];          // matrix cell per key, -1 = dead/skipped
+bool    held[ROWS][COLS], lastRaw[ROWS][COLS], seen[ROWS][COLS];
+uint32_t tEdge[ROWS][COLS];
 const uint16_t DEBOUNCE_MS = 15;
 
-bool isUsed(uint8_t r, uint8_t c) { return strcmp(KEYNAME[r][c], "--") != 0; }
+uint8_t cursor = 0;                        // which key MAP is asking for
+bool    mapping = true;                    // MAP vs DIAG
+
+const char *nameOfCell(uint8_t r, uint8_t c) {
+  for (uint8_t i = 0; i < NKEYS; i++)
+    if (mapR[i] == (int8_t)r && mapC[i] == (int8_t)c) return KEYS[i];
+  return nullptr;
+}
+
+void prompt() {
+  if (!mapping) return;
+  if (cursor >= NKEYS) return;
+  Serial.printf("\n[%u/%u]  PRESS:  %-10s   (or 's' if it's dead)\n",
+                cursor + 1, NKEYS, KEYS[cursor]);
+}
 
 void printGrid() {
-  Serial.println();
-  Serial.println("  ---- keys registered so far  ( * = OK,  . = not yet ) ----");
+  Serial.println(F("\n  ---- cells that have fired  ( * = works, . = never ) ----"));
   for (uint8_t r = 0; r < ROWS; r++) {
-    Serial.print("   ");
+    Serial.print(F("   "));
     for (uint8_t c = 0; c < COLS; c++) {
-      if (!isUsed(r, c)) { Serial.print("        "); continue; }
-      char cell[16];
-      snprintf(cell, sizeof(cell), "%-4s%s  ", KEYNAME[r][c], seen[r][c] ? "*" : ".");
+      const char *nm = nameOfCell(r, c);
+      char cell[20];
+      snprintf(cell, sizeof(cell), "%c %-9s", seen[r][c] ? '*' : '.', nm ? nm : "-");
       Serial.print(cell);
     }
     Serial.println();
   }
-  Serial.print("  still MISSING: ");
-  bool any = false;
+}
+
+void printResults() {
+  Serial.println(F("\n================ xorr-pad key map ================"));
+  uint8_t dead = 0;
+  for (uint8_t i = 0; i < NKEYS; i++) {
+    if (mapR[i] < 0) { Serial.printf("  %-10s  DEAD / skipped\n", KEYS[i]); dead++; }
+    else Serial.printf("  %-10s  row %d  col %d   (GPIO r%u c%u)\n", KEYS[i],
+                       mapR[i], mapC[i], ROW_PINS[mapR[i]], COL_PINS[mapC[i]]);
+  }
+  Serial.printf("\n  %u mapped, %u dead.\n", NKEYS - dead, dead);
+
+  Serial.println(F("\n  Paste this into firmware/orchestrator_pad/agents.h:\n"));
+  Serial.println(F("  static const char *KEYMAP[4][4] = {"));
+  for (uint8_t r = 0; r < ROWS; r++) {
+    Serial.print(F("    { "));
+    for (uint8_t c = 0; c < COLS; c++) {
+      const char *nm = nameOfCell(r, c);
+      char cell[20];
+      snprintf(cell, sizeof(cell), "%-12s", nm ? (String("\"") + nm + "\",").c_str() : "nullptr,");
+      Serial.print(cell);
+    }
+    Serial.println(F("},"));
+  }
+  Serial.println(F("  };"));
+  printGrid();
+  Serial.println(F("\n  ('r' to start over, 'd' for free-press diagnostics)\n"));
+}
+
+void resetAll() {
+  for (uint8_t i = 0; i < NKEYS; i++) { mapR[i] = -1; mapC[i] = -1; }
   for (uint8_t r = 0; r < ROWS; r++)
-    for (uint8_t c = 0; c < COLS; c++)
-      if (isUsed(r, c) && !seen[r][c]) { Serial.print(KEYNAME[r][c]); Serial.print(' '); any = true; }
-  Serial.println(any ? "" : "none — every key works!");
-  Serial.println();
+    for (uint8_t c = 0; c < COLS; c++) { held[r][c] = lastRaw[r][c] = seen[r][c] = false; tEdge[r][c] = 0; }
+  cursor = 0; mapping = true;
+  Serial.println(F("\n=== xorr-pad — key test & map builder ==="));
+  Serial.println(F("Press the key it names. 's' skips a dead one, 'd' = free-press mode."));
+  prompt();
+}
+
+void onPress(uint8_t r, uint8_t c) {
+  seen[r][c] = true;
+  const char *known = nameOfCell(r, c);
+
+  if (!mapping) {                                   // DIAG
+    Serial.printf(">>> row %u col %u  (GPIO r%u c%u)%s%s\n", r, c,
+                  ROW_PINS[r], COL_PINS[c], known ? "  = " : "", known ? known : "");
+    printGrid();
+    return;
+  }
+  if (cursor >= NKEYS) { Serial.printf("  (extra press: row %u col %u)\n", r, c); return; }
+
+  if (known) {                                      // already used by another key
+    Serial.printf("  !! that cell is already '%s'. Press a DIFFERENT key, or 's' to skip.\n", known);
+    return;
+  }
+  mapR[cursor] = r; mapC[cursor] = c;
+  Serial.printf("  OK  %-10s -> row %u col %u\n", KEYS[cursor], r, c);
+  cursor++;
+  if (cursor >= NKEYS) { Serial.println(F("\n  All keys done!")); printResults(); }
+  else prompt();
+}
+
+void handleSerial() {
+  while (Serial.available()) {
+    int ch = Serial.read();
+    if (ch == '\n' || ch == '\r' || ch == ' ') continue;
+    switch (ch) {
+      case 's': case 'S':
+        if (mapping && cursor < NKEYS) {
+          Serial.printf("  -- %s marked DEAD (skipped)\n", KEYS[cursor]);
+          mapR[cursor] = -1; mapC[cursor] = -1; cursor++;
+          if (cursor >= NKEYS) { Serial.println(F("\n  All keys done!")); printResults(); }
+          else prompt();
+        }
+        break;
+      case 'd': case 'D':
+        mapping = false;
+        Serial.println(F("\n=== DIAG: free-press. Every press prints its cell. ==="));
+        printGrid();
+        break;
+      case 'm': case 'M': mapping = true; cursor = 0; Serial.println(F("\n=== MAP mode ===")); prompt(); break;
+      case 'p': case 'P': printResults(); break;
+      case 'r': case 'R': resetAll(); break;
+    }
+  }
 }
 
 void setup() {
@@ -65,30 +165,20 @@ void setup() {
   while (!Serial && millis() - s < 1500) {}
   for (uint8_t c = 0; c < COLS; c++) { pinMode(COL_PINS[c], OUTPUT); digitalWrite(COL_PINS[c], HIGH); }
   for (uint8_t r = 0; r < ROWS; r++) pinMode(ROW_PINS[r], INPUT_PULLUP);
-
-  Serial.println("\n=== Orchestrator Pad — key wiring test ===");
-  Serial.println("Press each key. It prints on press, and the grid shows which");
-  Serial.println("keys have registered (*). A key still shown ( . ) after you");
-  Serial.println("press it isn't wired through — fix that joint/wire.");
-  printGrid();
+  resetAll();
 }
 
 void loop() {
+  handleSerial();
   for (uint8_t c = 0; c < COLS; c++) {
     digitalWrite(COL_PINS[c], LOW);
     delayMicroseconds(5);
     for (uint8_t r = 0; r < ROWS; r++) {
       bool pressed = (digitalRead(ROW_PINS[r]) == LOW);
-      if (pressed != last[r][c]) { tEdge[r][c] = millis(); last[r][c] = pressed; }
+      if (pressed != lastRaw[r][c]) { tEdge[r][c] = millis(); lastRaw[r][c] = pressed; }
       if (millis() - tEdge[r][c] > DEBOUNCE_MS && pressed != held[r][c]) {
         held[r][c] = pressed;
-        const char *nm = KEYNAME[r][c];
-        if (pressed) {
-          Serial.printf(">>> %-4s PRESSED   (row %u, col %u)\n", nm, r, c);
-          if (isUsed(r, c) && !seen[r][c]) { seen[r][c] = true; printGrid(); }
-        } else {
-          Serial.printf("    %-4s released\n", nm);
-        }
+        if (pressed) onPress(r, c);
       }
     }
     digitalWrite(COL_PINS[c], HIGH);
