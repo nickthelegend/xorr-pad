@@ -1,0 +1,99 @@
+/**
+ * memory.mjs — the Node side of Sibyl.
+ *
+ * Spawns desktop/memory/sibyl_bridge.py and speaks newline-delimited JSON to
+ * it. Every call here hits the real SQLite store; there is no in-memory
+ * fallback on purpose — if memory is gone, the agent must visibly degrade,
+ * because that is the product claim.
+ */
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, "..", "..");
+const PY = process.env.SIBYL_PY || path.join(ROOT, ".venv", "bin", "python");
+const BRIDGE = path.join(ROOT, "desktop", "memory", "sibyl_bridge.py");
+
+export class Memory {
+  constructor({ db = process.env.SIBYL_DB } = {}) {
+    this.db = db;
+    this.seq = 0;
+    this.pending = new Map();
+    this.proc = null;
+  }
+
+  start() {
+    if (this.proc) return;
+    this.proc = spawn(PY, [BRIDGE], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ...(this.db ? { SIBYL_DB: this.db } : {}) },
+    });
+    createInterface({ input: this.proc.stdout }).on("line", (line) => {
+      let msg;
+      try { msg = JSON.parse(line); } catch { return; }
+      const p = this.pending.get(msg.id);
+      if (!p) return;
+      this.pending.delete(msg.id);
+      msg.ok ? p.resolve(msg.result) : p.reject(new Error(msg.error));
+    });
+    this.proc.stderr.on("data", (d) => {
+      const s = String(d).trim();
+      if (s) console.error("[sibyl]", s);
+    });
+    this.proc.on("exit", (code) => {
+      this.proc = null;
+      for (const { reject } of this.pending.values())
+        reject(new Error(`sibyl bridge exited (${code})`));
+      this.pending.clear();
+    });
+  }
+
+  call(op, args = {}) {
+    this.start();
+    const id = ++this.seq;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.proc.stdin.write(JSON.stringify({ id, op, args }) + "\n");
+      setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error(`sibyl op '${op}' timed out`));
+        }
+      }, 15000);
+    });
+  }
+
+  stop() { if (this.proc) { this.proc.stdin.end(); this.proc.kill(); this.proc = null; } }
+
+  // --- the vocabulary the agent loop uses -------------------------------
+  ping()                     { return this.call("ping"); }
+  stats()                    { return this.call("stats"); }
+  wipe()                     { return this.call("wipe"); }
+  recallBrief()              { return this.call("recall_brief"); }
+  getState(key)              { return this.call("get_state", { key }); }
+  setState(key, body)        { return this.call("set_state", { key, body }); }
+  setEntity(category, name, body) { return this.call("set_entity", { category, name, body }); }
+  getEntity(category, name)  { return this.call("get_entity", { category, name }); }
+  listEntities(category)     { return this.call("list_entities", { category }); }
+  deleteEntity(category, name) { return this.call("delete_entity", { category, name }); }
+  getReference(key)          { return this.call("get_reference", { key }); }
+  setReference(key, body)    { return this.call("set_reference", { key, body }); }
+  journal(e)                 { return this.call("write_event", e); }
+  events(limit = 50)         { return this.call("read_events", { limit }); }
+  search(query, limit = 20)  { return this.call("search", { query, limit }); }
+  learn(kwargs = {})         { return this.call("learn", { kwargs }); }
+
+  /** Limits with safe defaults, so a wiped memory is *restrictive*, not wide open. */
+  async limits() {
+    const b = await this.recallBrief();
+    return b.limits || null;
+  }
+}
+
+export const DEFAULT_LIMITS = {
+  max_trade_usd: 100,
+  max_day_usd: 300,
+  allow: ["ETH", "WETH", "USDC", "cbBTC", "DEGEN"],
+};
