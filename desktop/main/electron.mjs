@@ -30,7 +30,7 @@ async function boot() {
   console.log(`  pad token:                          ${TOKEN}\n`);
 
   win = new BrowserWindow({
-    width: 1280, height: 860, backgroundColor: "#0b0d10",
+    width: 1440, height: 1000, minWidth: 900, minHeight: 640, backgroundColor: "#0F100F",
     title: `xorr-pad — pad connects to ${lan}`,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });

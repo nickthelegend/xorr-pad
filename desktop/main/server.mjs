@@ -67,7 +67,8 @@ export function createServer(mem) {
       return res.end();
     }
 
-    const open = url.pathname === "/health" || url.pathname === "/" || url.pathname === "/index.html";
+    const open = url.pathname === "/health" || url.pathname === "/" || url.pathname === "/index.html"
+      || url.pathname.startsWith("/fonts/");
     if (!open && TOKEN) {
       const auth = req.headers.authorization || "";
       const given = auth.startsWith("Bearer ") ? auth.slice(7) : req.headers["x-pad-token"];
@@ -123,6 +124,19 @@ export function createServer(mem) {
         const html = await readFile(new URL("../renderer/index.html", import.meta.url));
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         return res.end(html);
+      }
+
+      // The two faces ship with the repo rather than loading from a CDN: the
+      // pad has to work on venue wi-fi, and a readout whose type fails to
+      // arrive is a readout nobody can trust.
+      if (url.pathname.startsWith("/fonts/")) {
+        const name = path.basename(url.pathname);
+        if (!/^[a-z0-9-]+\.woff2$/.test(name)) return send(404, { error: "no such font" });
+        try {
+          const buf = await readFile(new URL(`../renderer/fonts/${name}`, import.meta.url));
+          res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" });
+          return res.end(buf);
+        } catch { return send(404, { error: "no such font" }); }
       }
 
       if (url.pathname === "/health")

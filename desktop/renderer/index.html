@@ -1,79 +1,243 @@
 <!doctype html><meta charset="utf-8"><title>xorr-pad</title>
 <style>
-:root{--bg:#0b0d10;--panel:#12161b;--line:#1e242c;--ink:#e6e9ee;--dim:#8b95a3;
-      --grn:#22c55e;--red:#ef4444;--blu:#3b82f6;--amb:#f59e0b}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);
-  font:13px/1.5 -apple-system,system-ui,sans-serif}
-header{display:flex;gap:16px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
-h1{font-size:14px;margin:0;letter-spacing:.06em;text-transform:uppercase}
-.pill{font-size:11px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
-.pill.on{color:var(--grn);border-color:#14532d} .pill.off{color:var(--red);border-color:#7f1d1d}
-.pill.clickable{cursor:pointer} .pill.clickable:hover{background:#2a1010}
-/* Five panes, two columns. Declaring only two rows made the fifth spill into
-   an implicit row that ate the height, collapsing the other four to their
-   headings — so size the rows automatically and give each a real floor. */
+/* ─────────────────────────────────────────────────────────────────────────
+   Faces ship with the repo. A readout whose type fails to arrive on venue
+   wi-fi is a readout nobody can trust.
+   Archivo      — legends and headings. Flat terminals, tight caps: the
+                  silkscreen voice printed on an instrument's face.
+   Azeret Mono  — every measured quantity. Square numerals that hold a column.
+   ───────────────────────────────────────────────────────────────────────── */
+@font-face{font-family:Archivo;src:url(/fonts/archivo-var.woff2)format("woff2-variations");
+  font-weight:400 700;font-display:swap;font-style:normal}
+@font-face{font-family:"Azeret Mono";src:url(/fonts/azeret-var.woff2)format("woff2-variations");
+  font-weight:400 700;font-display:swap;font-style:normal}
+
+:root{
+  /* The only greys in this interface. Nine enumerated steps of warm anodised
+     graphite — the dark sibling of the pad's own #AEB4BC tray. Every surface,
+     rule and text colour is a step on this ramp; nothing is mixed by hand. */
+  --s0:#0F100F; --s1:#151714; --s2:#1B1E1B; --s3:#262A27;
+  --s4:#3A403C; --s5:#868E88; --s6:#A4ACA6; --s7:#CBD1CD; --s8:#EDEFEC;
+
+  /* Three accents, one meaning each. Green and red are not design choices:
+     they are the filament the keycaps are printed in. */
+  --buy:#22C55E;      /* buy · yes · armed          */
+  --sell:#EF4444;     /* sell · no · kill · disarmed — the filament itself */
+  --sell-t:#F26A6A;   /* the same red, lifted to clear AA as text on panel  */
+  --hand:#D8A03A;     /* the market currently in hand */
+
+  /* Four sizes, each a quarter larger than the last, and the body sits on the
+     browser's own root. This is read at arm's length across a desk, so the
+     floor is generous on purpose: 11px is the smallest functional label. */
+  --t0:11px; --t1:16px; --t2:20px; --t3:25px;
+  --measure:88px;     /* the column every quantity aligns to */
+}
+
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--s0);color:var(--s7);
+  font-family:Archivo,system-ui,sans-serif;font-size:var(--t1);font-weight:400;line-height:1.55;
+  font-variant-numeric:tabular-nums;
+  text-underline-offset:.2em}
+
+/* Browser surfaces belong to the design too. */
+::selection{background:var(--hand);color:var(--s0)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--s1)}
+::-webkit-scrollbar-thumb{background:var(--s3);border:2px solid var(--s1);border-radius:0}
+::-webkit-scrollbar-thumb:hover{background:var(--s4)}
+*{scrollbar-width:thin;scrollbar-color:var(--s3) var(--s1)}
+:focus-visible{outline:2px solid var(--hand);outline-offset:1px}
+
+/* ── the plate ───────────────────────────────────────────────────────────── */
+header{display:flex;gap:16px;align-items:baseline;padding:15px 18px 13px;
+  background:var(--s1);border-bottom:1px solid var(--s3)}
+h1{font-family:Archivo;font-size:var(--t3);font-weight:700;line-height:1;letter-spacing:.1em;text-transform:uppercase;
+  margin:0;color:var(--s8)}
+.stat{font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1;letter-spacing:.13em;text-transform:uppercase;color:var(--s6)}
+.stat b{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:500;line-height:1;letter-spacing:.02em;color:var(--s7)}
+.stat.on b{color:var(--buy)} .stat.off b{color:var(--sell-t)}
+.stat.clickable{cursor:pointer} .stat.clickable:hover b{color:var(--s8)}
+.addr{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:400;line-height:1;color:var(--s5)}
+
 main{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr);
-     gap:1px;background:var(--line);height:calc(100vh - 47px)}
-/* Below a laptop, four panes side by side stop being readable — stack them and
-   let the page scroll instead of squeezing every column to nothing. */
+  gap:1px;background:var(--s3);height:calc(100vh - 54px)}
+section{background:var(--s1);padding:13px 18px 18px;overflow:auto;min-height:0}
+
+/* A heading is a ruled legend, the way a panel is silkscreened. */
+h2{font-family:Archivo;font-size:var(--t0);font-weight:600;line-height:1;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--s6);margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid var(--s3)}
+h2+h2,.rule-top{margin-top:18px}
+
+/* ── the table: rules, never boxes ───────────────────────────────────────── */
+.row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:baseline;
+  padding:6px 0;border-bottom:1px solid var(--s2)}
+.row:last-child{border-bottom:0}
+.k{color:var(--s6)}
+.mono,.num{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.5;font-variant-numeric:tabular-nums;
+  color:var(--s7);text-align:right;min-width:var(--measure)}
+.dim{color:var(--s5)}
+.hand{color:var(--hand)}
+
+/* ── markets: a tab rail, cut edges, no cards ────────────────────────────── */
+.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:0;
+  border-left:1px solid var(--s3)}
+.mkt{background:var(--s1);border:0;border-right:1px solid var(--s3);text-transform:none;letter-spacing:normal;
+  border-top:2px solid transparent;padding:7px 9px 8px;cursor:pointer;text-align:left;
+  font-family:Archivo;transition:background .12s ease-out}
+.mkt:hover{background:var(--s2)}
+.mkt[aria-pressed="true"]{background:var(--s2);border-top-color:var(--hand)}
+.mkt .s{display:block;font-family:Archivo;font-size:var(--t1);font-weight:600;line-height:1.3;letter-spacing:.02em;color:var(--s7)}
+.mkt[aria-pressed="true"] .s{color:var(--s8)}
+.mkt .c{display:block;font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1.4;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--s5)}
+.mkt .p{display:block;font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.4;
+  font-variant-numeric:tabular-nums;color:var(--s6)}
+.mkt[aria-pressed="true"] .p{color:var(--hand)}
+
+/* ── the deck ────────────────────────────────────────────────────────────── */
+.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:9px}
+button{background:var(--s2);color:var(--s7);border:1px solid var(--s3);border-radius:2px;
+  padding:9px 3px;font-family:Archivo;font-size:var(--t0);font-weight:600;line-height:1;letter-spacing:.09em;text-transform:uppercase;
+  cursor:pointer;transition:background .1s ease-out,border-color .1s ease-out}
+button:hover{background:var(--s3);border-color:var(--s4)}
+button:active{background:var(--s4)}
+button.g{color:var(--buy);border-color:#1D4732} button.g:hover{background:#12271C}
+button.r{color:var(--sell-t);border-color:#5A2222} button.r:hover{background:#291414}
+button.b{color:var(--s8);border-color:var(--s4)}
+button.on{border-color:var(--hand);color:var(--s8);box-shadow:inset 0 -2px 0 var(--hand)}
+
+/* ── footnotes: how this product already talks, made typographic ─────────── */
+.fnote{display:grid;grid-template-columns:2ch 1fr;gap:9px;padding:5px 0;
+  font-size:var(--t1);color:var(--s6);border-bottom:1px solid var(--s2)}
+.fnote:last-child{border-bottom:0}
+.fnref{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:400;line-height:1.75;color:var(--s5)}
+.caveat{margin-top:12px;padding-top:9px;border-top:1px solid var(--s3);
+  font-size:var(--t1);line-height:1.6;color:var(--s6)}
+.caveat b{color:var(--s6);font-weight:600}
+
+/* ── the book's table: five columns, ruled, quantities right-aligned ─────── */
+.trow{display:grid;grid-template-columns:1fr 5.5ch 7.5ch 6ch 9.5ch;gap:9px;
+  align-items:baseline;padding:5px 0;border-bottom:1px solid var(--s2);
+  font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.5;
+  font-variant-numeric:tabular-nums}
+.trow>span:not(:first-child){text-align:right}
+.trow .sym{font-family:Archivo;font-weight:600;font-size:var(--t1);color:var(--s8);
+  display:flex;gap:7px;align-items:baseline}
+.trow .neg{color:var(--s6)}
+.thead{border-bottom:1px solid var(--s4);padding-bottom:6px;
+  font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1.4;letter-spacing:.13em;text-transform:uppercase;color:var(--s5)}
+.thead>span:first-child{font-family:Archivo}
+
+/* ── a fired strategy ────────────────────────────────────────────────────── */
+.fire{padding:9px 0 10px;border-bottom:1px solid var(--s3)}
+.fire-h{display:flex;gap:9px;align-items:baseline;margin-bottom:5px}
+.fire-h .sym{font-family:Archivo;font-size:var(--t2);font-weight:600;line-height:1.2;letter-spacing:.02em;color:var(--s8)}
+.fire-h .st{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.2;color:var(--buy)}
+.fire-h .cf{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:400;line-height:1.2;color:var(--s5)}
+
+/* ── verdict ─────────────────────────────────────────────────────────────── */
+.verdict{display:flex;gap:10px;align-items:baseline;padding:6px 0 8px;
+  border-bottom:1px solid var(--s3);margin-bottom:2px}
+.verdict .act{font-family:"Azeret Mono",monospace;font-size:var(--t3);font-weight:700;line-height:1;letter-spacing:-.01em}
+.verdict .act.x{color:var(--buy)} .verdict .act.n{color:var(--sell-t)}
+.verdict .sz{font-family:"Azeret Mono",monospace;font-size:var(--t2);font-weight:400;line-height:1;color:var(--s6)}
+.order{font-family:Archivo;font-size:var(--t1);font-weight:600;line-height:1.3;color:var(--s8);letter-spacing:.02em}
+.tag{font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1.5;letter-spacing:.12em;text-transform:uppercase;color:var(--s5)}
+.confirm{display:flex;gap:5px;margin-top:11px}
+.confirm button{padding:11px 18px;font-size:var(--t0)}
+
+.warn{border-left:1px solid var(--sell);background:var(--s2);color:var(--s6);
+  padding:9px 12px;margin-bottom:10px;font-size:var(--t1);line-height:1.5}
+.wipe{width:100%;margin-bottom:5px}
+
+/* One authored moment: after a scan, rows resolve down the column the way a
+   plotter lays a table down — measured, not decorative. */
+@keyframes settle-row{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.resolve>*{animation:settle-row .34s cubic-bezier(.16,1,.3,1) backwards}
+.resolve>*:nth-child(1){animation-delay:0ms}   .resolve>*:nth-child(2){animation-delay:26ms}
+.resolve>*:nth-child(3){animation-delay:52ms}  .resolve>*:nth-child(4){animation-delay:78ms}
+.resolve>*:nth-child(5){animation-delay:104ms} .resolve>*:nth-child(6){animation-delay:130ms}
+.resolve>*:nth-child(7){animation-delay:156ms} .resolve>*:nth-child(8){animation-delay:182ms}
+@media (prefers-reduced-motion:reduce){
+  .resolve>*{animation:none}
+  *{transition-duration:.01ms!important}
+}
+
+/* Six ruled panes at a legible 16px need vertical room. On a short screen the
+   honest move is to let the page scroll rather than clip every pane to a
+   sliver: this is read at arm's length, so legibility outranks fitting. */
+@media (max-height:900px){
+  main{grid-auto-rows:auto;height:auto}
+  section{max-height:none;overflow:visible}
+}
 @media (max-width:900px){
-  main{grid-template-columns:1fr;grid-template-rows:none;height:auto}
+  main{grid-template-columns:1fr;grid-auto-rows:auto;height:auto}
   section{max-height:none}
-  header{flex-wrap:wrap;gap:8px}
+  header{flex-wrap:wrap;gap:9px}
   .keys{grid-template-columns:repeat(4,1fr)}
 }
 @media (max-width:520px){
   .keys{grid-template-columns:repeat(3,1fr)}
-  .row{flex-direction:column;gap:2px}
-  .row .mono{word-break:break-all}
+  .row{grid-template-columns:1fr;gap:1px}
+  .mono,.num{text-align:left;min-width:0}
+  .mkts{grid-template-columns:repeat(2,1fr)}
 }
-section{background:var(--panel);padding:12px 14px;overflow:auto;min-height:0}
-h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:0 0 10px}
-.row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #171c22}
-.k{color:var(--dim)} .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
-#log .row>span:first-child{white-space:nowrap;color:var(--dim)}
-.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
-button{background:#1a2029;color:var(--ink);border:1px solid var(--line);border-radius:7px;
-  padding:8px 3px;font:600 10.5px system-ui;cursor:pointer;letter-spacing:.02em}
-button:hover{border-color:#33404f} button.g{background:#0f2a1a;border-color:#14532d;color:#4ade80}
-button.r{background:#2a1010;border-color:#7f1d1d;color:#f87171} button.b{background:#0f1e33;border-color:#1e3a5f;color:#60a5fa}
-button.on{outline:2px solid var(--blu)}
-.warn{background:#2a1a0a;border:1px solid #7c4a03;color:#fbbf24;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px}
-.tag{font-size:10px;padding:1px 6px;border-radius:4px;background:#1a2029;color:var(--dim)}
-.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:5px}
-.mkt{background:#12161c;border:1px solid var(--line);border-radius:6px;padding:5px 7px;cursor:pointer;text-align:left}
-.mkt:hover{border-color:#2a3340}
-.mkt.on{border-color:var(--blu);background:#0f1e33}
-.mkt .s{font-weight:600;font-size:12px}
-.mkt .c{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
-.mkt .p{font-size:11px;font-family:ui-monospace,monospace;color:#cbd5e1}
-.fire{border-left:2px solid var(--grn);padding-left:8px;margin:8px 0}
-.dim{color:var(--dim)}
 </style>
+<!--
+THESIS: the readout of a measuring instrument, printed as a results table. It
+refuses the crypto-dashboard arrangement — neon on black, glass cards, glowing
+candles — because this agent's claim is measurement, and a results table is how
+measurement is published.
+OWN-WORLD: nine enumerated steps of warm anodised graphite, the dark sibling of
+the pad's own grey tray; green and red only where the keycaps are printed in
+that filament; one amber for the market in hand. Archivo silkscreen legends,
+Azeret Mono for every quantity. Hairline rules, never cards.
+STORY: the operator sees which remembered facts produced a verdict, confirms
+with a physical key, and watches the same press decide differently once the
+memory is gone.
+FIRST VIEWPORT: the decision at top-left with its reasons numbered beneath it;
+markets as a cut tab rail with the deck under it; the book, memory and the log
+ruled alongside.
+FORM: candidate 4 of the grounded list, the statistical results table; seed key
+4fed7f87. Raised by the drum-machine row (committed panel ground, silkscreen
+legends), the zone-sheet record (an enumerated ramp as the only greys), the
+manual's tab board (cut edges, no card shadow), and the dive profile (one
+measure column ruling every row).
+FINISH: unreviewed and undocumented is unfinished; this build ends with the
+finish review, the verdict, DESIGN.md, and every shipping raster carrying its
+provenance.
+-->
 <header>
-  <h1>xorr-pad</h1>
-  <span class="pill" id="mode">…</span><span class="pill" id="armed">…</span>
-  <span class="pill" id="agent">…</span><span class="pill" id="blk">…</span>
-  <span style="flex:1"></span><span class="pill mono" id="addr"></span>
+  <h1>xorr&#8209;pad</h1>
+  <span class="stat" id="mode">chain <b>&mdash;</b></span>
+  <span class="stat" id="armed">state <b>&mdash;</b></span>
+  <span class="stat" id="agent">agent <b>&mdash;</b></span>
+  <span class="stat" id="blk">block <b>&mdash;</b></span>
+  <span class="addr" id="addr"></span>
 </header>
-<div id="authbar" class="warn" hidden style="margin:10px 12px 0;background:#2a1010;border-color:#7f1d1d;color:#f87171"></div>
+<div id="authbar" class="warn" hidden style="margin:9px 18px 0"></div>
 <main>
-  <section><h2>Signals &amp; decision</h2><div id="sig"></div></section>
-  <section><h2>Portfolio</h2><div id="pf"></div></section>
-  <section><h2>Markets — all on Base</h2>
+  <section><h2>Decision</h2><div id="sig"></div></section>
+  <section><h2>Holdings</h2><div id="pf"></div></section>
+  <section><h2>Markets, all on Base</h2>
     <div class="mkts" id="mkts"></div>
-    <div id="delisted" class="dim" style="font-size:11px;margin-top:6px"></div>
-    <h2 style="margin-top:14px">The deck — every key is clickable</h2>
-    <div class="keys" id="keys"></div></section>
-  <section><h2>The book — six measured strategies</h2>
-    <div id="scanhead" class="dim" style="font-size:12px;margin-bottom:8px">press SCAN (or BASE) to run the book across every market</div>
-    <div id="scan"></div></section>
-  <section><h2>Memory — what Sibyl knows</h2>
-    <div class="warn">Wiping is the demo: the agent forgets its limits, positions and learned rules.</div>
-    <button class="r" style="width:100%;margin-bottom:10px" onclick="wipe()">WIPE MEMORY</button>
-    <button class="g" id="reteach" hidden style="width:100%;margin-bottom:10px" onclick="reteach()">RE-TEACH ITS LIMITS</button>
+    <h2 class="rule-top">The deck: every key is clickable</h2>
+    <div class="keys" id="keys"></div>
+    <div id="delisted" class="caveat"></div></section>
+  <section><h2>The book: six measured strategies</h2>
+    <div id="scanhead" class="caveat" style="margin-top:0;padding-top:0;border-top:0">Press SCAN to run the book across every market.</div>
+    <div id="scan"></div>
+    <div class="caveat"><b>Measured, not profitable.</b> These edges are real and
+      published with their t&#8209;statistics. None has been shown to make money net of
+      fees: the source engine&rsquo;s live book was &#43;$4.32 gross and &minus;$23.07 net
+      over 30 trades, the loss entirely fees.</div></section>
+  <section><h2>Memory: what Sibyl knows</h2>
+    <div class="warn">Wiping is the demo. The agent forgets its limits, positions and learned rules.</div>
+    <button class="r wipe" onclick="wipe()">Wipe memory</button>
+    <button class="g wipe" id="reteach" hidden onclick="reteach()">Re&#8209;teach its limits</button>
     <div id="mem"></div></section>
-  <section><h2>Activity</h2><div id="log" class="mono"></div></section>
+  <section><h2>Activity</h2><div id="log"></div></section>
 </main>
 <script>
 // No default. A missing token has to look like a missing token, not silently
@@ -111,28 +275,33 @@ async function press(id){
   if (r.scan) drawScan(r.scan);
   else if (scanning) el("scanhead").textContent = "scan failed" + (r.error?": "+r.error:"");
   if(r.signal){ pending = r; render_signal(r); }
-  if(r.ok===false && r.error) el("sig").innerHTML += `<div class="row"><span class="k">!</span><span style="color:var(--red)">${esc(r.error)}</span></div>`;
+  if(r.ok===false && r.error) el("sig").innerHTML += `<div class="fnote"><span class="fnref">!</span><span style="color:var(--sell-t)">${esc(r.error)}</span></div>`;
   // Once answered, the card must stop looking like a live order awaiting a ✓.
-  if(r.fill) settle(`FILLED — ${(+r.fill.received).toFixed(6)} ${r.fill.receivedSymbol}`, "var(--grn)", r.fill.hash);
-  else if(r.rejected) settle("REJECTED — nothing was traded", "var(--red)");
+  if(r.fill) settle(`FILLED ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "x", r.fill.hash);
+  else if(r.rejected) settle("REFUSED", "n");
   await refresh();
 }
-function settle(msg, colour, hash){
+function settle(msg, kind, hash){
   pending = null;
   el("sig").innerHTML =
-    `<div class="row"><b style="color:${colour}">${esc(msg)}</b></div>` +
-    (hash?`<div class="row"><span class="k">tx</span><span class="mono">${esc(hash)}</span></div>`:"");
+    `<div class="verdict"><span class="act ${kind}">${esc(msg)}</span></div>` +
+    (hash?`<div class="row"><span class="k">transaction</span><span class="mono">${esc(hash)}</span></div>`:"");
 }
+// The reasons are numbered footnotes against the verdict, because that is what
+// they are: the remembered facts the decision rests on, cited.
 function render_signal(r){
   const v = r.verdict, ok = v.action==="EXECUTE";
   el("sig").innerHTML =
-    `<div class="row"><b>${r.signal.side} ${r.signal.symbol} $${r.signal.sizeUsd}</b>
-      <span class="tag">${r.signal.agent}</span></div>`+
-    `<div class="row"><span class="k">verdict</span>
-      <b style="color:${ok?'var(--grn)':'var(--red)'}">${v.action} $${v.sizeUsd}</b></div>`+
-    v.why.map(w=>`<div class="row"><span class="k">·</span><span>${w}</span></div>`).join("")+
-    (ok?`<div style="margin-top:8px"><button class="g" onclick="press('yes')">YES — execute</button>
-         <button class="r" onclick="press('no')">NO</button></div>`:"");
+    `<div class="verdict">
+       <span class="act ${ok?'x':'n'}">${v.action}</span>
+       <span class="sz">$${v.sizeUsd}</span>
+       <span style="margin-left:auto" class="order">${r.signal.side} ${r.signal.symbol} $${r.signal.sizeUsd}</span>
+       <span class="tag">${esc(r.signal.agent)}</span>
+     </div>` +
+    `<div class="resolve">` + v.why.map((w,i)=>
+      `<div class="fnote"><span class="fnref">${i+1}</span><span>${esc(w)}</span></div>`).join("") + `</div>` +
+    (ok?`<div class="confirm"><button class="g" onclick="press('yes')">Confirm and execute</button>
+         <button class="r" onclick="press('no')">Refuse</button></div>`:"");
 }
 async function acceptRule(p){
   await fetch("/reflect/accept",{method:"POST",headers:H,body:JSON.stringify({proposal:p})});
@@ -151,16 +320,16 @@ async function wipe(){
   // The verdict on screen was reasoned from memory that no longer exists.
   // Leaving it up would be the one dishonest frame in the whole demo.
   pending = null;
-  el("sig").innerHTML = `<div class="row"><b style="color:var(--red)">memory wiped</b></div>`
-    + `<div class="row"><span class="k">·</span><span>the last verdict was reasoned from limits, positions and rules that are now gone — press a key to decide again</span></div>`;
+  el("sig").innerHTML = `<div class="verdict"><span class="act n">MEMORY WIPED</span></div>`
+    + `<div class="fnote"><span class="fnref">&mdash;</span><span>the last verdict was reasoned from limits, positions and rules that are now gone. Press a key to decide again.</span></div>`;
   await refresh();
 }
 // The log lives on the server, so this pane shows what the PAD did too — not
 // just what was clicked in this tab — and survives a refresh.
 function drawLog(entries){
   el("log").innerHTML = (entries||[]).map(e=>
-    `<div class="row"><span>${new Date(e.t).toLocaleTimeString()}</span><span>${esc(e.m)}</span></div>`).join("")
-    || `<div class="row"><span style="color:var(--dim)">nothing yet — press a key</span></div>`;
+    `<div class="row"><span>${esc(e.m)}</span><span class="mono dim">${new Date(e.t).toLocaleTimeString([], {hour12:false})}</span></div>`).join("")
+    || `<div class="row"><span class="dim">Nothing yet. Press a key.</span></div>`;
 }
 // The pad trades assets from $0.58 to $79,000. One fixed decimal count cannot
 // serve both, so scale the precision to the magnitude.
@@ -192,7 +361,7 @@ function drawAuthBanner(){
   const b = el("authbar");
   b.hidden = !authBad;
   if (authBad) b.textContent =
-    "bad pad token — this page's ?token=… does not match PAD_TOKEN on the backend. Data panes stay empty until it does.";
+    "Bad pad token. This page's ?token= value does not match PAD_TOKEN on the backend, so the data panes stay empty until it does.";
 }
 
 let mktKeys = "";
@@ -203,50 +372,56 @@ function drawMarkets(){
   mktKeys = sig;
   el("mkts").innerHTML = entries.map(([sym,m])=>{
     const px = lastPrices[sym];
-    return `<button class="mkt ${sym===activeMarket?'on':''}" onclick="pickMarket('${sym}')" title="${esc(m.label)} — Uniswap V3 ${m.fee/10000}% tier on Base">
-      <div class="s">${sym}</div><div class="c">${CLASS_LABEL[m.class]||m.class}</div>
-      <div class="p">${px!=null?money(px):"—"}</div></button>`;
+    return `<button class="mkt" type="button" aria-pressed="${sym===activeMarket}" onclick="pickMarket('${sym}')" title="${esc(m.label)}. Uniswap V3 ${m.fee/10000}% tier on Base.">
+      <span class="s">${sym}</span><span class="c">${CLASS_LABEL[m.class]||m.class}</span>
+      <span class="p">${px!=null?money(px):"\u2014"}</span></button>`;
   }).join("");
 }
 async function pickMarket(sym){
   const r = await fetch("/key",{method:"POST",headers:H,body:JSON.stringify({id:sym})}).then(r=>r.json());
-  if(r.ok===false){ el("sig").innerHTML = `<div class="row"><span style="color:var(--red)">${esc(r.error)}</span></div>`; return; }
+  if(r.ok===false){ el("sig").innerHTML = `<div class="fnote"><span class="fnref">!</span><span style="color:var(--sell-t)">${esc(r.error)}</span></div>`; return; }
   activeMarket = sym; drawMarkets(); await refresh();
 }
 function drawScan(r){
   if(!r || !r.markets){ el("scanhead").textContent="scan returned nothing"; return; }
   for (const m of r.markets) if (m.price!=null) lastPrices[m.symbol]=m.price;
   drawMarkets();
-  el("scanhead").innerHTML = `<b style="color:${r.signals.length?'var(--grn)':'var(--dim)'}">${esc(r.summary)}</b>`
+  el("scanhead").innerHTML = `<b style="color:${r.signals.length?'var(--buy)':'var(--s6)'}">${esc(r.summary)}</b>`
     + `<div style="margin-top:3px">${esc(r.gate.reason)}</div>`;
+  const head = `<div class="trow thead"><span>market</span><span>rsi</span>` +
+    `<span>vs ema50</span><span>rel vol</span><span>regime</span></div>`;
   const rows = r.markets.map(m=> m.error
-    ? `<div class="row"><span>${m.symbol}</span><span style="color:var(--red)">${esc(m.error)}</span></div>`
-    : `<div class="row"><span>${m.symbol} <span class="tag">${CLASS_LABEL[m.class]||m.class}</span></span>
-         <span class="mono">RSI ${m.rsi} · ${m.emaGapPct>0?"+":""}${m.emaGapPct}% vs EMA50 · ${m.relVol}x vol · ${m.regime.toLowerCase()}</span></div>`).join("");
+    ? `<div class="trow"><span>${m.symbol}</span><span style="grid-column:2/-1;text-align:left;color:var(--sell-t)">${esc(m.error)}</span></div>`
+    : `<div class="trow"><span class="sym">${m.symbol}<span class="tag">${CLASS_LABEL[m.class]||m.class}</span></span>` +
+      `<span>${m.rsi}</span>` +
+      `<span class="${m.emaGapPct<0?'neg':''}">${m.emaGapPct>0?"+":""}${m.emaGapPct}%</span>` +
+      `<span>${m.relVol}&times;</span>` +
+      `<span class="dim">${m.regime.toLowerCase().replace("_"," ")}</span></div>`).join("");
   const fires = r.signals.map(sg=>`<div class="fire">
-      <div class="row"><b>${sg.symbol} — ${esc(sg.strategy)}</b><span class="tag">conf ${sg.confidence}</span></div>
-      <div class="row"><span class="k">why</span><span>${esc(sg.rationale)}</span></div>
-      <div class="row"><span class="k">measured</span><span class="dim">${esc(sg.provenance?.measured||"")}</span></div>
-      <div class="row"><span class="k">risk</span><span class="mono">stop ${sg.stopPct}% · target ${sg.takeProfitPct}% · hold ${sg.maxHoldMin}m</span></div>
+      <div class="fire-h"><span class="sym">${sg.symbol}</span><span class="st">${esc(sg.strategy)}</span>
+        <span class="cf">conf ${sg.confidence}</span></div>
+      <div class="fnote"><span class="fnref">1</span><span>${esc(sg.rationale)}</span></div>
+      <div class="fnote"><span class="fnref">2</span><span>measured <span class="mono dim" style="text-align:left;min-width:0">${esc(sg.provenance?.measured||"")}</span></span></div>
+      <div class="row"><span class="k">stop / target / hold</span><span class="mono">${sg.stopPct}% &nbsp; ${sg.takeProfitPct}% &nbsp; ${sg.maxHoldMin}m</span></div>
     </div>`).join("");
-  el("scan").innerHTML = fires + rows;
+  el("scan").innerHTML = fires + `<div class="resolve">${head}${rows}</div>`;
 }
 async function refresh(){
   authBad = false;
   const h = await fetch("/health").then(r=>r.json()).catch(()=>null);
   if (!h) return;
-  el("mode").textContent = h.mode==="fork" ? "Base fork" : "Base MAINNET";
-  el("mode").className = "pill " + (h.mode==="fork"?"on":"off");
-  el("armed").textContent = h.armed?"armed":"disarmed — click to re-arm";
-  el("armed").className = "pill " + (h.armed?"on":"off clickable");
+  el("mode").innerHTML = `chain <b>${h.mode==="fork" ? "Base fork" : "Base mainnet"}</b>`;
+  el("mode").className = "stat " + (h.mode==="fork"?"":"off");
+  el("armed").innerHTML = `state <b>${h.armed?"armed":"disarmed"}</b>`;
+  el("armed").className = "stat " + (h.armed?"on":"off clickable");
   el("armed").onclick = h.armed ? null : arm;
-  el("armed").title = h.armed ? "trading enabled" : "the kill switch is engaged; click to re-arm";
-  el("agent").textContent = h.agent; drawKeys(h.agent);
+  el("armed").title = h.armed ? "trading enabled" : "the kill switch is engaged. Click to re-arm.";
+  el("agent").innerHTML = `agent <b>${esc(h.agent)}</b>`; drawKeys(h.agent);
 
   const p = await get("/portfolio");
-  if (!p) { el("blk").textContent = "—"; el("addr").textContent = ""; el("pf").innerHTML = ""; }
+  if (!p) { el("blk").innerHTML = "block <b>&mdash;</b>"; el("addr").textContent = ""; el("pf").innerHTML = ""; }
   else {
-  el("blk").textContent = "block "+p.chain.block;
+  el("blk").innerHTML = `block <b>${p.chain.block}</b>`;
   el("addr").textContent = p.chain.address;
   el("pf").innerHTML = Object.entries(p.balances)
     .filter(([,v])=>v.amount>0.000001)
@@ -257,7 +432,7 @@ async function refresh(){
   const m = await get("/memory");
   if (!m) el("mem").innerHTML = "";
   else el("mem").innerHTML =
-    row("limits", m.limits ? `$${m.limits.max_trade_usd}/trade · $${m.limits.max_day_usd}/day` : "<i style='color:var(--red)'>NONE — forgotten</i>")
+    row("limits", m.limits ? `$${m.limits.max_trade_usd}/trade · $${m.limits.max_day_usd}/day` : "<span style='color:var(--sell-t)'>none &mdash; forgotten</span>")
     + row("allowlist", m.limits?.allow?.join(", ") || "—")
     + row("positions", Object.keys(m.positions).length ? Object.entries(m.positions).map(([s,v])=>`${s} ${qty(v.qty)} @ ${money(v.avg_entry_usd)}`).join("<br>") : "none")
     + row("learned rules", m.rules.length ? m.rules.map(r=>r.id).join(", ") : "none")
@@ -271,10 +446,8 @@ async function refresh(){
       // One line, with the measurements on hover. Six full reasons inline ate
       // most of the pane and buried the deck below the fold.
       const d = Object.entries(mk.delisted);
-      el("delisted").innerHTML =
-        `<span title="${d.map(([k,v])=>`${k}: ${v.reason}`).join(String.fromCharCode(10))}">` +
-        `delisted for thin liquidity — ${d.map(([k])=>k).join(", ")} ` +
-        `<span style="text-decoration:underline dotted">(why)</span></span>`;
+      el("delisted").innerHTML = `<b>Delisted for thin liquidity.</b> ` +
+        d.map(([k,v])=>`${k} <span class="dim">(${esc(v.reason)})</span>`).join("; ") + `.`;
       drawMarkets(); }
   }
 
@@ -307,8 +480,14 @@ const BOOT_MARKETS = { ETH:{label:"Ethereum",class:"crypto",fee:100}, cbBTC:{lab
 MARKETS = BOOT_MARKETS;
 drawKeys(null);
 drawMarkets();
-for (const [id, msg] of [["pf","reading balances…"],["mem","recalling…"],["log","connecting…"]])
+for (const [id, msg] of [["pf","reading balances\u2026"],["mem","recalling\u2026"],["log","connecting\u2026"]])
   el(id).innerHTML = `<div class="row"><span class="dim">${msg}</span></div>`;
+// An Operate surface's empty state teaches the control that fills it.
+el("sig").innerHTML =
+  `<div class="fnote"><span class="fnref">&mdash;</span><span class="dim">Nothing in hand. ` +
+  `<b style="color:var(--s6);font-weight:600">Buy</b> or <b style="color:var(--s6);font-weight:600">Sell</b> proposes a trade on the market in hand; ` +
+  `<b style="color:var(--s6);font-weight:600">Scan</b> runs the book across all six. ` +
+  `Every verdict arrives with the remembered facts it rests on, numbered.</span></div>`;
 
 // A thrown refresh must never kill the polling loop, or the pad goes silent.
 const tick = () => refresh().catch(e => console.warn("refresh failed:", e.message));
