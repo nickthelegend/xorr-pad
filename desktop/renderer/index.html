@@ -149,7 +149,7 @@ button.on{border-color:var(--hand);color:var(--s8);box-shadow:inset 0 -2px 0 var
 
 .warn{border-left:1px solid var(--sell);background:var(--s2);color:var(--s6);
   padding:9px 12px;margin-bottom:10px;font-size:var(--t1);line-height:1.5}
-.wipe{width:100%;margin-bottom:5px}
+.wipe{width:100%;margin-bottom:4px;padding:8px 3px}
 
 /* One authored moment: after a scan, rows resolve down the column the way a
    plotter lays a table down — measured, not decorative. */
@@ -350,15 +350,20 @@ function esc(s){ return String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",
 
 // One authenticated GET. A bad token must read as a bad token — not as a blank
 // app throwing a TypeError into the console every four seconds.
-let authBad = false;
+let authBad = false, chainDown = null;
 async function get(path){
   const r = await fetch(path,{headers:H});
   if (r.status === 401) { authBad = true; return null; }
+  // 503 means the Base node did not answer. An empty pane would read as "you
+  // hold nothing", which is a different and much worse claim than "we could
+  // not ask", so say which one it is.
+  if (r.status === 503) { chainDown = (await r.json().catch(()=>({}))).error || "the Base node is not answering"; return null; }
   if (!r.ok) return null;
   return r.json().catch(()=>null);
 }
 function drawAuthBanner(){
   const b = el("authbar");
+  if (chainDown) { b.hidden = false; b.textContent = chainDown + " Holdings and prices are unavailable until it does."; return; }
   b.hidden = !authBad;
   if (authBad) b.textContent =
     "Bad pad token. This page's ?token= value does not match PAD_TOKEN on the backend, so the data panes stay empty until it does.";
@@ -407,7 +412,7 @@ function drawScan(r){
   el("scan").innerHTML = fires + `<div class="resolve">${head}${rows}</div>`;
 }
 async function refresh(){
-  authBad = false;
+  authBad = false; chainDown = null;
   const h = await fetch("/health").then(r=>r.json()).catch(()=>null);
   if (!h) return;
   el("mode").innerHTML = `chain <b>${h.mode==="fork" ? "Base fork" : "Base mainnet"}</b>`;

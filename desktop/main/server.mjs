@@ -242,7 +242,13 @@ export function createServer(mem) {
       return send(404, { error: "no such route" });
     } catch (e) {
       console.error("[route]", url.pathname, e.message);
-      if (!res.headersSent) return send(500, { error: String(e.message || e) });
+      if (res.headersSent) return;
+      // Distinguish "the trade failed" from "the chain is not answering": they
+      // need completely different things from the operator.
+      const msg = String(e.message || e);
+      if (/timed out|took too long|fetch failed|ECONNREFUSED/i.test(msg))
+        return send(503, { error: "the Base node at :8545 did not answer in time. Nothing was traded." });
+      return send(500, { error: msg.split("\n")[0] });
     }
   });
 }

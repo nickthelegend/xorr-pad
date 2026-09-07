@@ -357,6 +357,99 @@ section("S. the strategy book");
       sc.b.markets.map((m) => `${m.symbol} RSI ${m.rsi}`).join(", "));
 }
 
+// ── routes and chain behaviour the earlier sections do not reach ────────────
+section("R. remaining routes");
+{
+  await j("/memory/seed", { method: "POST", body: "{}" });
+  await j("/arm", { method: "POST" });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+
+  const lg = await j("/log");
+  chk("B6 GET /log", lg.s === 200 && Array.isArray(lg.b.log) && lg.b.log.every((e) => e.t && e.m),
+      `${lg.b.log.length} server-side entries, so pad presses are visible`);
+
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  const live = await j("/pending");
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
+  const gone = await j("/pending");
+  chk("B7 GET /pending both states", live.b.pending === true && !!live.b.signal && !!live.b.verdict && gone.b.pending === false,
+      `${live.b.signal.side} ${live.b.signal.symbol} $${live.b.signal.sizeUsd} -> none`);
+
+  const sw = await j("/key", { method: "POST", body: JSON.stringify({ id: "eurc" }) });
+  const baton = (await j("/memory")).b.baton?.market;
+  chk("B9 market switch is case-insensitive", sw.b?.ok === true && sw.b.market === "EURC" && sw.b.class === "forex" && baton === "EURC",
+      `"eurc" -> ${sw.b?.market} (${sw.b?.class}), baton follows`);
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+
+  const tick = await j("/tick", { method: "POST" });
+  chk("B20 POST /tick", tick.s === 200 && Array.isArray(tick.b.signals),
+      `${tick.b.signals.length} signal(s), verdict ${tick.b.verdict?.action ?? "none"}`);
+
+  const noId = await j("/key", { method: "POST", body: "{}" });
+  const junk = await j("/reflect/reject", { method: "POST", body: '{"x":1}' });
+  chk("G9 malformed bodies never 500", noId.s === 200 && noId.b?.ok === false && junk.s === 400,
+      `/key {} -> "${noId.b?.error}"; junk reject -> ${junk.s}`);
+
+  const fonts = await fetch(B + "/fonts/archivo-var.woff2");
+  const trav = await fetch(B + "/fonts/..%2f..%2fpackage.json");
+  chk("A3/A4 fonts serve, traversal does not",
+      fonts.status === 200 && fonts.headers.get("content-type") === "font/woff2" && trav.status !== 200,
+      `woff2 200, traversal ${trav.status}`);
+}
+
+section("C. chain behaviour on every asset class");
+{
+  const q = await quote("ETH", "USDC", 0.1);
+  chk("C3 quote uses the measured fee tier", q.fee === MARKETS.ETH.fee,
+      `${q.fee / 10000}% matches markets.mjs`);
+
+  for (const [cls, syms] of Object.entries({ crypto: ["ETH", "cbBTC"], forex: ["EURC"], defi: ["AERO", "MORPHO"], ai: ["VIRTUAL"] })) {
+    for (const sym of syms) {
+      const key = sym === "ETH" ? "WETH" : sym;
+      const before = (await balances())[key].amount;
+      const f = await swap("USDC", sym, 6);
+      const after = (await balances())[key].amount;
+      chk(`C4 ${cls}/${sym} mined fill`, f.status === "success" && after > before && f.received > 0,
+          `${f.hash.slice(0, 12)}… +${(after - before).toFixed(6)} at tier ${f.fee}`);
+    }
+  }
+
+  TOKENS.DEGEN = { symbol: "DEGEN", address: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", decimals: 18 };
+  let msg = "(no throw)";
+  try { await swap("USDC", "DEGEN", 100); } catch (e) { msg = e.message; }
+  // Refused either because it measured the pool as too thin, or because it
+  // could not measure it at all. Both are the gate holding; a submitted
+  // transaction is the gate failing.
+  chk("C6 the liquidity gate refuses before signing",
+      (/too thin/.test(msg) || /could not be measured/.test(msg)) && !/submitted/.test(msg),
+      `"${msg.slice(0, 76)}"`);
+  delete TOKENS.DEGEN;
+}
+
+section("G. concurrency");
+{
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  const u0 = (await j("/portfolio")).b.balances.USDC.amount;
+  const [a, b2] = await Promise.all([
+    j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) }),
+    j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) }),
+  ]);
+  const u1 = (await j("/portfolio")).b.balances.USDC.amount;
+  const fills = [a, b2].filter((r) => r.b?.fill).length;
+  chk("G6 concurrent confirm fills exactly once", fills === 1 && (u0 - u1) < 60,
+      `${fills} fill, $${(u0 - u1).toFixed(2)} moved`);
+
+  await Promise.all(["cbBTC", "EURC", "AERO"].map((m) =>
+    j("/key", { method: "POST", body: JSON.stringify({ id: m }) })));
+  const bat = (await j("/memory")).b.baton?.market;
+  const nxt = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  chk("G7 rapid switching stays consistent", nxt.b?.signal?.symbol === bat,
+      `baton ${bat}, next proposal ${nxt.b?.signal?.symbol}`);
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+}
+
 // ── E. voice + brain ────────────────────────────────────────────────────────
 section("E. Deepgram + the Claude Code brain");
 {
@@ -365,7 +458,9 @@ section("E. Deepgram + the Claude Code brain");
 
   const text = await stt(pcmToWav(audio));
   const t = text.toLowerCase();
-  chk("E2 Deepgram STT", /buy/.test(t) && /(50|fifty)/.test(t) && /eth/.test(t), `heard "${text}"`);
+  // Deepgram returns "By" for "Buy" often enough that pinning the assertion to
+  // one spelling tests the transcriber's mood, not the product.
+  chk("E2 Deepgram STT", /\bbu?y\b/i.test(t) && /(50|fifty)/.test(t) && /eth/.test(t), `heard "${text}"`);
 
   const sig = parseIntent(text, "momentum");
   chk("E2b speech becomes an order", sig?.side === "BUY" && sig?.sizeUsd === 50, JSON.stringify(sig));

@@ -31,6 +31,24 @@ const wethAbi = parseAbi([
 const addr = (s) => (TOKENS[s].native ? TOKENS.WETH.address : TOKENS[s].address);
 
 /**
+ * Wait for a receipt, and fail in a way an operator can act on.
+ *
+ * A submitted transaction that never confirms is not a fill, and viem's raw
+ * timeout ("Timed out while waiting…") tells the operator nothing about what
+ * to do with the money. Name the step, name the hash, and say plainly that it
+ * was submitted but not mined, so nothing downstream books it as filled.
+ */
+async function mined(hash, step) {
+  try {
+    return await pub.waitForTransactionReceipt({ hash, timeout: 60_000 });
+  } catch (e) {
+    throw new Error(
+      `${step} was submitted but never confirmed (${hash}). ` +
+      `Nothing was booked. The node may be wedged — check it before retrying.`);
+  }
+}
+
+/**
  * Best Uniswap quote.
  *
  * markets.mjs already records the deepest tier for each market, measured. Try
@@ -73,7 +91,7 @@ async function ensureWeth(amountRaw) {
   if (bal >= amountRaw) return null;
   const hash = await wallet.writeContract({ address: TOKENS.WETH.address, abi: wethAbi,
     functionName: "deposit", value: amountRaw - bal });
-  await pub.waitForTransactionReceipt({ hash });
+  await mined(hash, "the ETH wrap");
   return hash;
 }
 
@@ -83,7 +101,7 @@ async function ensureAllowance(token, spender, amountRaw) {
   if (cur >= amountRaw) return null;
   const hash = await wallet.writeContract({ address: token, abi: erc20Abi,
     functionName: "approve", args: [spender, maxUint256] });
-  await pub.waitForTransactionReceipt({ hash });
+  await mined(hash, "the token approval");
   return hash;
 }
 
@@ -108,8 +126,11 @@ export async function priceImpact(sell, buy, amountIn) {
     // just rounding. What matters is how much WORSE the full size prices.
     const impact = (pxRef - pxBig) / pxRef;
     return { impact, ok: impact <= MAX_IMPACT, pxBig, pxRef };
-  } catch {
-    return { impact: 0, ok: true, unknown: true };   // no quote is caught elsewhere
+  } catch (e) {
+    // A risk control that cannot measure must fail CLOSED. Returning "fine" on
+    // an unquotable pool let exactly the trade this gate exists to stop go
+    // through and fail on-chain instead.
+    return { impact: null, ok: false, unknown: true, reason: String(e.message || e).slice(0, 90) };
   }
 }
 
@@ -149,9 +170,10 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
   // The pool has to be deep enough for this size, not merely to exist.
   const imp = await priceImpact(sell, buy, amountIn);
   if (!imp.ok)
-    throw new Error(
-      `${buy} pool too thin: ${amountIn} ${sell} would move the price ` +
-      `${(imp.impact * 100).toFixed(1)}% (limit ${(MAX_IMPACT * 100).toFixed(0)}%)`);
+    throw new Error(imp.unknown
+      ? `${buy} pool depth could not be measured, so the trade is refused (${imp.reason})`
+      : `${buy} pool too thin: ${amountIn} ${sell} would move the price ` +
+        `${(imp.impact * 100).toFixed(1)}% (limit ${(MAX_IMPACT * 100).toFixed(0)}%)`);
 
   const q = await quote(sell, buy, amountIn);
   const tOut = TOKENS[buy];
@@ -171,7 +193,7 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
              recipient: account.address, amountIn: q.amountInRaw,
              amountOutMinimum: minOut, sqrtPriceLimitX96: 0n }],
   });
-  const receipt = await pub.waitForTransactionReceipt({ hash });
+  const receipt = await mined(hash, `the ${sell}->${buy} swap`);
   const after = await pub.readContract({ address: outAddr, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });
 

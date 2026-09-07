@@ -25,8 +25,21 @@ if (!KEY) throw new Error("AGENT_PRIVATE_KEY is required when CHAIN_MODE=mainnet
 if (!IS_FORK && KEY === ANVIL_KEY) throw new Error("refusing to use the anvil key on mainnet");
 
 export const account = privateKeyToAccount(KEY);
-export const pub = createPublicClient({ chain: base, transport: http(RPC) });
-export const wallet = createWalletClient({ account, chain: base, transport: http(RPC) });
+
+// A fork answers from local state until it has to fetch an uncached slot from
+// upstream, and a rate-limited upstream turns one read into a 30s stall. Give
+// the transport a real timeout and a couple of retries so a slow node degrades
+// into a readable error instead of hanging a trade.
+// 8s x 2 attempts. A UI that polls every 4s must never sit behind a 60s stall:
+// a slow node has to surface as a readable error quickly, not as a hang.
+const transport = http(RPC, { timeout: 8_000, retryCount: 1, retryDelay: 300 });
+export const pub = createPublicClient({ chain: base, transport });
+export const wallet = createWalletClient({ account, chain: base, transport });
+
+/** Is the node actually answering? Used to tell "no fill" from "no node". */
+export async function chainReachable() {
+  try { await pub.getBlockNumber(); return true; } catch { return false; }
+}
 
 export async function chainInfo() {
   const [id, block] = await Promise.all([pub.getChainId(), pub.getBlockNumber()]);
@@ -34,20 +47,19 @@ export async function chainInfo() {
 }
 
 export async function balances(symbols = Object.keys(TOKENS)) {
-  const out = {};
-  for (const s of symbols) {
+  // One round trip per token, run together rather than in a queue. Sequentially
+  // this was eight waits deep on every poll, which is what tipped the node over
+  // under concurrent trades.
+  const wanted = symbols.filter((s) => TOKENS[s]);
+  const reads = await Promise.all(wanted.map(async (s) => {
     const t = TOKENS[s];
-    if (!t) continue;
-    if (t.native) {
-      const wei = await pub.getBalance({ address: account.address });
-      out[s] = { raw: wei, amount: Number(formatUnits(wei, 18)) };
-    } else {
-      const raw = await pub.readContract({
-        address: t.address, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
-      out[s] = { raw, amount: Number(formatUnits(raw, t.decimals)) };
-    }
-  }
-  return out;
+    const raw = t.native
+      ? await pub.getBalance({ address: account.address })
+      : await pub.readContract({ address: t.address, abi: erc20Abi,
+                                 functionName: "balanceOf", args: [account.address] });
+    return [s, { raw, amount: Number(formatUnits(raw, t.decimals)) }];
+  }));
+  return Object.fromEntries(reads);
 }
 
 /** Fund the agent on the fork so it can actually trade. No-op on mainnet. */

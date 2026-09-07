@@ -159,7 +159,14 @@ const ALIASES = {
 export function parseIntent(text, fallbackAgent = "momentum", market = "ETH") {
   const raw = (text || "").toLowerCase();
   const t = glue(raw);
-  const side = /\b(buy|long|add|accumulate)\b/.test(t) ? "BUY"
+  // "buy" and "by" are homophones and speech-to-text picks the wrong one often
+  // enough to kill a real order ("By $50 of ETH."). Accept "by" as the verb
+  // only when it is immediately followed by an amount, where no other reading
+  // exists — "by the way" and "go by" never match that shape.
+  const buyish = /\b(buy|long|add|accumulate)\b/.test(t)
+              || /\bby\s+\$?\d/.test(t)
+              || /\bby\s+(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|a\s+hundred|hundred)\b/.test(t);
+  const side = buyish ? "BUY"
              : /\b(sell|short|dump|exit|close)\b/.test(t) ? "SELL" : null;
   if (!side) return null;
   const usd = parseAmount(t);
