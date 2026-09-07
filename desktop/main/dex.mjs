@@ -77,12 +77,30 @@ async function ensureAllowance(token, spender, amountRaw) {
   return hash;
 }
 
+/** What we can actually spend of `sell` right now, in human units. */
+export async function spendable(sell) {
+  const t = TOKENS[sell];
+  if (t.native) {
+    const wei = await pub.getBalance({ address: account.address });
+    const gasBuffer = parseUnits("0.01", 18);          // leave room for gas
+    return Number(formatUnits(wei > gasBuffer ? wei - gasBuffer : 0n, 18));
+  }
+  const raw = await pub.readContract({ address: t.address, abi: erc20Abi,
+    functionName: "balanceOf", args: [account.address] });
+  return Number(formatUnits(raw, t.decimals));
+}
+
 /**
  * Execute the swap. Returns the mined transaction hash and the observed
  * balance delta — we assert the tokens actually moved, not just that a tx
  * landed.
  */
 export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
+  // Memory says what you are ALLOWED to trade; the chain says what you can
+  // actually afford. Check both, or the router reverts with STF.
+  const have = await spendable(sell);
+  if (have < Number(amountIn))
+    throw new Error(`insufficient ${sell}: need ${amountIn}, have ${have.toFixed(6)}`);
   const q = await quote(sell, buy, amountIn);
   const tOut = TOKENS[buy];
   const minOut = q.amountOutRaw * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;

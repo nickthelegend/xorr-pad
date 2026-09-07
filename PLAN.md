@@ -272,6 +272,7 @@ Hosts the backend the pad talks to, and is the thing on camera.
 | G14 | No Virtuals work | **OPEN** — stretch, untouched |
 | G15 | No price feed | **CLOSED** — prices come from the same pools we trade against |
 | G16 *(new)* | 1inch route unusable | **OPEN** — no `ONEINCH_API_KEY`. The keyless Uniswap route keeps fills real meanwhile |
+| G18 *(new)* | Proposals ignored the wallet balance — a \$50 buy on a 13.96 USDC balance reverted with `STF` | **CLOSED** — `spendable()` guard in `dex.swap()`, and the executor clamps an over-sized order down to the balance instead of reverting |
 | G17 *(new)* | Every Groq model blocked | **OPEN** — key authenticates, all models `model_permission_blocked_project`. Claude Code CLI is the brain instead |
 
 ### Non-gaps (deliberate, don't "fix")

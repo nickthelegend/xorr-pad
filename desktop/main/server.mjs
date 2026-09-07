@@ -18,7 +18,7 @@ import { Memory, DEFAULT_LIMITS } from "./memory.mjs";
 import { runOnce, getMarket, snapshot, applyFill } from "./trader.mjs";
 import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
-import { swap } from "./dex.mjs";
+import { swap, spendable } from "./dex.mjs";
 import { IS_FORK } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule } from "./reflect.mjs";
 import { readFile } from "node:fs/promises";
@@ -203,7 +203,12 @@ async function onKey(mem, id) {
 
     const px = p.market.prices[p.sig.symbol];
     const [sell, buy] = p.sig.side === "BUY" ? ["USDC", p.sig.symbol] : [p.sig.symbol, "USDC"];
-    const amountIn = p.sig.side === "BUY" ? p.verdict.sizeUsd : p.verdict.sizeUsd / px;
+    let amountIn = p.sig.side === "BUY" ? p.verdict.sizeUsd : p.verdict.sizeUsd / px;
+    // clamp to what the wallet actually holds, so an over-sized proposal
+    // degrades to a smaller real trade instead of reverting
+    const have = await spendable(sell);
+    if (have <= 0) return { ok: false, error: `no ${sell} to spend` };
+    if (amountIn > have) { note(`clamped to balance: ${amountIn.toFixed(4)} -> ${have.toFixed(4)} ${sell}`); amountIn = have * 0.999; }
     const fill = await swap(sell, buy, Number(amountIn.toFixed(6)));
     await applyFill(mem, { symbol: p.sig.symbol, side: p.sig.side, usd: p.verdict.sizeUsd, price: px });
     await mem.journal({ evaluated: { signal: p.sig },
