@@ -38,6 +38,7 @@ button.on{outline:2px solid var(--blu)}
   <section><h2>Memory — what Sibyl knows</h2>
     <div class="warn">Wiping is the demo: the agent forgets its limits, positions and learned rules.</div>
     <button class="r" style="width:100%;margin-bottom:10px" onclick="wipe()">WIPE MEMORY</button>
+    <button class="g" id="reteach" hidden style="width:100%;margin-bottom:10px" onclick="reteach()">RE-TEACH ITS LIMITS</button>
     <div id="mem"></div></section>
   <section><h2>Activity</h2><div id="log" class="mono"></div></section>
 </main>
@@ -82,6 +83,10 @@ function render_signal(r){
 }
 async function acceptRule(p){
   await fetch("/reflect/accept",{method:"POST",headers:H,body:JSON.stringify({proposal:p})});
+  await refresh();
+}
+async function reteach(){
+  await fetch("/memory/seed",{method:"POST",headers:H,body:"{}"});
   await refresh();
 }
 async function arm(){
@@ -152,6 +157,8 @@ async function refresh(){
     + row("positions", Object.keys(m.positions).length ? Object.entries(m.positions).map(([s,v])=>`${s} ${(+v.qty).toFixed(5)} @ ${(+v.avg_entry_usd).toFixed(0)}`).join("<br>") : "none")
     + row("learned rules", m.rules.length ? m.rules.map(r=>r.id).join(", ") : "none")
     + row("journal", m.journal_recent.length + " events");
+
+  el("reteach").hidden = !(m && !m.limits);
 
   const lg = await get("/log");
   if (lg) drawLog(lg.log);

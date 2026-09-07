@@ -139,6 +139,15 @@ export function createServer(mem) {
         return send(200, { ...out, pendingVoided: dropped });
       }
 
+      // Teach it its limits again. Without this a wipe is one-way until the
+      // process restarts, so the demo could only ever be run once.
+      if (url.pathname === "/memory/seed" && req.method === "POST") {
+        const limits = body.limits || DEFAULT_LIMITS;
+        await mem.setReference("risk/limits", limits);
+        note(`re-taught: $${limits.max_trade_usd}/trade, $${limits.max_day_usd}/day`);
+        return send(200, { limits });
+      }
+
       if (url.pathname === "/reflect" && req.method === "GET")
         return send(200, await reflect(mem));
 

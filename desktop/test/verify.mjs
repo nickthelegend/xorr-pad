@@ -263,6 +263,13 @@ section("G3. wiping memory mid-flow");
   chk("B16 post-wipe recall is empty", m.b.limits === null && Object.keys(m.b.positions).length === 0,
       "limits null, positions {}");
 
+  // and the wipe has to be reversible, or the demo can only be run once
+  const seed = await j("/memory/seed", { method: "POST", body: "{}" });
+  const back = await j("/memory");
+  chk("G32 the pad can be re-taught", seed.s === 200 && back.b.limits?.max_trade_usd === 100,
+      `limits restored to $${back.b.limits?.max_trade_usd}/trade without a restart`);
+  await j("/memory/wipe", { method: "POST" });
+
   const post = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   chk("F6 the same press now decides differently", post.b.verdict.sizeUsd <= NO_MEMORY_LIMITS.max_trade_usd &&
       post.b.verdict.why.some((w) => /NO remembered limits/.test(w)),

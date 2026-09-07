@@ -106,7 +106,7 @@ Run against the live app: backend on `:8080`, anvil fork of Base mainnet on
 `:8545`, Sibyl store on disk, real Deepgram and real Claude Code calls. Browser
 flows driven through Chrome against the running product.
 
-**44 automated checks pass, 0 fail** (`node desktop/test/verify.mjs`), plus the
+**45 automated checks pass, 0 fail** (`node desktop/test/verify.mjs`), plus the
 load-bearing proof (`node desktop/test/loadbearing.test.mjs`, exits 0) and the
 browser flows below. 2 items are untestable for want of credentials and are
 marked as such rather than passed.
@@ -149,6 +149,7 @@ Every one was found by running the product, not by reading it.
 | G28 | A wipe **left the previous verdict on screen** | The one dishonest frame in the demo: reasoning displayed from memory that no longer existed | The pane states the verdict was voided | PASS |
 | G29 | A wipe **did not void an outstanding ✓** — YES then filled against forgotten limits | Executing a decision whose basis has been deleted | The wipe clears `pending` and reports `pendingVoided` | PASS — refused, balance unmoved |
 | G30 | A wrong token threw an **uncaught TypeError every 4s** and showed a blank app | Looked like a broken product; killed the rest of each refresh | Guarded fetches, a visible "bad pad token" banner, a poll loop that cannot die | PASS — zero exceptions |
+| G32 | **A wipe was one-way until restart** — nothing could re-teach the limits, so the demo could only be run once | The judge cannot ask to see it twice | `POST /memory/seed` + a RE-TEACH button that appears only while the limits are missing | PASS |
 | G31 | A **mis-heard ticker silently turned a spoken order into chit-chat** — Deepgram rendered "E T H" as "an e t", so "buy $40 of ETH" became a chat answer | The headline voice feature failing quietly, mid-demo | Glue spelled-out letters, alias common forms, and fall back to the active market when the verb and amount are unambiguous | PASS — 9/9 parse cases |
 
 Two of the test artefacts were wrong rather than the product, and were corrected:

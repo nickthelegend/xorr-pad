@@ -284,6 +284,7 @@ Hosts the backend the pad talks to, and is the thing on camera.
 | G26 *(new)* | **The "conservative" no-memory fallback was identical to the normal limits** — the code claimed a wiped memory was restrictive; it was equally permissive | **CLOSED** — split into `DEFAULT_LIMITS` and `NO_MEMORY_LIMITS` ($10/trade, $25/day, ETH+USDC); asserted stricter |
 | G27 *(new)* | **A wipe did not void an outstanding ✓** — YES then filled against limits that had just been deleted | **CLOSED** — the wipe clears `pending` and reports `pendingVoided` |
 | G28 *(new)* | A wrong token threw an uncaught TypeError every 4s and showed a blank app | **CLOSED** — guarded fetches, a visible banner, a poll loop that cannot die |
+| G30 *(new)* | **A wipe was one-way until restart** — nothing could re-teach the limits, so the demo ran once per boot | **CLOSED** — `POST /memory/seed` and a RE-TEACH button shown only while limits are missing |
 | G29 *(new)* | **A mis-heard ticker silently turned a spoken order into chit-chat** — Deepgram renders "E T H" as "an e t" | **CLOSED** — spelled-out letters glued, aliases, and a fall back to the active market when the verb and amount are unambiguous |
 
 ### Non-gaps (deliberate, don't "fix")
