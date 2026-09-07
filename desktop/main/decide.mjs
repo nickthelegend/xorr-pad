@@ -10,7 +10,7 @@
  * forgets the rules you taught it, and forgets what you already own. That
  * difference is the product, and loadbearing.test.mjs asserts it.
  */
-import { DEFAULT_LIMITS } from "./memory.mjs";
+import { NO_MEMORY_LIMITS } from "./memory.mjs";
 
 /** Sum today's executed USD out of the journal. */
 export function spentToday(events = []) {
@@ -43,12 +43,12 @@ export function decide(signal, brief) {
     memoryUsed = true;
     why.push(`limits recalled from memory (max $${limits.max_trade_usd}/trade)`);
   } else {
-    limits = DEFAULT_LIMITS;
-    why.push("NO remembered limits — falling back to conservative defaults");
+    limits = NO_MEMORY_LIMITS;
+    why.push(`NO remembered limits — falling back to a timid $${NO_MEMORY_LIMITS.max_trade_usd}/trade`);
   }
 
   // 2. Allowlist.
-  const allow = limits.allow || DEFAULT_LIMITS.allow;
+  const allow = limits.allow || NO_MEMORY_LIMITS.allow;
   if (!allow.includes(signal.symbol)) {
     why.push(`${signal.symbol} is not in the allowlist [${allow.join(", ")}]`);
     return { action: "REJECT", sizeUsd: 0, why, memoryUsed };
@@ -69,7 +69,7 @@ export function decide(signal, brief) {
     memoryUsed = true;
     why.push(`$${spent} already executed today (journal)`);
   }
-  const dayLeft = (limits.max_day_usd ?? DEFAULT_LIMITS.max_day_usd) - spent;
+  const dayLeft = (limits.max_day_usd ?? NO_MEMORY_LIMITS.max_day_usd) - spent;
   if (dayLeft <= 0) {
     why.push("daily budget exhausted");
     return { action: "REJECT", sizeUsd: 0, why, memoryUsed };
@@ -79,7 +79,9 @@ export function decide(signal, brief) {
   const pos = brief?.positions?.[signal.symbol];
   if (pos) {
     memoryUsed = true;
-    why.push(`already holding ${pos.qty} ${signal.symbol} @ ${pos.avg_entry_usd}`);
+    // These lines get spoken aloud, so a raw float would be read out to
+    // seventeen digits. Round to something a person would actually say.
+    why.push(`already holding ${Number(pos.qty).toFixed(4)} ${signal.symbol} @ $${Math.round(pos.avg_entry_usd)}`);
   }
   if (signal.side === "SELL" && !pos) {
     why.push(`refusing to sell ${signal.symbol} — no remembered position`);
@@ -88,7 +90,7 @@ export function decide(signal, brief) {
 
   // 6. Size clamp.
   let size = signal.sizeUsd;
-  const cap = Math.min(limits.max_trade_usd ?? DEFAULT_LIMITS.max_trade_usd, dayLeft);
+  const cap = Math.min(limits.max_trade_usd ?? NO_MEMORY_LIMITS.max_trade_usd, dayLeft);
   if (size > cap) {
     why.push(`clamped $${size} -> $${cap}`);
     size = cap;

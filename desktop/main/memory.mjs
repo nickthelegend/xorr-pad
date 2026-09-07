@@ -92,8 +92,24 @@ export class Memory {
   }
 }
 
+/** What a fresh pad is seeded with — its normal operating envelope. */
 export const DEFAULT_LIMITS = {
   max_trade_usd: 100,
   max_day_usd: 300,
   allow: ["ETH", "WETH", "USDC", "cbBTC", "DEGEN"],
+};
+
+/**
+ * What decide() falls back to when it remembers NOTHING.
+ *
+ * These are deliberately not DEFAULT_LIMITS. An agent that has lost its memory
+ * does not know what you told it, what it already spent today, or what it is
+ * holding — so the safe move is to shrink, not to carry on at full size. This
+ * is also the honest answer to "what breaks when memory is deleted?": the pad
+ * still works, but it degrades to a timid version of itself.
+ */
+export const NO_MEMORY_LIMITS = {
+  max_trade_usd: 10,
+  max_day_usd: 25,
+  allow: ["ETH", "USDC"],
 };

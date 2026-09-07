@@ -122,16 +122,32 @@ export function parseAmount(t) {
   return bare ? Number(bare[1]) : null;
 }
 
+// Spoken tickers get spelled out, and speech-to-text renders "E T H" as
+// anything from "eth" to "e t h" to "an e t". Glue single-letter runs back
+// together before matching so the pad hears a ticker as a ticker.
+const glue = (s) => s.replace(/\b(?:[a-z][\s.]+)+[a-z]\b/g, (m) => m.replace(/[\s.]/g, ""));
+
+const ALIASES = {
+  ETH:   /\b(eth|ether|ethereum|eeth|aeth)\b/,
+  USDC:  /\b(usdc|usd\s?c|you\s?s\s?d\s?c)\b/,
+  cbBTC: /\b(cbbtc|bitcoin|btc|cb\s?btc)\b/,
+  DEGEN: /\b(degen|deagan|degan)\b/,
+};
+
 /** Does this sound like an order? Returns a signal, or null for chit-chat. */
-export function parseIntent(text, fallbackAgent = "momentum") {
-  const t = (text || "").toLowerCase();
+export function parseIntent(text, fallbackAgent = "momentum", market = "ETH") {
+  const raw = (text || "").toLowerCase();
+  const t = glue(raw);
   const side = /\b(buy|long|add|accumulate)\b/.test(t) ? "BUY"
              : /\b(sell|short|dump|exit|close)\b/.test(t) ? "SELL" : null;
   if (!side) return null;
-  const sym = ["ETH", "USDC", "CBBTC", "DEGEN"].find((s) =>
-    new RegExp(`\\b${s === "CBBTC" ? "(cbbtc|bitcoin|btc)" : s.toLowerCase()}\\b`).test(t));
   const usd = parseAmount(t);
-  if (!sym || usd == null) return null;
-  return { agent: fallbackAgent, side, symbol: sym === "CBBTC" ? "cbBTC" : sym,
-           sizeUsd: usd, reason: `spoken: "${text}"`, confidence: 1 };
+  if (usd == null) return null;
+  // A clear "buy forty dollars" with a garbled ticker is still an order: the
+  // pad always has an active market, so use it rather than dropping the trade
+  // into chit-chat. The verdict still has to be shown and confirmed.
+  const sym = Object.keys(ALIASES).find((s) => ALIASES[s].test(t)) || market;
+  return { agent: fallbackAgent, side, symbol: sym,
+           sizeUsd: usd, reason: `spoken: "${text}"`, confidence: 1,
+           assumedMarket: Object.keys(ALIASES).some((s) => ALIASES[s].test(t)) ? undefined : market };
 }

@@ -75,7 +75,7 @@ export function createServer(mem) {
         // An order goes through the same decide() gate as an automated signal;
         // anything else is just answered out loud.
         let reply, verdict = null;
-        const sig = parseIntent(transcript, state.agent);
+        const sig = parseIntent(transcript, state.agent, state.market);
         if (sig) {
           verdict = decide(sig, brief);
           state.pending = { sig, verdict, market };
@@ -121,29 +121,52 @@ export function createServer(mem) {
       if (url.pathname === "/memory" && req.method === "GET")
         return send(200, await mem.recallBrief());
 
+      // The deck's own history. Without this the UI could only ever show what
+      // was clicked in that one tab — every physical pad press and every
+      // automated tick would be invisible, and a refresh would erase it all.
+      if (url.pathname === "/log" && req.method === "GET")
+        return send(200, { log: state.log });
+
       if (url.pathname === "/memory/wipe" && req.method === "POST") {
         const out = await mem.wipe();
-        note("MEMORY WIPED — the agent has forgotten its limits, positions and rules");
-        return send(200, out);
+        // Any outstanding ✓ was reasoned from limits, positions and rules that
+        // no longer exist. Honouring it would execute against forgotten facts,
+        // so the wipe invalidates it and the operator has to decide again.
+        const dropped = !!state.pending;
+        state.pending = null;
+        note("MEMORY WIPED — the agent has forgotten its limits, positions and rules"
+             + (dropped ? "; the pending decision was voided with it" : ""));
+        return send(200, { ...out, pendingVoided: dropped });
       }
 
       if (url.pathname === "/reflect" && req.method === "GET")
         return send(200, await reflect(mem));
 
       if (url.pathname === "/reflect/accept" && req.method === "POST") {
+        if (!body.proposal?.id) return send(400, { error: "body must be {proposal:{id,…}}" });
         const r = await acceptRule(mem, body.proposal);
         note(`learned a rule: ${r.text}`);
         return send(200, r);
       }
-      if (url.pathname === "/reflect/reject" && req.method === "POST")
+      if (url.pathname === "/reflect/reject" && req.method === "POST") {
+        if (!body.proposal?.id) return send(400, { error: "body must be {proposal:{id,…}}" });
         return send(200, await rejectRule(mem, body.proposal));
+      }
+
+      // Disarming is one-way from the red key and from /panic. Re-arming is
+      // its own deliberate act, so nobody re-arms by mashing KILL twice.
+      if (url.pathname === "/arm" && req.method === "POST") {
+        state.armed = true;
+        note("ARMED — trading re-enabled");
+        return send(200, { armed: true });
+      }
 
       if (url.pathname === "/portfolio")
         return send(200, await snapshot(mem));
 
       if (url.pathname === "/tick" && req.method === "POST") {
         const r = await runOnce(mem, { execute: state.armed && IS_FORK });
-        if (r.fill) { state.lastFill = r.fill; note(`FILL ${r.fill.hash.slice(0, 12)}… ${r.fill.received} ${r.fill.receivedSymbol}`); }
+        if (r.fill) { state.lastFill = r.fill; note(`FILL ${r.fill.hash.slice(0, 12)}… ${Number(r.fill.received).toFixed(6)} ${r.fill.receivedSymbol}`); }
         return send(200, r);
       }
 
@@ -191,6 +214,12 @@ async function onKey(mem, id) {
   if (id === "yes" || id === "no") {
     const p = state.pending;
     if (!p) return { ok: false, error: "nothing pending" };
+    // The kill switch has to stop the HUMAN path too, not just the automated
+    // one. Pending is deliberately left intact: re-arm and the same ✓ stands.
+    if (id === "yes" && !state.armed) {
+      note("YES refused — the pad is disarmed");
+      return { ok: false, error: "disarmed — re-arm before trading", armed: false };
+    }
     state.pending = null;
     // The answer is the training signal reflection later learns from.
     await mem.journal({
@@ -215,7 +244,7 @@ async function onKey(mem, id) {
                         acted: { action: "FILL", usd: p.verdict.sizeUsd, executed: true, hash: fill.hash },
                         forward: { received: fill.received } });
     state.lastFill = fill;
-    note(`FILL ${fill.hash.slice(0, 12)}… ${fill.received} ${fill.receivedSymbol}`);
+    note(`FILL ${fill.hash.slice(0, 12)}… ${Number(fill.received).toFixed(6)} ${fill.receivedSymbol}`);
     return { ok: true, fill };
   }
 

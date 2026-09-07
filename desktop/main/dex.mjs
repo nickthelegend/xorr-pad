@@ -83,7 +83,13 @@ export async function spendable(sell) {
   if (t.native) {
     const wei = await pub.getBalance({ address: account.address });
     const gasBuffer = parseUnits("0.01", 18);          // leave room for gas
-    return Number(formatUnits(wei > gasBuffer ? wei - gasBuffer : 0n, 18));
+    // A buy of ETH settles in WETH, so that is where a position actually
+    // lives. Count it: selling has to see the ETH it just bought, not only
+    // the native balance we keep for gas.
+    const weth = await pub.readContract({ address: TOKENS.WETH.address, abi: erc20Abi,
+      functionName: "balanceOf", args: [account.address] });
+    const native = wei > gasBuffer ? wei - gasBuffer : 0n;
+    return Number(formatUnits(native + weth, 18));
   }
   const raw = await pub.readContract({ address: t.address, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });

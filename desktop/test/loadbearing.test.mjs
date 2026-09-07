@@ -10,17 +10,20 @@
  * measuring memory and not noise.
  */
 import assert from "node:assert/strict";
-import { Memory } from "../main/memory.mjs";
+import { Memory, NO_MEMORY_LIMITS } from "../main/memory.mjs";
 import { decide } from "../main/decide.mjs";
 
 const DB = "/tmp/xorrpad-loadbearing.db";
 const m = new Memory({ db: DB });
 
+// Every signal is ETH, which is allowed BOTH with memory and without it. That
+// isolates the thing under test: any change in verdict is memory, not a token
+// that happened to drop off the allowlist.
 const SIGNALS = [
-  { name: "A  DEGEN buy $80",  sig: { agent: "momentum", side: "BUY",  symbol: "DEGEN", sizeUsd: 80,  reason: "+6% 24h", confidence: .8 } },
-  { name: "B  ETH buy $250",   sig: { agent: "dca",      side: "BUY",  symbol: "ETH",   sizeUsd: 250, reason: "recurring", confidence: .6 } },
-  { name: "C  ETH sell $30",   sig: { agent: "risk",     side: "SELL", symbol: "ETH",   sizeUsd: 30,  reason: "stop hit",  confidence: .9 } },
-  { name: "D  cbBTC buy $20",  sig: { agent: "dca",      side: "BUY",  symbol: "cbBTC", sizeUsd: 20,  reason: "recurring", confidence: .6 } },
+  { name: "A  ETH buy $80",  sig: { agent: "momentum", side: "BUY",  symbol: "ETH", sizeUsd: 80, reason: "+6% 24h",  confidence: .8 } },
+  { name: "B  ETH buy $30",  sig: { agent: "dca",      side: "BUY",  symbol: "ETH", sizeUsd: 30, reason: "recurring", confidence: .6 } },
+  { name: "C  ETH sell $30", sig: { agent: "risk",     side: "SELL", symbol: "ETH", sizeUsd: 30, reason: "stop hit",  confidence: .9 } },
+  { name: "D  ETH buy $8",   sig: { agent: "dca",      side: "BUY",  symbol: "ETH", sizeUsd: 8,  reason: "recurring", confidence: .6 } },
 ];
 
 const fmt = (v) => `${v.action.padEnd(7)} $${String(v.sizeUsd).padEnd(4)} ${v.why[v.why.length - 1] || ""}`;
@@ -31,9 +34,9 @@ await m.setReference("risk/limits", {
   max_trade_usd: 40, max_day_usd: 300, allow: ["ETH", "USDC", "cbBTC", "DEGEN"],
 });
 await m.setEntity("position", "ETH", { qty: 0.012, avg_entry_usd: 3100 });
-await m.setEntity("rule", "no-degen-over-50", {
-  accepted: true, symbol: "DEGEN", side: "BUY", above_usd: 50,
-  text: "you rejected every DEGEN buy over $50",
+await m.setEntity("rule", "no-eth-buy-over-50", {
+  accepted: true, symbol: "ETH", side: "BUY", above_usd: 50,
+  text: "you rejected every ETH buy over $50",
 });
 
 const withMem = await m.recallBrief();
@@ -56,13 +59,20 @@ SIGNALS.forEach((s, i) => {
 });
 
 // ---- 4. assertions: memory must change the outcome -----------------------
-// A: a rule you taught it vetoes the trade. Forgotten -> it trades.
-assert.equal(before[0].action, "REJECT", "A: remembered rule must veto the DEGEN buy");
-assert.equal(after[0].action, "EXECUTE", "A: with memory gone the veto is forgotten");
+// A: a rule you taught it vetoes the trade. Forgotten -> it trades again.
+assert.equal(before[0].action, "REJECT",  "A: remembered rule must veto the $80 ETH buy");
+assert.equal(after[0].action,  "EXECUTE", "A: with memory gone the veto is forgotten");
 
-// B: your remembered per-trade cap is tighter than the built-in default.
-assert.equal(before[1].sizeUsd, 40,  "B: must clamp to the remembered $40 cap");
-assert.equal(after[1].sizeUsd, 100, "B: without memory it falls back to the $100 default");
+// B: your remembered cap ($40) is what sizes the trade; without memory it
+// collapses to the timid fallback instead.
+assert.equal(before[1].sizeUsd, 30, "B: within the remembered $40 cap, so untouched");
+assert.equal(after[1].sizeUsd, NO_MEMORY_LIMITS.max_trade_usd,
+             `B: without memory it shrinks to $${NO_MEMORY_LIMITS.max_trade_usd}`);
+
+// A memoryless agent must be MORE cautious, never equally bold. This is the
+// honest answer to "what breaks when memory is deleted?"
+assert.ok(NO_MEMORY_LIMITS.max_trade_usd < 40 && NO_MEMORY_LIMITS.max_day_usd < 300,
+          "the no-memory fallback must be stricter than the remembered limits");
 
 // C: selling requires knowing you hold the bag.
 assert.equal(before[2].action, "EXECUTE", "C: sell allowed — position is remembered");
