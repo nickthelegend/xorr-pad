@@ -21,6 +21,7 @@ import { evaluate } from "./agents.mjs";
 import { swap } from "./dex.mjs";
 import { IS_FORK } from "./chain.mjs";
 import { readFile } from "node:fs/promises";
+import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -59,6 +60,45 @@ export function createServer(mem) {
       const auth = req.headers.authorization || "";
       const given = auth.startsWith("Bearer ") ? auth.slice(7) : req.headers["x-pad-token"];
       if (given !== TOKEN) return send(401, { error: "bad pad token" });
+    }
+
+    if (url.pathname === "/voice" && req.method === "POST") {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const pcm = Buffer.concat(chunks);
+      try {
+        const transcript = await stt(pcmToWav(pcm));
+        const brief = await mem.recallBrief();
+        const market = await getMarket([state.market]).catch(() => ({ prices: {} }));
+
+        // An order goes through the same decide() gate as an automated signal;
+        // anything else is just answered out loud.
+        let reply, verdict = null;
+        const sig = parseIntent(transcript, state.agent);
+        if (sig) {
+          verdict = decide(sig, brief);
+          state.pending = { sig, verdict, market };
+          reply = verdict.action === "EXECUTE"
+            ? `${sig.side} ${sig.sizeUsd} dollars of ${sig.symbol}. ${verdict.why.slice(-1)[0]}. Press yes to confirm.`
+            : `I can't. ${verdict.why.slice(-1)[0]}.`;
+        } else {
+          reply = await think(transcript, brief, market);
+        }
+        await mem.journal({ evaluated: { heard: transcript },
+                            acted: { action: sig ? "PROPOSED" : "ANSWERED", executed: false },
+                            forward: { reply } });
+        note(`heard "${transcript}" -> ${reply.slice(0, 60)}`);
+        const out = await tts(reply);
+        res.writeHead(200, { "content-type": "application/octet-stream",
+          "x-transcript": encodeURIComponent(transcript), "x-reply": encodeURIComponent(reply),
+          "x-action": verdict ? verdict.action : "ANSWER" });
+        return res.end(out);
+      } catch (e) {
+        console.error("[voice]", e.message);
+        if (!res.headersSent) { res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: String(e.message) })); }
+        return;
+      }
     }
 
     const body = await new Promise((r) => {
