@@ -4,11 +4,16 @@
   "private": true,
   "type": "module",
   "description": "The xorr-pad desk app: hosts the trading backend the pad talks to, and shows what the agent remembers.",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test:memory": "node test/memory.test.mjs",
     "test:loadbearing": "node test/loadbearing.test.mjs",
     "test": "node --test test/"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.56.3"
+  }
 }
