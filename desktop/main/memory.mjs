@@ -92,11 +92,16 @@ export class Memory {
   }
 }
 
-/** What a fresh pad is seeded with — its normal operating envelope. */
+/** What a fresh pad is seeded with — its normal operating envelope.
+ *
+ *  The allowlist is exactly the set in markets.mjs that passed a real depth
+ *  check on Base, plus the quote asset. DEGEN used to be here; a $500 order
+ *  moves its pool 240%, so it was delisted rather than traded through.
+ */
 export const DEFAULT_LIMITS = {
   max_trade_usd: 100,
   max_day_usd: 300,
-  allow: ["ETH", "WETH", "USDC", "cbBTC", "DEGEN"],
+  allow: ["ETH", "WETH", "USDC", "cbBTC", "EURC", "AERO", "MORPHO", "VIRTUAL"],
 };
 
 /**

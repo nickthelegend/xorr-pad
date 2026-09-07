@@ -13,19 +13,34 @@ import { decide } from "./decide.mjs";
 import { quote, swap, ROUTE } from "./dex.mjs";
 import { balances, chainInfo, IS_FORK } from "./chain.mjs";
 import { TOKENS } from "./tokens.mjs";
+import { SYMBOLS } from "./markets.mjs";
+import { prices as feedPrices } from "./scan.mjs";
 
-/** Real prices, straight off the pools we would trade against. */
-export async function getMarket(symbols = ["ETH", "cbBTC", "DEGEN"]) {
-  const prices = {}, failed = {};
+/**
+ * Real prices for every tradeable market.
+ *
+ * Quoting the pool we would trade against is the truest price, so that is the
+ * primary source. The reference feed is the fallback for a market whose pool
+ * momentarily will not quote — never an invented number, and the response says
+ * which source each price came from.
+ */
+export async function getMarket(symbols = SYMBOLS) {
+  const prices = {}, failed = {}, source = {};
   for (const s of symbols) {
     try {
-      const probe = s === "DEGEN" ? 100 : s === "cbBTC" ? 0.01 : 0.1;
+      const probe = s === "cbBTC" ? 0.005 : s === "ETH" ? 0.1 : 10;
       const q = await quote(s, "USDC", probe);
       prices[s] = q.amountOut / probe;
+      source[s] = "pool";
     } catch (e) { failed[s] = String(e.message || e).slice(0, 80); }
   }
-  prices.USDC = 1;
-  return { prices, failed, at: new Date().toISOString() };
+  const missing = symbols.filter((s) => prices[s] == null);
+  if (missing.length) {
+    const feed = await feedPrices(missing).catch(() => ({}));
+    for (const s of missing) if (feed[s] != null) { prices[s] = feed[s]; source[s] = "feed"; }
+  }
+  prices.USDC = 1; source.USDC = "peg";
+  return { prices, failed, source, at: new Date().toISOString() };
 }
 
 /** Fold a fill back into the remembered position (average up/down honestly). */
@@ -94,6 +109,11 @@ export async function runOnce(mem, { execute = IS_FORK, cfgs = {}, market } = {}
 }
 
 export async function snapshot(mem) {
-  const [info, bal, brief] = await Promise.all([chainInfo(), balances(), mem.recallBrief()]);
-  return { chain: info, route: ROUTE, balances: bal, memory: brief, agents: AGENT_KINDS };
+  const [info, bal, brief, px] = await Promise.all([
+    chainInfo(), balances(), mem.recallBrief(),
+    // Cached candle closes — cheap, and it means the market strip has prices
+    // on first paint instead of waiting for someone to press SCAN.
+    feedPrices().catch(() => ({})),
+  ]);
+  return { chain: info, route: ROUTE, balances: bal, memory: brief, agents: AGENT_KINDS, prices: px };
 }

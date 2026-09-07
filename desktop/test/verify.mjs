@@ -13,9 +13,13 @@
  */
 import { chainInfo, balances, pub, erc20Abi } from "../main/chain.mjs";
 import { quote, swap, spendable } from "../main/dex.mjs";
-import { TOKENS } from "../main/tokens.mjs";
+import { TOKENS, UNISWAP_V3 } from "../main/tokens.mjs";
 import { Memory, DEFAULT_LIMITS, NO_MEMORY_LIMITS } from "../main/memory.mjs";
 import { tts, stt, pcmToWav, think, parseIntent, parseAmount } from "../main/voice.mjs";
+import { MARKETS, DELISTED, SYMBOLS } from "../main/markets.mjs";
+import { klines, marketUptrend, regimeOf } from "../main/candles.mjs";
+import { BOOK, runBook, ema, rsi } from "../main/strategies.mjs";
+import { priceImpact, MAX_IMPACT } from "../main/dex.mjs";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -170,8 +174,8 @@ section("C. Base fork — real contracts, real fills");
       `chain 8453 @ block ${info.block}, USDC supply $${(Number(supply) / 1e6).toFixed(0)}`);
 
   const q = await quote("ETH", "USDC", 0.05);
-  chk("C2 live Uniswap V3 quote", [500, 3000, 10000].includes(q.fee) && q.price > 500 && q.price < 20000,
-      `fee tier ${q.fee} → $${q.price.toFixed(2)}/ETH`);
+  chk("C2 live Uniswap V3 quote", UNISWAP_V3.fees.includes(q.fee) && q.price > 500 && q.price < 20000,
+      `fee tier ${q.fee / 10000}% → $${q.price.toFixed(2)}/ETH`);
 
   const b0 = await balances(); const f = await swap("USDC", "ETH", 5); const b1 = await balances();
   chk("C3 a swap actually moves tokens", f.status === "success" && amt(b1, "WETH") > amt(b0, "WETH") &&
@@ -275,6 +279,82 @@ section("G3. wiping memory mid-flow");
       post.b.verdict.why.some((w) => /NO remembered limits/.test(w)),
       `$${buy.b.verdict.sizeUsd} with memory → $${post.b.verdict.sizeUsd} without it`);
   await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
+}
+
+// ── M. markets, strategies, liquidity ───────────────────────────────────────
+section("M. markets — every asset class, on Base");
+{
+  const classes = new Set(Object.values(MARKETS).map((m) => m.class));
+  chk("M1 four asset classes are live", classes.size >= 4,
+      [...classes].join(", ") + ` across ${SYMBOLS.length} markets`);
+
+  const mk = await j("/markets");
+  chk("M2 GET /markets", mk.s === 200 && Object.keys(mk.b.markets).length === SYMBOLS.length,
+      `${Object.keys(mk.b.markets).length} listed, ${Object.keys(mk.b.delisted).length} delisted with reasons`);
+
+  // Every listed market must actually price within the impact limit.
+  let worst = { sym: null, impact: -1 };
+  for (const sym of SYMBOLS) {
+    const i = await priceImpact("USDC", sym, 200);
+    if (i.impact > worst.impact) worst = { sym, impact: i.impact };
+  }
+  chk("M3 every listed market is deep enough", worst.impact <= MAX_IMPACT,
+      `worst is ${worst.sym} at ${(worst.impact * 100).toFixed(2)}% (limit ${(MAX_IMPACT * 100).toFixed(0)}%)`);
+
+  const deg = await j("/key", { method: "POST", body: JSON.stringify({ id: "DEGEN" }) });
+  chk("M4 a delisted market is refused with its reason",
+      deg.b?.ok === false && /delisted/.test(deg.b.error), `"${deg.b?.error}"`);
+
+  // The wipe in the previous section left the pad on its timid fallback, which
+  // allows only ETH and USDC — that is correct, so re-teach before trading a
+  // non-crypto market, and prove the refusal first.
+  const beforeTeach = await j("/key", { method: "POST", body: JSON.stringify({ id: "EURC" }) });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  const refused = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  chk("M4b a memoryless pad refuses an unremembered market",
+      refused.b?.verdict?.action === "REJECT" && refused.b.verdict.why.some((w) => /allowlist/.test(w)),
+      `"${refused.b?.verdict?.why?.slice(-1)[0]}"`);
+  await j("/memory/seed", { method: "POST", body: "{}" });
+
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "EURC" }) });
+  const h = await j("/health", { noauth: true });
+  const buy = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  const yes = await j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) });
+  chk("M5 a non-crypto market fills for real", /^0x[0-9a-f]{64}$/.test(yes.b?.fill?.hash || "") &&
+      yes.b.fill.receivedSymbol === "EURC",
+      `forex: ${(+yes.b?.fill?.received || 0).toFixed(2)} EURC at fee tier ${yes.b?.fill?.fee}`);
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+}
+
+section("S. the strategy book");
+{
+  const gate = await marketUptrend();
+  chk("S1 the market trend gate reads real BTC history", typeof gate.uptrend === "boolean" && gate.sma200 > 0,
+      gate.reason);
+
+  const c = await klines("ETHUSDT", { limit: 300 });
+  chk("S2 real hourly candles with volume", c.length >= 200 && c.every((k) => k.volume > 0 && k.high >= k.low),
+      `${c.length} bars, OHLCV complete`);
+
+  // Each strategy must FIRE on a construction that meets it and stay silent
+  // one step below — a book that cannot fire is not a book.
+  const flat = (n, px) => Array.from({ length: n }, () => ({ t: 0, open: px, high: px * 1.001, low: px * 0.999, close: px, volume: 1000 }));
+  const deep = flat(120, 100); deep[119] = { t: 0, open: 92.8, high: 93.2, low: 92.9, close: 93, volume: 1000 };
+  chk("S3 deep_stretch_reversion fires at -7%", !!BOOK.deep_stretch_reversion(deep, { uptrend: true, regime: "CHOP", symbol: "ETH" }),
+      "the strongest measured condition");
+  const shallow = flat(120, 100); shallow[119] = { t: 0, open: 95.8, high: 96.2, low: 95.9, close: 96, volume: 1000 };
+  chk("S4 …and stays silent at -4%", !BOOK.deep_stretch_reversion(shallow, { uptrend: true, regime: "CHOP", symbol: "ETH" }),
+      "threshold respected");
+  chk("S5 …and the market gate switches it off", !BOOK.deep_stretch_reversion(deep, { uptrend: false, regime: "CHOP", symbol: "ETH" }),
+      "no dip buying while BTC is below its 200-day mean");
+
+  const sc = await j("/scan");
+  chk("S6 GET /scan runs the book on every market",
+      sc.s === 200 && sc.b.markets.length === SYMBOLS.length && Array.isArray(sc.b.signals) && !!sc.b.summary,
+      `${sc.b.summary}`);
+  chk("S7 the scan explains every market it looked at",
+      sc.b.markets.every((m) => m.error || (typeof m.rsi === "number" && typeof m.regime === "string")),
+      sc.b.markets.map((m) => `${m.symbol} RSI ${m.rsi}`).join(", "));
 }
 
 // ── E. voice + brain ────────────────────────────────────────────────────────

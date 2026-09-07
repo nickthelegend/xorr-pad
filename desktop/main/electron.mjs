@@ -11,7 +11,7 @@ import { networkInterfaces } from "node:os";
 import { start } from "./server.mjs";
 
 const PORT = Number(process.env.PORT || 8080);
-const TOKEN = process.env.PAD_TOKEN || "xorrpad-dev";
+const TOKEN = process.env.PAD_TOKEN || "";
 process.env.PAD_TOKEN = TOKEN;
 
 function lanAddress() {

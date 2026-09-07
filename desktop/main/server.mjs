@@ -12,6 +12,7 @@
  * Bearer PAD_TOKEN on everything except /health.
  */
 import http from "node:http";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Memory, DEFAULT_LIMITS } from "./memory.mjs";
@@ -23,10 +24,19 @@ import { IS_FORK } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule } from "./reflect.mjs";
 import { readFile } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
+import { scan } from "./scan.mjs";
+import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";
-const TOKEN = process.env.PAD_TOKEN || "";
+/**
+ * The pad listens on 0.0.0.0 so the hardware can reach it over Wi-Fi, which
+ * means an unset token would leave a trading API open to the whole network.
+ * Generate one instead of running without auth, and print it once so the pad
+ * and the browser can be pointed at it.
+ */
+const GENERATED = !process.env.PAD_TOKEN;
+const TOKEN = process.env.PAD_TOKEN || randomBytes(16).toString("hex");
 
 export const state = {
   agent: "momentum",        // the baton: which agent the keys act through
@@ -35,6 +45,7 @@ export const state = {
   armed: true,
   pending: null,            // a signal waiting on YES/NO
   lastFill: null,
+  lastScan: null,
   log: [],
 };
 
@@ -148,6 +159,18 @@ export function createServer(mem) {
         return send(200, { limits });
       }
 
+      // Run the measured-edge book across every market. This is the pad's
+      // actual trading brain, and it is honest about finding nothing.
+      if (url.pathname === "/scan") {
+        const r = await scan();
+        state.lastScan = r;
+        note(`SCAN — ${r.summary}`);
+        return send(200, r);
+      }
+
+      if (url.pathname === "/markets")
+        return send(200, { markets: MARKETS, delisted: DELISTED, active: state.market });
+
       if (url.pathname === "/reflect" && req.method === "GET")
         return send(200, await reflect(mem));
 
@@ -185,8 +208,14 @@ export function createServer(mem) {
         return send(200, { armed: false });
       }
 
-      if (url.pathname === "/key" && req.method === "POST")
-        return send(200, await onKey(mem, String(body.id || "").toLowerCase()));
+      if (url.pathname === "/key" && req.method === "POST") {
+        // Key ids are lowercase, but market symbols are not (cbBTC, EURC).
+        // Resolve a symbol case-insensitively before flattening the rest.
+        const raw = String(body.id || "");
+        const asSymbol = SYMBOLS.find((k) => k.toLowerCase() === raw.toLowerCase())
+          || Object.keys(DELISTED).find((k) => k.toLowerCase() === raw.toLowerCase());
+        return send(200, await onKey(mem, asSymbol || raw.toLowerCase()));
+      }
 
       return send(404, { error: "no such route" });
     } catch (e) {
@@ -207,6 +236,40 @@ async function onKey(mem, id) {
                                   at: new Date().toISOString() });
     note(`baton -> ${id}`);
     return { ok: true, agent: id };
+  }
+
+  // Pick which market the buy/sell keys act on. The pad has one knob and a
+  // fixed deck, so the market cycles rather than needing a key each.
+  if (id === "market" || SYMBOLS.includes(id) || DELISTED[id]) {
+    const next = id === "market"
+      ? SYMBOLS[(SYMBOLS.indexOf(state.market) + 1) % SYMBOLS.length]
+      : id;
+    if (!MARKETS[next]) {
+      const why = delistReason(next);
+      return { ok: false, error: why ? `${next} is delisted — ${why}` : `unknown market '${next}'` };
+    }
+    state.market = next;
+    await mem.setState("baton", { agent: state.agent, market: next, sizeUsd: state.sizeUsd,
+                                  at: new Date().toISOString() });
+    note(`market -> ${next} (${MARKETS[next].class})`);
+    return { ok: true, market: next, class: MARKETS[next].class };
+  }
+
+  if (id === "scan") {
+    const r = await scan();
+    state.lastScan = r;
+    note(`SCAN — ${r.summary}`);
+    if (r.signals.length) {
+      const top = r.signals[0];
+      const brief = await mem.recallBrief();
+      const sig = { agent: top.strategy, side: top.side, symbol: top.symbol,
+                    sizeUsd: state.sizeUsd, reason: top.rationale, confidence: top.confidence };
+      const verdict = decide(sig, brief);
+      state.pending = { sig, verdict, market: { prices: Object.fromEntries(r.markets.filter(m=>m.price).map(m=>[m.symbol,m.price])) } };
+      note(`${sig.side} ${sig.symbol} $${sig.sizeUsd} -> ${verdict.action} $${verdict.sizeUsd}`);
+      return { ok: true, scan: r, signal: sig, verdict, awaiting: verdict.action === "EXECUTE" ? "yes/no" : null };
+    }
+    return { ok: true, scan: r, signal: null, verdict: null };
   }
 
   if (id === "buy" || id === "sell") {
@@ -257,12 +320,7 @@ async function onKey(mem, id) {
     return { ok: true, fill };
   }
 
-  if (id === "base") {                       // the white key: run a pass now
-    const r = await runOnce(mem, { execute: state.armed && IS_FORK });
-    if (r.fill) state.lastFill = r.fill;
-    note(`BASE -> ${r.verdict ? r.verdict.action : "no signal"}`);
-    return { ok: true, ...r };
-  }
+  if (id === "base") return onKey(mem, "scan");   // the white key runs the book
   if (id === "portfolio") return { ok: true, ...(await snapshot(mem)) };
   if (id === "kill")      { state.armed = false; state.pending = null; note("KILL"); return { ok: true, armed: false }; }
   if (id === "mic")       return { ok: true, note: "voice handled on /voice" };
@@ -280,7 +338,13 @@ export async function start() {
   }
   const srv = createServer(mem);
   srv.listen(PORT, HOST, () => {
-    console.log(`xorr-pad backend on http://${HOST}:${PORT}  (${IS_FORK ? "Base fork" : "Base MAINNET"}, auth ${TOKEN ? "on" : "OFF"})`);
+    console.log(`xorr-pad backend on http://${HOST}:${PORT}  (${IS_FORK ? "Base fork" : "Base MAINNET"}, auth on)`);
+    if (GENERATED) {
+      console.log(`  no PAD_TOKEN was set, so one was generated for this run:`);
+      console.log(`  ${TOKEN}`);
+      console.log(`  open  http://localhost:${PORT}/?token=${TOKEN}`);
+      console.log(`  set PAD_TOKEN in the environment to keep it stable across restarts.`);
+    }
   });
   return { srv, mem };
 }
