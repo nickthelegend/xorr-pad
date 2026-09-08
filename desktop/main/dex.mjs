@@ -14,7 +14,8 @@
  */
 import { parseAbi, formatUnits, parseUnits, erc20Abi, maxUint256 } from "viem";
 import { pub, wallet, account, IS_FORK } from "./chain.mjs";
-import { TOKENS, UNISWAP_V3 } from "./tokens.mjs";
+import { TOKENS } from "./tokens.mjs";
+import { pick, bySpender } from "./routers/index.mjs";
 
 /**
  * The route a fill reports is derived from the router the transaction actually
@@ -25,24 +26,16 @@ import { TOKENS, UNISWAP_V3 } from "./tokens.mjs";
  * route it had not taken. There is no 1inch call in this codebase yet. A label
  * that can disagree with the receipt is worse than no label.
  */
-const ROUTERS = new Map([
-  [UNISWAP_V3.router.toLowerCase(), "uniswap"],
-]);
+const ROUTERS = bySpender();
 
 /** What the chain says executed this. `to` comes off the mined receipt. */
 export function routeOf(to) {
   return ROUTERS.get(String(to || "").toLowerCase()) || `unknown router ${to}`;
 }
 
-/** The router this build will use. One, until Phase 2 adds an aggregator. */
-export const ROUTE = "uniswap";
+/** The router this build will actually trade through. */
+export const ROUTE = pick().name;
 
-const routerAbi = parseAbi([
-  "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)",
-]);
-const quoterAbi = parseAbi([
-  "function quoteExactInputSingle((address tokenIn,address tokenOut,uint256 amountIn,uint24 fee,uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut,uint160 sqrtPriceX96After,uint32 ticksCrossed,uint256 gasEstimate)",
-]);
 const wethAbi = parseAbi([
   "function deposit() external payable",
   "function withdraw(uint256) external",
@@ -77,40 +70,7 @@ async function mined(hash, step) {
  * full scan stays as the fallback for a pair with no recorded tier.
  */
 export async function quote(sell, buy, amountIn) {
-  const tIn = TOKENS[sell], tOut = TOKENS[buy];
-  const amt = parseUnits(String(amountIn), tIn.decimals);
-  const known = tIn.fee ?? tOut.fee;
-  const tiers = known ? [known, ...UNISWAP_V3.fees.filter((f) => f !== known)] : UNISWAP_V3.fees;
-  let best = null, stalled = false;
-  for (const fee of tiers) {
-    try {
-      const { result } = await pub.simulateContract({
-        address: UNISWAP_V3.quoter, abi: quoterAbi, functionName: "quoteExactInputSingle",
-        args: [{ tokenIn: addr(sell), tokenOut: addr(buy), amountIn: amt, fee,
-                 sqrtPriceLimitX96: 0n }],
-        account: account.address,
-      });
-      const out = result[0];
-      if (!best || out > best.amountOutRaw) best = { fee, amountOutRaw: out };
-      if (fee === known) break;              // the measured-deepest tier answered
-    } catch (e) {
-      // A tier with no pool and a node that did not answer look identical here,
-      // and calling a timeout "no pool" sends you hunting for a liquidity
-      // problem that does not exist. Keep them apart.
-      const m = String(e?.message || e);
-      if (/timed out|took too long|fetch failed|ECONNREFUSED/i.test(m)) stalled = true;
-    }
-  }
-  if (!best && stalled)
-    throw new Error(`could not quote ${sell}->${buy}: the Base node did not answer. This is not a liquidity problem.`);
-  if (!best) throw new Error(`no Uniswap V3 pool for ${sell}->${buy}`);
-  return {
-    route: "uniswap", fee: best.fee,
-    amountIn, amountInRaw: amt,
-    amountOut: Number(formatUnits(best.amountOutRaw, tOut.decimals)),
-    amountOutRaw: best.amountOutRaw,
-    price: Number(formatUnits(best.amountOutRaw, tOut.decimals)) / Number(amountIn),
-  };
+  return pick().quote(sell, buy, amountIn);
 }
 
 /**
@@ -218,6 +178,7 @@ export async function spendable(sell) {
  * landed.
  */
 export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
+  const router = pick();
   // Memory says what you are ALLOWED to trade; the chain says what you can
   // actually afford. Check both, or the router reverts with STF.
   const have = await spendable(sell);
@@ -252,18 +213,13 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
     functionName: "balanceOf", args: [account.address] });
   const amountInRaw = q.amountInRaw > rawHeld ? rawHeld : q.amountInRaw;
 
-  steps.approve = await ensureAllowance(pull, UNISWAP_V3.router, amountInRaw);
+  steps.approve = await ensureAllowance(pull, router.spender, amountInRaw);
 
   const outAddr = TOKENS[buy].native ? TOKENS.WETH.address : tOut.address;
   const before = await pub.readContract({ address: outAddr, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });
 
-  const call = {
-    address: UNISWAP_V3.router, abi: routerAbi, functionName: "exactInputSingle",
-    args: [{ tokenIn: pull, tokenOut: addr(buy), fee: q.fee,
-             recipient: account.address, amountIn: amountInRaw,
-             amountOutMinimum: minOut, sqrtPriceLimitX96: 0n }],
-  };
+  const call = router.buildSwap({ sell, buy, amountInRaw, minOut, quote: q });
   let hash;
   try {
     hash = await wallet.writeContract({ ...call, gas: await gasFor(call) });

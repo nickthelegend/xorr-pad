@@ -186,14 +186,17 @@ export function createServer(mem) {
           return res.end(html);
         }
         if (req.method === "POST") {
-          const dir = process.env.XORR_USER_DATA;
-          if (!dir) return send(500, { error: "no config directory — the desk app supplies this" });
-
+          // What was sent is checked before where it would go: a submission that
+          // is empty is the caller's mistake either way, and answering 500 for
+          // it points the finger at the wrong side.
           const fields = { DEEPGRAM_API_KEY: body.deepgram, PAD_TOKEN: body.token, CHAIN_MODE: body.chainMode };
           const lines = Object.entries(fields)
             .filter(([, v]) => typeof v === "string" && v.trim())
             .map(([k, v]) => `${k}=${v.trim()}`);
           if (!lines.length) return send(400, { error: "nothing to save" });
+
+          const dir = process.env.XORR_USER_DATA;
+          if (!dir) return send(500, { error: "no config directory — the desk app supplies this" });
 
           await mkdir(dir, { recursive: true });
           const file = path.join(dir, ".env");

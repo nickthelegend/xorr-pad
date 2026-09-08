@@ -132,20 +132,40 @@ markets. **It does not work for equities** — see Phase 8.
 **Build 0x first** — lowest friction, proves the abstraction. 1inch slots into
 the same interface when the KYC'd key exists. Uniswap stays the no-key default.
 
-- **T2.1 — Router interface with more than one implementation.** *NOT STARTED*
+- **T2.1 — Router interface with more than one implementation.** *DONE — 2026-09-09*
   `desktop/main/routers/` with `uniswap.mjs` (existing code moved unchanged) and
   a shared shape: `quote(sell, buy, amountIn)` and
   `buildTx(sell, buy, amountIn, slippage) -> {to, data, value}`.
   **Done when:** `swap()` picks a router by name and the Uniswap path behaves
   exactly as today — suite still 103/103.
+  **Done — `main/routers/`.** A router owns the two things that differ between
+  venues, `quote()` and `buildSwap()`; everything around them stays in
+  `dex.mjs` — the balance clamp, the allowance, the gas margin, waiting for the
+  receipt, checking the balance actually moved — because that is where the
+  expensive bugs were and duplicating it per router would re-introduce them.
+  `pick()` refuses to silently fall back: naming a router that cannot run is an
+  error, since quietly routing elsewhere is how a fill claims a venue it never
+  touched. Suite **115/115** after the move.
 
-- **T2.2 — 0x router.** *BLOCKED — needs `ZEROX_API_KEY`*
+  The refactor broke one thing and the suite caught it: the extracted `addr()`
+  dropped the native-ETH-to-WETH mapping, so every quote went to the `0xEeee…`
+  sentinel and came back "no Uniswap V3 pool for ETH->USDC" — a liquidity
+  message for an address bug.
+
+- **T2.2 — 0x router.** *BLOCKED — no key exists, and one cannot be obtained here*
+  Verified 2026-09-09: `ZEROX_API_KEY` is unset, and 0x v2 answers an
+  unauthenticated quote with **401 `No API key found in request`**. Getting one
+  means creating an account, which is not something to do on the owner's behalf.
+
+  Deliberately **not** written blind. An unexercised integration described as
+  "implemented" is the same failure as the route label this run just removed —
+  the seam is in place, so a key is the only missing piece.
   `routers/zerox.mjs` → `https://api.0x.org/swap/allowance-holder/quote`,
   `chainId=8453`, headers `0x-api-key` and `0x-version: v2`.
   **Done when:** a 0x-built tx mines on the fork, moves the expected balance,
   and `fill.route === "0x"` matches the receipt's `to`.
 
-- **T2.3 — 1inch router.** *BLOCKED — needs `ONEINCH_API_KEY` (KYC/KYB)*
+- **T2.3 — 1inch router.** *BLOCKED — needs `ONEINCH_API_KEY`, which needs KYC/KYB*
   `routers/oneinch.mjs` → `/swap/v6.1/8453/swap` plus `/approve/transaction`.
   **Done when:** same bar as T2.2 with `fill.route === "1inch"`.
 
