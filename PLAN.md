@@ -251,21 +251,53 @@ There is no separate `xorr-desktop` project — the Electron app **is**
 `xorr-pad/desktop`. `package.json` has `"start": "electron ."`, two
 dependencies and **empty `devDependencies`**: no build tooling at all.
 
-- **T5.1 — One command starts everything.** *NOT STARTED*
+- **T5.1 — One command starts everything.** *DONE — 2026-09-09*
   Electron's `boot()` starts the backend in-process but **does not manage
   anvil** — the fork must be up first. Supervise `fork.sh` from
   `main/electron.mjs`, wait for the RPC, then bind.
   **Done when:** from nothing, `npm start` brings up fork, backend and window.
+  **Done — `main/fork.mjs`.** It reuses a fork that is already listening and
+  refuses to manage its lifetime (killing one the operator started by hand, with
+  their own pinned block and state cache, is not ours to do); otherwise it starts
+  one, owns it, and stops it on the way out. A missing Foundry is named with the
+  install line rather than surfacing as an opaque spawn error. Both branches
+  tested, including that `stop()` leaves a borrowed fork running.
 
-- **T5.2 — Package it.** *NOT STARTED*
+- **T5.2 — Package it.** *DONE — 2026-09-09*
   `electron-builder`, macOS arm64 target, an icon in the printed pad's blue, a
   `dist` script.
   **Done when:** `npm run dist` produces a `.app` that launches on a machine
   that has never run `npm install`.
+  **Done — a 365 MB arm64 `.app` that launches and serves.** The work was not
+  electron-builder, it was everything that cannot live inside `app.asar`: bash
+  cannot read `fork.sh` out of an archive and Python cannot read the memory
+  bridge out of one, so both ship as unpacked resources along with the `.venv`,
+  and path resolution now tries the packaged location before the source one.
+  `fork.sh` also had to stop writing its block pin and state cache beside
+  itself — an installed `.app` is not writable — so both are overridable and
+  point at `userData`.
 
-- **T5.3 — First-run setup.** *NOT STARTED*
+  Two bugs found by actually launching it rather than by building it: the fork
+  was spawned with a `cwd` *inside* `app.asar`, which is not a real directory,
+  and the failure surfaced only as a modal dialog; and `server.mjs` was imported
+  before `PAD_TOKEN` was set, so the backend minted a random token — the same
+  read-at-import-time mistake as the credentials, reintroduced by me in this
+  file. The icon is generated from the product's own tokens by
+  `build/make-icon.py`: the 4x4 deck on true black with the ✓ key lit.
+
+- **T5.3 — First-run setup.** *DONE — 2026-09-09*
   Packaged, there is no `.env`. Needs a first-run screen for the Deepgram key,
   chain mode and pad token, written to `app.getPath("userData")`.
+  **Done — `renderer/setup.html` + `GET|POST /setup`.** The window opens on it
+  when there is no key to speak with, rather than onto a desk whose mic fails
+  silently. `/setup` is deliberately reachable without the token — it is where
+  the token is set — and refuses any request that did not come from this
+  machine (403 from the LAN, verified). It writes `0600`, refuses an empty
+  submission, and the saved key is **live without a restart**, which only works
+  because credentials are now read at call time.
+
+  Proven on the packaged app, not the dev server: `/speak` answered **502**
+  before setup and **200** immediately after, with no restart in between.
 
 - **T5.4 — Hand the pad its token.** *NOT STARTED*
   Show the desk's LAN URL and token as a QR the pad's portal can consume,
@@ -472,7 +504,7 @@ Ordered by what it costs to leave. Every gap tied to the task it blocks.
 | ~~**3**~~ | **CLOSED 2026-09-09.** `ROUTE` branched on `ONEINCH_API_KEY` while only Uniswap was ever called. Route is now derived from the mined receipt; suite section Q asserts it, mutation-tested. | `dex.mjs`; verify.mjs section Q | ~~T1.1, T1.2~~ |
 | **4** | **No aggregator implemented**, so equities are listed but untradeable and there is no best-execution story. | one router in `main/` | Phase 2, T8.4 |
 | ~~**5**~~ | **CLOSED 2026-09-09.** `SUBMISSION.md` now covers the pad and the equities (97 → 158 lines) and admits the two real limits; `README.md` no longer denies that tokenized equities exist on Base. Two further false claims about 1inch removed from both. | word counts; live API probes | ~~T9.1, T9.2~~ |
-| **6** | **The Electron app is not packaged and does not manage anvil.** Empty `devDependencies`; `npm start` assumes a fork is already up. | `desktop/package.json` | T5.1, T5.2, G5 |
+| ~~**6**~~ | **CLOSED 2026-09-09.** `npm run dist` produces a launching arm64 `.app` that starts its own fork, seeds a warm fork cache so a fresh install is not cold against a rate-limited RPC, and collects its credentials on first run. | launched and verified | ~~T5.1, T5.2, T5.3~~ |
 | **7** | **The firmware has never run.** Compiles and its backend contract is covered, but provisioning, I2S, matrix and NVS are unverified. | no `/dev/cu.*` | Phase 6, G4 |
 | **8** | **No Groq model can be called.** Corrected: the key is **valid** (models list returns 200); every chat model returns `403 model_permission_blocked_project` / `…_org`. Needs the account owner to grant model access — not a code change, and a new key will not help. The app already names the cause and the console page to fix it. | live probe of 9 models | T4.2 |
 | **9** | **Equity prices show "—".** `feedPrices()` is Binance-backed; these are not Binance symbols. | `stocks.mjs` + the Markets screen | T8.5 |

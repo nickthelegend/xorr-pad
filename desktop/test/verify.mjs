@@ -898,6 +898,40 @@ try {
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
 
+// ── T. first run, with no credentials anywhere ──────────────────────────────
+section("T. the packaged app's first run");
+try {
+  // A packaged .app has no .env and no shell environment. Without a way to
+  // supply one, the window opens onto a desk whose mic fails silently.
+  const g = await fetch(B + "/setup");
+  chk("T1 /setup is reachable before any token exists",
+      g.status === 200 && /text\/html/.test(g.headers.get("content-type") || ""),
+      `${g.status} ${g.headers.get("content-type")}`);
+
+  const dir = "/tmp/xorr-setup-verify-" + Date.now();
+  const post = (b) => fetch(B + "/setup", { method: "POST",
+    headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+
+  // Writing needs a config directory, which only the desk app supplies.
+  const saved = await post({ token: "xorrpad-dev", chainMode: "fork" });
+  const sj = await saved.json().catch(() => ({}));
+  if (process.env.XORR_USER_DATA) {
+    chk("T2 it writes what it was given", saved.status === 200 && (sj.saved || []).includes("PAD_TOKEN"),
+        `${saved.status} saved=${JSON.stringify(sj.saved)}`);
+    const mode = fs.statSync(sj.file).mode & 0o777;
+    chk("T3 the file holding a key is not world-readable", mode === 0o600, `mode ${mode.toString(8)}`);
+  } else {
+    chk("T2 it refuses to write with nowhere to write", saved.status === 500,
+        `${saved.status} "${sj.error}"`);
+    chk("T3 …and says which side is missing", /config directory/.test(sj.error || ""), `"${sj.error}"`);
+  }
+
+  const empty = await post({});
+  chk("T4 an empty submission is refused rather than written",
+      empty.status === 400, `${empty.status} "${(await empty.json().catch(() => ({}))).error}"`);
+  void dir;
+} catch (e) { chk("T crashed", false, String(e.message || e).slice(0, 92)); }
+
 // ── B. the brain, when there is no brain ────────────────────────────────────
 section("S. the answer when no model is reachable");
 try {

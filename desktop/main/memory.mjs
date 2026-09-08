@@ -9,12 +9,31 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..");
-const PY = process.env.SIBYL_PY || path.join(ROOT, ".venv", "bin", "python");
-const BRIDGE = path.join(ROOT, "desktop", "memory", "sibyl_bridge.py");
+
+/**
+ * Where the bridge and its Python live, running from source OR from a packaged
+ * .app. Neither can come out of app.asar: bash cannot read a script from inside
+ * an archive and neither can the Python interpreter, so electron-builder ships
+ * both as extraResources and they are found here.
+ */
+const pick = (...c) => c.find((f) => f && existsSync(f)) || null;
+
+const BRIDGE = pick(
+  process.env.SIBYL_BRIDGE,
+  process.resourcesPath && path.join(process.resourcesPath, "memory", "sibyl_bridge.py"),
+  path.join(ROOT, "desktop", "memory", "sibyl_bridge.py"),
+);
+
+const PY = pick(
+  process.env.SIBYL_PY,
+  process.resourcesPath && path.join(process.resourcesPath, ".venv", "bin", "python"),
+  path.join(ROOT, ".venv", "bin", "python"),
+) || "python3";   // last resort: a system python that may lack the SDK, and will say so
 
 export class Memory {
   constructor({ db = process.env.SIBYL_DB } = {}) {

@@ -8,3 +8,8 @@ __pycache__/
 .DS_Store
 desktop/.fork-state.json
 desktop/.fork-block
+
+# Build output and the generated icon artefacts
+desktop/dist/
+desktop/build/icon.png
+desktop/build/icon.icns

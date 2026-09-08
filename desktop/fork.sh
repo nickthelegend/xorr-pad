@@ -19,7 +19,12 @@
 set -euo pipefail
 UPSTREAM="${FORK_RPC:-https://mainnet.base.org}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-PINFILE="$HERE/.fork-block"
+# Both the block pin and the state cache are written, so they cannot live next
+# to the script inside an installed .app — that directory is not writable. The
+# desk app points these at its userData directory; a source checkout keeps them
+# beside the script as before.
+PINFILE="${FORK_PIN:-$HERE/.fork-block}"
+mkdir -p "$(dirname "$PINFILE")"
 
 # Reuse the block this fork was last started at.
 #

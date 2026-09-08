@@ -23,7 +23,7 @@ import { swap, spendable } from "./dex.mjs";
 import { IS_FORK, fundOnFork, chainReachable } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
 import { prices as feedPrices } from "./scan.mjs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
 import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
@@ -77,7 +77,12 @@ export function createServer(mem) {
       return res.end();
     }
 
-    const open = url.pathname === "/health" || url.pathname === "/" || url.pathname === "/index.html"
+    // /setup is deliberately open: it is where the operator supplies the token,
+    // so requiring the token to reach it would lock a fresh install out of
+    // itself. It only ever writes to the app's own config file, and it binds to
+    // the LAN, so it refuses any request that did not come from this machine.
+    const open = url.pathname === "/setup" || url.pathname === "/health"
+      || url.pathname === "/" || url.pathname === "/index.html"
       || url.pathname.startsWith("/fonts/");
     if (!open && TOKEN) {
       const auth = req.headers.authorization || "";
@@ -168,6 +173,39 @@ export function createServer(mem) {
     });
 
     try {
+      // ── first run: no credentials anywhere ──────────────────────────────
+      // A packaged app has no .env and no shell environment. Without this the
+      // window opens onto a working-looking desk whose mic silently fails.
+      if (url.pathname === "/setup") {
+        const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress);
+        if (!local) return send(403, { error: "setup is only reachable from the machine running the app" });
+
+        if (req.method === "GET") {
+          const html = await readFile(new URL("../renderer/setup.html", import.meta.url));
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          return res.end(html);
+        }
+        if (req.method === "POST") {
+          const dir = process.env.XORR_USER_DATA;
+          if (!dir) return send(500, { error: "no config directory — the desk app supplies this" });
+
+          const fields = { DEEPGRAM_API_KEY: body.deepgram, PAD_TOKEN: body.token, CHAIN_MODE: body.chainMode };
+          const lines = Object.entries(fields)
+            .filter(([, v]) => typeof v === "string" && v.trim())
+            .map(([k, v]) => `${k}=${v.trim()}`);
+          if (!lines.length) return send(400, { error: "nothing to save" });
+
+          await mkdir(dir, { recursive: true });
+          const file = path.join(dir, ".env");
+          await writeFile(file, lines.join("\n") + "\n", { mode: 0o600 });
+          // Live, without a restart — every credential in this app is read at
+          // call time precisely so this works.
+          for (const [k, v] of Object.entries(fields)) if (v && String(v).trim()) process.env[k] = String(v).trim();
+          return send(200, { ok: true, saved: lines.map((l) => l.split("=")[0]), file });
+        }
+        return send(405, { error: "GET or POST" });
+      }
+
       if (url.pathname === "/" || url.pathname === "/index.html") {
         const html = await readFile(new URL("../renderer/index.html", import.meta.url));
         // The page is the app. Letting a client cache it means an edit ships
