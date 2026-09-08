@@ -38,6 +38,12 @@ async function scrollTo(sel) {
   await wait(700);
 }
 
+/** Move to one of the five destinations and let it settle. */
+async function goTab(id) {
+  await win.webContents.executeJavaScript(`pickTab(${JSON.stringify(id)}); true`).catch(() => {});
+  await wait(900);
+}
+
 async function shot(name, caption, settle = 5200) {
   await wait(settle);
   const img = await win.webContents.capturePage();
@@ -52,7 +58,7 @@ async function run() {
   await start();
 
   win = new BrowserWindow({
-    width: 1600, height: 1000, show: true, backgroundColor: "#0F100F",
+    width: 1440, height: 940, show: true, backgroundColor: "#000000",
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
   await win.loadURL(`${API}/?token=${encodeURIComponent(TOKEN)}`);
@@ -65,12 +71,15 @@ async function run() {
 
   console.log("\ncapturing the desk app\n");
 
+  await goTab("home");
   await shot("01-deck", "the deck at rest: six markets, fifteen keys, memory recalled");
 
+  await goTab("markets");
   await key("scan");
   await shot("02-book", "the book run across all six markets, with the BTC trend gate", 6500);
 
   await key("buy");
+  await goTab("trade");
   await shot("03-decision", "a verdict with its remembered reasons, numbered as footnotes");
 
   const fill = await key("yes");
@@ -119,7 +128,7 @@ async function run() {
     { symbol: "ETH", side: "SELL", evidence: 0, text: "a rule for a market the allowlist already refuses" };
   await api("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: { ...seed, id: "dead-doge-rule", symbol: "DOGE" } }) });
 
-  await scrollTo("#memsec");
+  await goTab("memory");
   await shot("09-memory", "the whole Sibyl store: every entity, reference, state key and journal event", 6500);
 
   // The store reasoned about rather than reported: what it remembers said in a

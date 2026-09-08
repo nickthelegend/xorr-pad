@@ -1,227 +1,228 @@
 ---
 name: xorr-pad
-description: The blue case, on screen. Neo-brutalist trading deck for an agent that remembers.
+description: A desk for supervising agents that trade. Dark, quiet, and it shows its working.
 colors:
-  case: "#2438C8"
-  case-deep: "#18268F"
-  live: "#2B7FFF"
-  paper: "#FFFFFF"
-  paper-2: "#F1F3F8"
-  ink: "#0B0D12"
-  ink-2: "#5A6274"
-  buy: "#00C853"
-  sell: "#FF3B30"
-  grape: "#7C3AED"
-  punch: "#FB6A45"
-  warn: "#FFE600"
+  bg: "#000000"
+  surface: "#0C0C0D"
+  surface-alt: "#141516"
+  control: "#1B1C1E"
+  ink: "#FFFFFF"
+  ink70: "rgba(255,255,255,0.7)"
+  ink65: "rgba(255,255,255,0.65)"
+  ink56: "rgba(255,255,255,0.56)"
+  ink52: "rgba(255,255,255,0.52)"
+  card-border: "rgba(255,255,255,0.06)"
+  hairline: "rgba(255,255,255,0.05)"
+  up: "#2BD87A"
+  down: "#FF453A"
+  warn: "#E8C64A"
+  danger: "#D32B26"
 typography:
-  display:
-    fontFamily: "Archivo, system-ui, sans-serif"
-    fontSize: "28px"
+  hero:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "46px"
     fontWeight: 700
-    lineHeight: 1
-    letterSpacing: "-0.02em"
-  headline:
-    fontFamily: "Azeret Mono, ui-monospace, monospace"
-    fontSize: "28px"
-    fontWeight: 700
-    lineHeight: 1
-    letterSpacing: "-0.02em"
+    lineHeight: 1.15
+    letterSpacing: "-1.4px"
     fontFeature: "tabular-nums"
+  verdict:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "30px"
+    fontWeight: 700
+    lineHeight: 1.17
+    letterSpacing: "-1px"
   title:
-    fontFamily: "Archivo, system-ui, sans-serif"
-    fontSize: "20px"
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "19px"
     fontWeight: 700
-    lineHeight: 1.2
-  body:
-    fontFamily: "Archivo, system-ui, sans-serif"
-    fontSize: "16px"
-    fontWeight: 500
-    lineHeight: 1.5
-    fontFeature: "tabular-nums"
-  data:
-    fontFamily: "Azeret Mono, ui-monospace, monospace"
+    lineHeight: 1.21
+  section:
+    fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 600
-    lineHeight: 1.4
+    lineHeight: 1.19
+  rowPrimary:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.33
     fontFeature: "tabular-nums"
-  label:
-    fontFamily: "Archivo, system-ui, sans-serif"
+  body:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "13.5px"
+    fontWeight: 400
+    lineHeight: 1.48
+  secondary:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "12.5px"
+    fontWeight: 400
+    lineHeight: 1.44
+  eyebrow:
+    fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "11px"
-    fontWeight: 700
-    lineHeight: 1
-    letterSpacing: "0.12em"
+    fontWeight: 600
+    lineHeight: 1.18
+    letterSpacing: "1.32px"
 rounded:
-  none: "0px"
+  square: "12px"
+  tile: "16px"
+  note: "18px"
+  card: "20px"
+  panel: "22px"
+  sheet: "30px"
+  full: "9999px"
 spacing:
-  edge: "3px"
-  gap: "8px"
-  pane: "14px"
+  gutter: "28px"
+  gap: "16px"
+  card: "16px"
 components:
-  key:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.none}"
-    padding: "11px 4px"
-  key-buy:
-    backgroundColor: "{colors.buy}"
-    textColor: "{colors.ink}"
-  key-sell:
-    backgroundColor: "{colors.sell}"
-    textColor: "{colors.ink}"
-  key-active:
-    backgroundColor: "{colors.live}"
-    textColor: "{colors.ink}"
-  pane:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.none}"
-    padding: "0 14px 14px"
-  pane-header:
+  card:
+    backgroundColor: "{colors.surface}"
+    borderColor: "{colors.card-border}"
+    rounded: "{rounded.panel}"
+    padding: "16px"
+  row:
+    borderBottomColor: "{colors.hairline}"
+    padding: "8px 0"
+  note:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.note}"
+    padding: "13px"
+  primaryButton:
     backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    typography: "{typography.label}"
-    padding: "9px 14px"
+    textColor: "#000000"
+    rounded: "{rounded.sheet}"
+  destructiveButton:
+    backgroundColor: "{colors.danger}"
+    textColor: "#FFFFFF"
+    rounded: "{rounded.sheet}"
 ---
 
 # Design
 
-**The blue case, on screen.** Neo-brutalism in the colours the pad was actually
-printed in, pinned by the operator.
+**A desk for supervising agents that trade.** True black, Inter, and one loud
+thing per screen. Adapted from the xorr.finance design system, which was drawn
+for a phone; the adaptations to a desk are noted where they depart from it.
 
 ## Overview
 
-**Mode: Operate.** The operator is completing a task at their own desk with the
-physical pad in front of them. Scanability and alignment still outrank
-expression — but the object on the desk is a vivid glitter-blue box with white,
-charcoal, purple, pink and orange keycaps, and the screen is that object's other
-half, not a quiet instrument panel.
+**Mode: Operate.** The operator sits at a machine with the physical pad beside
+it. The screen is where the agent shows its working — not a dashboard to admire.
 
-An earlier version of this system described a warm-graphite panel derived from a
-grey tray. **The tray is not grey.** A photograph of the built hardware corrected
-it, and the palette below is taken from that photograph.
+An earlier version of this system was neo-brutalist: vivid case-blue, 3px ink
+borders, zero-blur block shadows. It matched the printed object and it shouted.
+This one is quiet, and the quiet is the point: a surface you watch for hours,
+where the only things that raise their voice are a verdict and a kill switch.
 
 Three rules govern everything.
 
-1. **Everything has a hard edge.** 3px `ink` borders and offset shadows with
-   **zero blur**. No soft shadows, no glass, no gradients. Neo-brutalism earns
-   the block shadow the rest of this repo's guidance forbids, because the world
-   actually chose it.
-2. **Black on bright, white on deep.** Every coloured fill carries `ink` text;
-   only the case blue and the grape take white. This is a contrast rule before
-   it is a style rule — see Colors.
-3. **A key must feel like a key.** Press collapses the shadow and moves the
-   element into it. That is the one interaction this product is named after.
-
-## Colors
-
-Taken off the printed object.
-
-| token | value | role |
-|---|---|---|
-| `case` | `#2438C8` | the case. The app's ground, and the header |
-| `case-deep` | `#18268F` | the case in shadow |
-| `live` | `#2B7FFF` | the blue cap: the market in hand, the active agent |
-| `paper` | `#FFFFFF` | every panel |
-| `paper-2` | `#F1F3F8` | a panel's quieter half |
-| `ink` | `#0B0D12` | **every border, every rule, most text.** Never grey |
-| `ink-2` | `#5A6274` | secondary text only |
-| `buy` | `#00C853` | buy · yes · armed |
-| `sell` | `#FF3B30` | sell · no · kill · disarmed |
-| `grape` | `#7C3AED` | the purple cap: BASE and SCAN |
-| `warn` | `#FFE600` | the one yellow, for the wipe notice |
-
-**The contrast rule, measured.** White on `buy` is 2.24:1 and white on `sell` is
-3.55:1 — both fail AA, and both were shipped before this was checked. Black
-`ink` on the same fills is **8.69:1** and **5.48:1**. So:
-
-- **`ink` text** on `buy`, `sell`, `live` and `warn`.
-- **White text** on `case` (8.49:1) and `grape` (5.70:1) only.
-
-Colour is never the only signal: every green or red element also carries a word
-(`ARMED`, `REFUSE`, `EXECUTE`) and a fixed position, because the palette comes
-from physical keycaps and must survive colour-blind reading.
-
-## Typography
-
-Two faces, self-hosted from `/fonts/` so the pad works on venue wi-fi.
-
-- **Archivo** — the voice. Heavy weights, flat terminals, set in caps for every
-  label and header. Neo-brutalism wants type that shouts; this is the face doing
-  it.
-- **Azeret Mono** — every measured quantity, ticker and transaction hash. Square
-  numerals that hold a column.
-
-Scale: `11 · 16 · 20 · 28`. 11px is the floor and only for tracked caps; prose
-never goes below 16px. The wordmark is 28px with a 3px offset ink shadow.
-
-**Always declare font properties longhand.** The `font:` shorthand resets
-`font-variant-numeric`, silently switching tabular figures off in an interface
-whose job is aligned numbers.
+1. **True black, and depth by hairline.** `#000` ground, `#0C0C0D` cards, a 1px
+   `card-border` instead of an elevation. There are no drop shadows on cards.
+2. **Green and red are P&L only.** They mean profit and loss and nothing else —
+   never selection, never focus, never branding. Selection is white on dark.
+   Reaching for `up` to show that something is chosen is a bug.
+3. **Every number says where it came from.** A verdict carries numbered
+   footnotes; a total carries what it is priced against; a stale book carries
+   the time it was run.
 
 ## Layout
 
-Six panes on a two-column grid over the blue ground, each a white block with a
-3px ink border and a 5px offset shadow. Rows size to content and the page
-scrolls; a fixed-viewport grid clipped the store, which is the judged content.
+A **navigation rail** beside a content region. The rail is 236px and always
+visible, because supervising agents means being one click from the kill switch
+wherever you are. It carries the five destinations, then chain, block and
+wallet, then the kill switch itself at the foot.
 
-- **Memory spans both columns** (`section.wide`). It is the 40% of the judging,
-  so it gets the width, and its contents lay out in two text columns.
-- Pane headers are **black bars** that stick to the top of their pane while it
-  scrolls.
-- Below 900px wide: one column, deck to four columns. Below 520px: three.
+The content region is a 62px top bar — screen name, subtitle, and the day's
+budget against the remembered daily limit — over a scrolling area with a
+1180px measure.
 
-**The measure column.** Quantities right-align to a shared column; the book's
-table sizes its columns in `ch`, which is a monospace table's natural unit.
+**Panes lay out in columns and top-align.** `.cols side` is 1.25fr / 1fr and is
+the default: the thing you act on beside the thing it produced. A short card
+next to a long one must not stretch to match it.
 
-**The deck is built once.** Re-rendering on a poll threw away clicks and dropped
-focus.
+Below 900px the rail collapses to 64px icons and every column stacks. Below
+760px the budget bar is dropped — it and the screen title cannot both fit, and
+leaving it pushed the document wider than the window.
 
-## Elevation & Depth
+| Screen | Left | Right |
+|---|---|---|
+| Portfolio | total value, the day's risk checks, agents, recent activity | every coin held, priced |
+| Markets | six markets and why others were delisted | the book, and what it found |
+| Agents | six agents, voice, the kill switch | the activity feed |
+| Trade | the ticket: market, size, propose | the verdict, and what it rests on |
+| Memory | the briefing, time machine, wipe | the whole store, tier by tier |
 
-One shadow, and it does not blur: `5px 5px 0 ink` for panes and the verdict,
-`3px 3px 0 ink` for keys and tabs. Hover lifts by 2px and grows the shadow;
-press moves 3px *into* the shadow and closes it to zero.
+## Colors
 
-There is no other depth vocabulary. No blur, no glass, no elevation scale.
+| token | value | role |
+|---|---|---|
+| `bg` | `#000000` | the ground. True black, never a dark grey |
+| `surface` | `#0C0C0D` | every card and note strip |
+| `surface-alt` | `#141516` | a card's quieter half, unselected pills |
+| `control` | `#1B1C1E` | buttons, steppers, footnote markers |
+| `ink` → `ink52` | white at 100–52% | the text ramp |
+| `card-border` | `rgba(255,255,255,.06)` | card outlines |
+| `up` / `down` | `#2BD87A` / `#FF453A` | **P&L only** |
+| `warn` | `#E8C64A` | risk adjusted, and the wipe notice |
+| `danger` | `#D32B26` | destructive fills |
 
-## Shapes
+**The ink ramp is lifted from its source.** xorr.finance runs down to 28% white,
+which is right on a handset held close. Composited onto true black and measured,
+38% reads **3.39:1** and 45% reads **4.41:1** — both under AA for text at these
+sizes. Anything carrying words therefore stops at **52%**, which is 5.4:1. The
+dimmer steps survive only for glyphs and dots.
 
-Square. `0px` radius everywhere including the keys — the caps are square in
-profile and the screen matches. Borders are 3px `ink`; row rules are 2px.
+**The destructive fill is darkened for the same reason.** White on `#EF3B36`
+measures **3.93:1** and fails at button size; `#D32B26` is the same hue taken
+down until it passes at 5.0:1. `down` keeps its original value because it is
+text on black, where it reads 6.2:1.
+
+Every text node on all five screens passes AA, measured in the live DOM with
+alpha composited — not inferred from the stylesheet.
+
+## Typography
+
+**Inter**, self-hosted and subset to four weights (~23 KB each) so the desk
+works on venue wi-fi. Weights are selected **by family**, never by `font-weight`
+against one face: a synthesised bold thickens stems unevenly and throws off the
+negative tracking the display sizes rely on.
+
+Scale: `11 · 12.5 · 13.5 · 15 · 16 · 19 · 30 · 46`. Tabular figures everywhere a
+number can change.
+
+**Reading sizes are larger than the source.** The 11.5px body the phone system
+specifies is too small at desk distance; prose sits at 13.5px and row detail at
+12.5px. Labels — eyebrows, tags, orb status — keep their small sizes, because a
+label is scanned, not read.
 
 ## Components
 
-**Key** — 15 deck buttons, five per row. Uppercase 11px Archivo. Coloured by
-role, `ink` text on every colour. The active agent takes `live`.
+**Agent orb** — a radial gradient with an **off-centre origin at 32% 26%**: that
+is the specular highlight and it must not move. Each agent owns two stops and
+keeps them everywhere it appears. The active one carries a bloom of its own `c1`
+at 40%. Under it: name at 12.5px/600, then status — `up` for Active, `ink50`
+for Paused.
 
-**Market tab** — a real `<button>` with `aria-pressed`, carrying symbol, asset
-class and price. Selected fills with `live` and takes the full pane shadow.
+**Hairline row** — a 34px mark, a primary line over a secondary, then a value
+right-aligned with its delta. The most-used element here.
 
-**Verdict** — the loudest block: `EXECUTE`/`REJECT` at 28px Azeret Mono in a
-tinted block that slams in from the top-left with its shadow collapsing.
+**Note strip** — where an agent explains itself. A coloured dot encodes the
+class: **green acted, amber adjusted risk, red blocked**. Used for the day's
+risk checks, the delisting reasons and the briefing.
 
-**Footnote** — a black numbered square and the text beside it. The signature
-component: a verdict's reasons render as *numbered footnotes*, because that is
-what they are — the remembered facts the decision rests on, cited.
+**Verdict** — the loudest block on the surface. `Execute`/`Reject` at 30px over
+numbered footnotes, then Refuse and Confirm. The footnotes are the product: the
+remembered facts the decision rests on, cited.
 
-**Store browser** — the Memory pane renders the whole Sibyl store: every entity
-by category, every reference and state key, the journal itself with a
-show/hide toggle, and the engine's own file size and tier. Not a summary.
+**Budget bar** — the day's spend against the remembered daily limit, in the top
+bar on every screen. Drawn from the journal, so a wiped store has nothing to
+measure and the bar disappears rather than showing a full one.
 
 ## Motion
 
-Motion is felt, not decorative, and there are exactly three moments.
-
-1. **The key press.** `translate(3px,3px)` with the shadow closing to zero, over
-   90ms. The whole product is a keypad; this is the interaction it owes you.
-2. **The verdict slam.** A new decision enters from `translate(-6px,-6px)` with
-   an 11px shadow collapsing to 5px, 260ms on an exponential ease-out.
-3. **The scan resolve.** Table rows enter left on a 35ms stagger, 300ms each.
-
-`prefers-reduced-motion` removes the stagger and the slam and collapses every
-transition to 0.01ms.
+Almost none, and none of it decorative. `150ms` for selection, `180ms` for
+anything that fills, `250ms` for a re-sort. Nothing else.
+`prefers-reduced-motion` collapses every transition to 0.01ms.
 
 ## Do's and Don'ts
 
@@ -229,20 +230,16 @@ transition to 0.01ms.
 
 - Put the working on screen. A verdict without its numbered reasons is not a
   verdict.
-- Keep the bad number. Delisting reasons, blocked credentials and negative
-  results are the product's voice.
-- Give every coloured fill `ink` text unless it is `case` or `grape`.
-- Theme the browser's own surfaces: selection, scrollbars, focus rings.
-- Write copy the way the README does: plain, measured, unafraid.
+- Keep the bad number. Delisting reasons, blocked credentials, an unrealised
+  loss and "measured, not profitable" are the product's voice.
+- Say what is unavailable, precisely. Holdings can be gone while prices are
+  live; the banner has to know the difference.
+- Give an empty state something true to say. An empty card is furniture.
 
 **Don't**
 
-- No gradients, glass, blur, or soft shadows. The block shadow is the only one.
-- No rounded corners.
-- No white text on `buy`, `sell` or `live` — it fails AA and it was shipped
-  once already.
-- No `font:` shorthand — it resets tabular figures.
-- No kicker above a heading, no numbered section labels.
-- No emoji standing in for an icon.
-- No pulsing dot for "live": every trade here is gated on a human confirmation,
-  so nothing is autonomously ticking.
+- No green or red for anything but profit and loss.
+- No drop shadows on cards — they get a hairline border.
+- No text below 11px, and nothing carrying words below 52% white.
+- No phone-sized reading type on a desk.
+- No control that reports success for something it did not do.

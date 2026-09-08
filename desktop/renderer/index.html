@@ -1,443 +1,675 @@
 <!doctype html><html lang="en"><meta charset="utf-8"><title>xorr-pad</title>
 <!-- Without this a phone renders the page at a 980px virtual viewport and
-     scales it down, so the 900px and 520px breakpoints below NEVER fire and
-     the pad arrives as an unreadable sliver. -->
-<meta name="viewport" content="width=device-width, initial-scale=1">
+     scales it down, so the breakpoints below NEVER fire and the pad arrives as
+     an unreadable sliver. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
 /* ─────────────────────────────────────────────────────────────────────────
-   Faces ship with the repo. A readout whose type fails to arrive on venue
-   wi-fi is a readout nobody can trust.
-   Archivo      — the voice. Heavy, flat-terminalled, shouts in caps.
-   Azeret Mono  — every measured quantity. Square numerals that hold a column.
+   Inter, self-hosted and subset. Weights are selected by FAMILY, never by
+   `font-weight` against a single face — a synthesised bold thickens stems
+   unevenly and throws off the negative tracking the display sizes rely on.
+   A readout whose type fails to arrive on venue wi-fi is one nobody trusts.
    ───────────────────────────────────────────────────────────────────────── */
-@font-face{font-family:Archivo;src:url(/fonts/archivo-var.woff2)format("woff2-variations");
-  font-weight:400 700;font-display:swap;font-style:normal}
-@font-face{font-family:"Azeret Mono";src:url(/fonts/azeret-var.woff2)format("woff2-variations");
-  font-weight:400 700;font-display:swap;font-style:normal}
+@font-face{font-family:Inter;src:url(/fonts/inter-400.woff2)format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:Inter;src:url(/fonts/inter-500.woff2)format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:Inter;src:url(/fonts/inter-600.woff2)format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:Inter;src:url(/fonts/inter-700.woff2)format("woff2");font-weight:700;font-display:swap}
 
 :root{
-  /* Taken off the printed object. The case is vivid glitter-blue, the caps are
-     white, charcoal, purple, pink and orange. The screen wears the same paint. */
-  --case:#2438C8;        /* the case, and the ground this app sits on   */
-  --case-deep:#18268F;   /* the case in shadow                          */
-  --live:#2B7FFF;        /* the blue cap: the market in hand            */
-  --paper:#FFFFFF;       /* the white caps: every panel                 */
-  --paper-2:#F1F3F8;     /* a panel's quieter half                      */
-  --ink:#0B0D12;         /* every border and every rule. Never grey.    */
-  --ink-2:#5A6274;       /* secondary text                              */
-  --buy:#00C853;         /* buy · yes · armed                           */
-  --sell:#FF3B30;   /* black text on it clears AA at 5.5:1 */        /* sell · no · kill · disarmed                 */
-  --grape:#7C3AED;       /* the purple cap                              */
-  --punch:#FB6A45;       /* the orange cap                              */
+  /* Surfaces. `--bg` is true black, never a dark grey. */
+  --bg:#000000; --surface:#0C0C0D; --surface-alt:#141516; --control:#1B1C1E;
+  --control-press:#252629; --bubble:#111214;
 
-  /* Neo-brutalism has one shadow and it does not blur. */
-  --edge:3px;
-  --drop:5px 5px 0 var(--ink);
-  --drop-sm:3px 3px 0 var(--ink);
+  /* The ink ramp on black.
+     The source design system runs down to 28% white. Composited onto a true
+     black ground that is 2.6:1 — the ramp is built for a phone held close, and
+     measured here .38 reads 3.39:1 and .45 reads 4.41:1, both under AA for text
+     at these sizes. Anything that carries WORDS therefore stops at .50, which
+     is 5.28:1; the dimmer steps below it are for glyphs and dots only. */
+  --ink:#FFFFFF; --ink70:rgba(255,255,255,.7); --ink65:rgba(255,255,255,.65);
+  --ink55:rgba(255,255,255,.56); --ink50:rgba(255,255,255,.52);
+  --ink45:rgba(255,255,255,.52); --ink40:rgba(255,255,255,.5);
+  --ink38:rgba(255,255,255,.5);  --ink30:rgba(255,255,255,.3);
 
-  --t0:11px; --t1:16px; --t2:20px; --t3:28px;
-  --measure:88px;
+  /* Hairlines. Cards get a 1px border instead of an elevation. */
+  --hair:rgba(255,255,255,.05); --hair-strong:rgba(255,255,255,.055);
+  --card-border:rgba(255,255,255,.06); --input-border:rgba(255,255,255,.07);
+  --ghost-border:rgba(255,255,255,.09);
+
+  /* Semantic — P&L ONLY. Green and red mean profit and loss. They are never
+     selection, focus, branding or emphasis. Selection is white-on-dark;
+     reaching for --up to show that something is chosen is a bug. */
+  --up:#2BD87A; --up-bg:rgba(43,216,122,.14); --up-ink:#04160C;
+  --down:#FF453A; --down-bg:rgba(255,69,58,.14);
+  --warn:#E8C64A; --warn-bg:rgba(232,198,74,.14);
+  /* The destructive FILL, not the P&L red. White on #EF3B36 measures 3.93:1 and
+     fails AA at button size; this is the same hue taken down until it passes at
+     5.0:1. --down stays as it is: it is text on black, where it reads 6.2:1. */
+  --danger:#D32B26;
+
+  --r-sq:12px; --r-tile:16px; --r-note:18px; --r-card:20px;
+  --r-panel:22px; --r-panel-lg:24px; --r-sheet:30px; --r-full:9999px;
+  --gutter:20px;
 }
 
 *{box-sizing:border-box}
-html{font-size:16px;-webkit-font-smoothing:antialiased}
-body{margin:0;background:var(--case);color:var(--ink);
-  font-family:Archivo,system-ui,sans-serif;font-size:var(--t1);font-weight:500;line-height:1.5;
-  font-variant-numeric:tabular-nums}
-
-::selection{background:var(--ink);color:#FFE600}
-::-webkit-scrollbar{width:14px;height:14px}
-::-webkit-scrollbar-track{background:var(--paper-2);border-left:var(--edge) solid var(--ink)}
-::-webkit-scrollbar-thumb{background:var(--case);border:var(--edge) solid var(--ink)}
-::-webkit-scrollbar-thumb:hover{background:var(--live)}
-*{scrollbar-width:auto;scrollbar-color:var(--case) var(--paper-2)}
-:focus-visible{outline:var(--edge) solid var(--ink);outline-offset:2px}
-
-/* ── the plate ───────────────────────────────────────────────────────────── */
-header{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
-  padding:14px 18px;background:var(--case);border-bottom:var(--edge) solid var(--ink)}
-h1{font-family:Archivo;font-size:var(--t3);font-weight:700;line-height:1;
-  letter-spacing:-.02em;text-transform:uppercase;margin:0;color:#fff;
-  text-shadow:3px 3px 0 var(--ink)}
-.stat{display:inline-flex;gap:7px;align-items:center;background:var(--paper);
-  border:var(--edge) solid var(--ink);box-shadow:var(--drop-sm);padding:5px 10px;
-  font-size:var(--t0);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
-.stat b{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:700;
-  letter-spacing:0;color:var(--ink);font-variant-numeric:tabular-nums}
-.stat.on b{color:#0B7A38} .stat.off{background:var(--sell);color:var(--ink)} .stat.off b{color:var(--ink)}
-/* The re-arm control is a real <button>: it is the kill switch, and a
-   clickable <span> is not reachable by keyboard and is not announced as
-   actionable. Reset the button chrome so the pill looks identical. */
-button.stat{font-family:inherit;line-height:1;cursor:default}
-button.stat[disabled]{opacity:1}
-.stat.clickable{cursor:pointer}
-.stat.clickable:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--ink)}
-.addr{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);
-  font-weight:500;color:#fff;opacity:.85}
-
-main{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:minmax(260px,auto);
-  gap:14px;padding:14px;background:var(--case);min-height:calc(100vh - 62px)}
-section.wide{grid-column:1 / -1}
-section{background:var(--paper);border:var(--edge) solid var(--ink);box-shadow:var(--drop);
-  padding:0 14px 14px;min-height:0}
-section#memsec{max-height:none}
-
-h2{font-family:Archivo;font-size:var(--t0);font-weight:700;line-height:1;
-  letter-spacing:.12em;text-transform:uppercase;color:#fff;background:var(--ink);
-  margin:0 -14px 12px;padding:9px 14px;position:sticky;top:0;z-index:3}
-h2.rule-top{margin-top:16px}
-
-/* ── rows: rules, and they are thick ─────────────────────────────────────── */
-.row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:baseline;
-  padding:6px 0;border-bottom:2px solid var(--ink)}
-.row:last-child{border-bottom:0}
-.k{color:var(--ink-2);font-weight:600}
-.mono,.num{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:600;
-  line-height:1.4;font-variant-numeric:tabular-nums;color:var(--ink);
-  text-align:right;min-width:var(--measure)}
-.dim{color:var(--ink-2)}
-
-/* ── markets: chunky blocks, the live one lifts ──────────────────────────── */
-.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
-.mkt{background:var(--paper-2);border:var(--edge) solid var(--ink);box-shadow:var(--drop-sm);
-  padding:7px 9px;cursor:pointer;text-align:left;font-family:Archivo;
-  text-transform:none;letter-spacing:normal;
-  transition:transform .1s cubic-bezier(.16,1,.3,1),box-shadow .1s cubic-bezier(.16,1,.3,1),background .1s}
-.mkt:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--ink);background:#fff}
-.mkt:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
-.mkt[aria-pressed="true"]{background:var(--live);box-shadow:var(--drop)}
-.mkt .s{display:block;font-size:var(--t1);font-weight:700;color:var(--ink)}
-.mkt[aria-pressed="true"] .s{color:var(--ink)}
-.mkt[aria-pressed="true"] .c,.mkt[aria-pressed="true"] .p{color:#0B2E63}
-.mkt .c{display:block;font-size:var(--t0);font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--ink-2)}
-.mkt .p{display:block;font-family:"Azeret Mono",monospace;font-size:var(--t1);
-  font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink-2)}
-
-/* ── the deck: keycaps, and they press ───────────────────────────────────── */
-.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
-/* The mic while it is open. ink on live, per the contrast rule. */
-.keys button.live{background:var(--live);color:var(--ink)}
-/* An operation in flight, where its buttons were. Same weight as the buttons
-   so the card does not resize under the reader. */
-.working{display:inline-block;padding:11px 4px;font:700 var(--t0)/1 Archivo,system-ui,sans-serif;
-  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
-button{background:var(--paper);color:var(--ink);border:var(--edge) solid var(--ink);
-  border-radius:0;box-shadow:var(--drop-sm);padding:11px 4px;
-  font-family:Archivo;font-size:var(--t0);font-weight:700;line-height:1;
-  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
-  transition:transform .09s cubic-bezier(.16,1,.3,1),box-shadow .09s cubic-bezier(.16,1,.3,1),background .09s}
-button:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--ink)}
-/* the cap bottoms out and the shadow closes — the whole point of a key */
-button:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--ink)}
-button.g{background:var(--buy);color:var(--ink)} button.r{background:var(--sell);color:var(--ink)}
-button.b{background:var(--grape);color:#fff}
-button.on{background:var(--live);color:var(--ink);box-shadow:var(--drop)}
-
-/* ── footnotes: the receipts ─────────────────────────────────────────────── */
-.fnote{display:grid;grid-template-columns:2.2ch 1fr;gap:10px;padding:6px 0;
-  font-size:var(--t1);color:var(--ink-2);border-bottom:2px solid var(--paper-2)}
-.fnote:last-child{border-bottom:0}
-.fnref{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:700;
-  color:#fff;background:var(--ink);text-align:center;line-height:1.7}
-.caveat{margin-top:14px;padding:10px 12px;border:2px solid var(--ink);
-  background:var(--paper-2);font-size:var(--t1);line-height:1.5;color:var(--ink-2)}
-.caveat b{color:var(--ink);font-weight:700}
-
-/* ── the book's table ────────────────────────────────────────────────────── */
-.trow{display:grid;grid-template-columns:1fr 5.5ch 7.5ch 6ch 9.5ch;gap:9px;
-  align-items:baseline;padding:7px 0;border-bottom:2px solid var(--paper-2);
-  font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:600;
-  font-variant-numeric:tabular-nums}
-.trow>span:not(:first-child){text-align:right}
-.trow .sym{font-family:Archivo;font-weight:700;font-size:var(--t1);color:var(--ink);
-  display:flex;gap:7px;align-items:baseline}
-.trow .neg{color:var(--ink-2)}
-.thead{border-bottom:var(--edge) solid var(--ink);padding-bottom:6px;
-  font-family:Archivo;font-size:var(--t0);font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--ink-2)}
-.thead>span:first-child{font-family:Archivo}
-
-/* ── a fired strategy ────────────────────────────────────────────────────── */
-.fire{padding:11px 12px;margin-bottom:10px;background:var(--buy);
-  border:var(--edge) solid var(--ink);box-shadow:var(--drop-sm);color:var(--ink)}
-.fire .fnote{color:var(--ink);border-bottom-color:rgba(11,13,18,.25)}
-.fire .fnref{background:var(--ink);color:#fff}
-.fire .k{color:rgba(11,13,18,.75)}
-.fire-h{display:flex;gap:9px;align-items:baseline;margin-bottom:6px}
-.fire-h .sym{font-family:Archivo;font-size:var(--t2);font-weight:700;color:var(--ink)}
-.fire-h .st{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:700;color:var(--ink)}
-.fire-h .cf{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);
-  font-weight:700;color:rgba(11,13,18,.75)}
-.fire .mono{color:var(--ink)}
-
-/* ── the verdict: the loudest block on the page ──────────────────────────── */
-.verdict{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;
-  padding:12px 14px;margin:0 0 12px;border:var(--edge) solid var(--ink);
-  box-shadow:var(--drop);background:var(--paper-2);
-  animation:slam .26s cubic-bezier(.16,1,.3,1)}
-.verdict .act{font-family:"Azeret Mono",monospace;font-size:var(--t3);font-weight:700;
-  line-height:1;letter-spacing:-.02em}
-.verdict .act.x{color:#0B7A38} .verdict .act.n{color:#B3120B}
-.verdict.x{background:#D9F7E4} .verdict.n{background:#FFE3E1}
-.verdict .sz{font-family:"Azeret Mono",monospace;font-size:var(--t2);font-weight:700;color:var(--ink)}
-.order{font-family:Archivo;font-size:var(--t1);font-weight:700;color:var(--ink)}
-.tag{font-family:Archivo;font-size:var(--t0);font-weight:700;letter-spacing:.1em;
-  text-transform:uppercase;color:#fff;background:var(--ink);padding:2px 7px}
-.confirm{display:flex;gap:8px;margin-top:12px}
-.confirm button{padding:13px 20px;font-size:var(--t1)}
-
-.warn{border:var(--edge) solid var(--ink);background:#FFE600;color:var(--ink);
-  padding:10px 12px;margin-bottom:10px;font-size:var(--t1);font-weight:600;line-height:1.45;
-  box-shadow:var(--drop-sm)}
-.wipe{width:100%;margin-bottom:8px}
-#store{column-count:2;column-gap:22px}
-.brief{border:3px solid var(--ink);background:var(--live);color:var(--ink);
-  padding:10px 12px;margin:0 0 10px;box-shadow:var(--drop);font-weight:600}
-.tt{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0 0;
-  padding:10px;border:3px solid var(--ink);background:var(--paper-2)}
-.tt .ttl{font:700 11px/1 Archivo,system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase}
-.tt input{border:3px solid var(--ink);padding:6px 8px;background:var(--paper);
-  font-family:"Azeret Mono",ui-monospace,monospace;font-size:14px;font-weight:600}
-#ttout,#cost,#contra{border:3px solid var(--ink);padding:10px 12px;margin-top:10px;box-shadow:var(--drop)}
-#ttout{background:var(--paper-2)}
-#cost{background:var(--sell);color:var(--ink)}
-#contra{background:var(--warn);color:var(--ink)}
-#cost h3,#contra h3,#ttout h3{font:700 11px/1 Archivo,system-ui,sans-serif;
-  letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px}
-#store>*{break-inside:avoid}
-/* A tier's heading and its rows are one thing. Pushed as separate children they
-   broke across the column boundary — "archived — 1" sat at the foot of column
-   one while its only row appeared at the head of column two, under a different
-   heading. In a store browser whose whole job is showing what the agent knows,
-   that is not untidy, it is wrong. */
-#store>.long{break-inside:auto}
-#store h2.rule-top{break-after:avoid}
-@media (max-width:900px){#store{column-count:1}}
-.sizes{display:inline-flex;gap:6px}
-.sizes button{padding:6px 12px;font-size:var(--t0);min-width:0}
-.sizes button.on{background:var(--live);color:var(--ink)}
-
-/* ── motion: felt, not decorative ────────────────────────────────────────── */
-@keyframes slam{
-  from{opacity:0;transform:translate(-6px,-6px);box-shadow:11px 11px 0 var(--ink)}
-  to{opacity:1;transform:none;box-shadow:var(--drop)}
+/* A <button> takes the UA's own colour, not the page's. Without this the agent
+   card's name and status rendered rgb(0,0,0) on a #0C0C0D card — invisible. */
+button,input,select,textarea{color:inherit;font:inherit}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:Inter,-apple-system,system-ui,sans-serif;
+  font-feature-settings:"tnum" 1,"cv05" 1;
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
 }
-@keyframes settle-row{
-  from{opacity:0;transform:translateX(-10px)}
-  to{opacity:1;transform:none}
-}
-.resolve>*{animation:settle-row .3s cubic-bezier(.16,1,.3,1) backwards}
-.resolve>*:nth-child(1){animation-delay:0ms}   .resolve>*:nth-child(2){animation-delay:35ms}
-.resolve>*:nth-child(3){animation-delay:70ms}  .resolve>*:nth-child(4){animation-delay:105ms}
-.resolve>*:nth-child(5){animation-delay:140ms} .resolve>*:nth-child(6){animation-delay:175ms}
-.resolve>*:nth-child(7){animation-delay:210ms} .resolve>*:nth-child(8){animation-delay:245ms}
+::selection{background:var(--ink);color:#000}
+::-webkit-scrollbar{width:0;height:0}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:6px}
 
-@media (prefers-reduced-motion:reduce){
-  .resolve>*,.verdict{animation:none}
-  *{transition-duration:.01ms!important}
+/* ── the app shell ──────────────────────────────────────────────────────
+   A desktop application: a fixed navigation rail beside a content region that
+   takes the rest of the window. The rail is always visible because supervising
+   agents means being one click from the kill switch, wherever you are. */
+#app{
+  height:100%; display:grid; grid-template-columns:236px 1fr;
+  background:var(--bg);
 }
 
-@media (max-height:900px){
-  main{grid-auto-rows:auto;height:auto}
-  section{max-height:none;overflow:visible}
+#rail{
+  border-right:1px solid var(--hair-strong);
+  display:flex; flex-direction:column; padding:20px 14px 16px;
+  min-height:0;
 }
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.brand .bmark{width:26px;height:26px;border-radius:8px;flex:none;
+  background:radial-gradient(circle at 32% 26%,#5B93FF,#1B44CE 74%)}
+.brand .bname{font-size:15px;font-weight:700;letter-spacing:-.2px}
+/* 11px is the floor for functional text; 10px fails on high-DPI and small
+   viewports, and being on a design ramp does not launder that. */
+.brand .bsub{font-size:11px;font-weight:600;letter-spacing:1.1px;
+  text-transform:uppercase;color:var(--ink38);display:block;margin-top:1px}
+
+#nav{display:flex;flex-direction:column;gap:2px}
+#nav button{
+  display:flex;align-items:center;gap:11px;width:100%;
+  padding:0 12px;height:40px;border:0;border-radius:10px;cursor:pointer;
+  background:transparent;color:var(--ink50);
+  font-family:inherit;font-size:13.5px;font-weight:600;text-align:left;
+  transition:background .15s,color .15s;position:relative;
+}
+#nav button:hover{background:var(--control);color:var(--ink70)}
+#nav button[aria-selected="true"]{background:var(--control);color:var(--ink)}
+#nav svg{width:18px;height:18px;flex:none}
+#nav .dot{width:6px;height:6px;border-radius:var(--r-full);background:var(--ink30);margin-left:auto}
+#nav .dot.on{background:var(--up)}
+
+/* The rail's foot: chain, wallet and the kill switch, always in reach. */
+.railfoot{margin-top:auto;padding-top:14px;border-top:1px solid var(--hair);
+  display:flex;flex-direction:column;gap:8px}
+.railstat{display:flex;align-items:baseline;gap:8px;padding:0 8px;
+  font-size:11px;font-weight:500;color:var(--ink38)}
+.railstat b{margin-left:auto;font-weight:600;color:var(--ink65);
+  font-variant-numeric:tabular-nums;letter-spacing:-.1px}
+#railkill{width:100%;height:40px;border:0;border-radius:10px;cursor:pointer;
+  font-family:inherit;font-size:12.5px;font-weight:600;
+  background:var(--control);color:var(--ink);transition:background .15s}
+#railkill:hover{background:var(--control-press)}
+#railkill.armed{background:var(--danger);color:#fff}
+#railkill.armed:hover{background:#B92420}
+
+/* Content region */
+#main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#topbar{flex:none;min-height:62px;display:flex;align-items:center;gap:14px;
+  padding:12px 28px;border-bottom:1px solid var(--hair-strong)}
+h1{margin:0;font-size:19px;font-weight:700;line-height:23px;letter-spacing:-.2px}
+#topsub{font-size:12.5px;color:var(--ink38);margin-left:2px}
+.livedot{width:6px;height:6px;border-radius:var(--r-full);background:var(--ink30);flex:none}
+.livedot.on{background:var(--up)}
+#topright{margin-left:auto;display:flex;align-items:center;gap:14px}
+.budget{display:flex;align-items:center;gap:10px}
+.budget .bl{font-size:11px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase;color:var(--ink38)}
+.budget .bt{width:120px;height:6px;border-radius:var(--r-full);background:var(--control);overflow:hidden}
+.budget .bf{height:100%;background:var(--ink70);border-radius:var(--r-full);transition:width .18s}
+.budget .bf.hot{background:var(--warn)}
+.budget .bv{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink65)}
+
+/* The scroll region takes flex:1 — never a trailing spacer, which collects
+   leftover height and leaves a visible hole. */
+#scroll{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:22px 28px 40px}
+.pane{display:none}
+.pane.on{display:block}
+.wrap{max-width:1180px}
+
+/* Multi-column content. Panels sit side by side and top-align: a short card
+   next to a long one must not stretch to match it. */
+.cols{display:grid;gap:16px;align-items:start}
+.cols.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.cols.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.cols.side{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+@media (max-width:1080px){ .cols.three{grid-template-columns:repeat(2,minmax(0,1fr))} }
 @media (max-width:900px){
-  main{grid-template-columns:1fr;grid-auto-rows:auto;height:auto}
-  section{max-height:none}
-  header{gap:9px}
-  .keys{grid-template-columns:repeat(4,1fr)}
+  #app{grid-template-columns:64px 1fr}
+  .brand .btext,#nav button span:not(.dot),.railstat{display:none}
+  #nav button{justify-content:center;padding:0}
+  .cols.two,.cols.three,.cols.side{grid-template-columns:minmax(0,1fr)}
+  #scroll,#topbar{padding-left:18px;padding-right:18px}
+  /* The title and the day's budget cannot both fit; the budget is the one that
+     has a home elsewhere. Leaving it pushed the document 56px wider than the
+     window and put a horizontal scrollbar under the whole app. */
+  #topsub{display:none}
 }
-@media (max-width:520px){
-  .keys{grid-template-columns:repeat(3,1fr)}
-  .row{grid-template-columns:1fr;gap:1px}
-  .mono,.num{text-align:left;min-width:0}
-  .mkts{grid-template-columns:repeat(2,1fr)}
-}
+@media (max-width:760px){ .budget{display:none} }
+
+/* ── primitives ─────────────────────────────────────────────────────────── */
+.card{background:var(--surface);border:1px solid var(--card-border);
+  border-radius:var(--r-panel);padding:16px;margin-bottom:12px}
+.card.tight{padding:14px}
+
+.eyebrow{font-size:11px;font-weight:600;line-height:13px;letter-spacing:1.32px;
+  text-transform:uppercase;color:var(--ink45)}
+
+/* Section head with a chevron, the way the app names a list you can open. */
+.shead{display:flex;align-items:baseline;gap:6px;margin:20px 0 10px}
+.shead h2{margin:0;font-size:16px;font-weight:600;line-height:19px}
+.shead .chev{color:var(--ink38);font-size:15px;line-height:19px}
+.shead .aside{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--ink45)}
+
+/* Hairline list row. The most-used element in the app. */
+.lrow{display:flex;align-items:center;gap:12px;min-height:56px;
+  border-bottom:1px solid var(--hair);padding:8px 0}
+.lrow:last-child{border-bottom:0}
+.lrow .mark{width:34px;height:34px;flex:none;border-radius:var(--r-full);
+  display:grid;place-items:center;font-size:14px;font-weight:700;color:rgba(0,0,0,.62)}
+.lrow .lmain{min-width:0;display:flex;flex-direction:column;gap:2px}
+.lrow .lp{font-size:15px;font-weight:600;line-height:20px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Prose and row detail are sized for a desk, not a phone held at arm's length.
+   The 11.5px the source design system specifies is right on a handset and too
+   small here — labels keep their small sizes, things you actually read do not. */
+.lrow .ls{font-size:12.5px;font-weight:400;line-height:18px;color:var(--ink45)}
+.lrow .lval{margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:2px;flex:none}
+.lrow .lv{font-size:15px;font-weight:700;line-height:20px}
+.lrow .ld{font-size:12.5px;font-weight:500;line-height:18px;color:var(--ink45)}
+.up{color:var(--up)} .down{color:var(--down)} .dim{color:var(--ink38)}
+
+/* Note strip — wherever an agent explains itself. The dot encodes the class:
+   green acted, amber adjusted risk, red blocked. */
+.note{display:flex;gap:10px;background:var(--surface);border-radius:var(--r-note);
+  padding:13px;margin-bottom:8px}
+.note .nd{width:8px;height:8px;border-radius:var(--r-full);flex:none;margin-top:6px;background:var(--up)}
+.note .nd.warn{background:var(--warn)} .note .nd.block{background:var(--down)}
+.note .nt{font-size:13px;font-weight:400;line-height:1.55;color:var(--ink55)}
+.note .nt b{color:var(--ink70);font-weight:600}
+
+/* Pill row — scrolls, never shrinks to fit. */
+.pills{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
+.pill{flex:none;height:34px;padding:0 14px;border-radius:20px;border:0;cursor:pointer;
+  background:var(--surface-alt);color:var(--ink50);
+  font-family:inherit;font-size:13px;font-weight:600;transition:background .15s,color .15s}
+.pill[aria-pressed="true"]{background:var(--ink);color:#0B0B0B}
+
+/* Buttons. One primary per screen. */
+.btn{width:100%;height:54px;border:0;border-radius:var(--r-sheet);cursor:pointer;
+  font-family:inherit;font-size:15.5px;font-weight:600;transition:background .15s,opacity .15s}
+.btn.primary{background:var(--ink);color:#000}
+.btn.primary:hover{background:rgba(255,255,255,.88)}
+.btn.secondary{background:var(--control);color:var(--ink)}
+.btn.secondary:hover{background:var(--control-press)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.ghost{background:transparent;border:1px solid var(--ghost-border);color:var(--ink65);height:48px}
+.btn.ghost:hover{background:var(--control)}
+.btn:disabled{background:var(--control);color:rgba(255,255,255,.35);cursor:default}
+.btnrow{display:flex;gap:10px}
+.btnrow .btn{flex:1} .btnrow .btn.wide{flex:1.3}
+
+/* Stepper. Fixed min-width on the value or the row jitters as digits change. */
+.stepper{display:flex;align-items:center;gap:10px;justify-content:center}
+.stepper button{width:26px;height:26px;border:0;border-radius:var(--r-full);
+  background:var(--control);color:var(--ink);font-size:15px;line-height:1;cursor:pointer;
+  font-family:inherit;display:grid;place-items:center;padding:0}
+.stepper button:hover{background:var(--control-press)}
+.stepper .val{min-width:88px;text-align:center;font-size:22px;font-weight:700;letter-spacing:-.4px}
+
+/* ── the agent orb ──────────────────────────────────────────────────────
+   radial-gradient with an off-centre origin: that is the specular highlight
+   and it must not move. */
+.orbwrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+.orb{border-radius:var(--r-full);position:relative;flex:none;
+  background:radial-gradient(circle at 32% 26%,var(--c1),var(--c2) 74%)}
+.orb .spec{position:absolute;top:17%;left:24%;width:28%;height:16%;border-radius:var(--r-full);
+  background:rgba(255,255,255,.55);filter:blur(3px)}
+.orb .eye{position:absolute;top:36%;width:16%;height:23%;border-radius:var(--r-full);
+  background:#0B0B0B;opacity:.88}
+.orb .eye.l{left:26%} .orb .eye.r{right:26%}
+.orb .smile{position:absolute;top:59%;left:50%;transform:translateX(-50%);
+  width:29%;height:13%;border-radius:0 0 999px 999px;background:#0B0B0B;opacity:.88}
+.orbname{font-size:12.5px;font-weight:600;line-height:16px;text-align:center}
+.orbstatus{font-size:10.5px;font-weight:600;line-height:13px}
+.orbstatus.active{color:var(--up)} .orbstatus.paused{color:var(--ink40)}
+
+/* On a desk there is room to lay them out; a horizontally scrolling strip
+   clipped the last card mid-name and looked like a rendering fault. */
+.agentrow{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px}
+.agentcard{width:100%;background:var(--surface);border:1px solid var(--card-border);
+  border-radius:var(--r-card);padding:16px 10px 13px;cursor:pointer;
+  transition:border-color .15s,background .15s}
+.agentcard:hover{background:var(--surface-alt)}
+.agentcard[aria-pressed="true"]{border-color:var(--ink55)}
+
+/* ── the verdict ────────────────────────────────────────────────────────
+   The loudest block on the surface, and the numbered reasons under it are
+   the point: the remembered facts the decision rests on, cited. */
+.verdict{background:var(--surface);border:1px solid var(--card-border);
+  border-radius:var(--r-panel);padding:18px;margin-bottom:12px}
+.vhead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.vact{font-size:30px;font-weight:700;line-height:35px;letter-spacing:-1px}
+.vact.exec{color:var(--ink)} .vact.rej{color:var(--down)}
+.vsize{font-size:18px;font-weight:700;color:var(--ink55);letter-spacing:-.4px}
+.vorder{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--ink45);text-align:right}
+.fnote{display:flex;gap:10px;padding:7px 0}
+.fnref{width:18px;height:18px;flex:none;border-radius:6px;background:var(--control);
+  color:var(--ink50);font-size:10px;font-weight:700;display:grid;place-items:center;margin-top:2px}
+.fnote span:last-child{font-size:13.5px;font-weight:400;line-height:20px;color:var(--ink65)}
+.working{display:block;text-align:center;padding:16px 0;font-size:13px;font-weight:600;color:var(--ink45)}
+
+/* Data rows inside cards. */
+.krow{display:flex;align-items:baseline;gap:12px;padding:9px 0;border-bottom:1px solid var(--hair)}
+.krow:last-child{border-bottom:0}
+.krow .k{font-size:13.5px;font-weight:400;color:var(--ink45)}
+.krow .v{margin-left:auto;font-size:13.5px;font-weight:600;text-align:right;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere;max-width:66%}
+
+/* Banner: the one place bad news lands. */
+#authbar{background:var(--warn-bg);border:1px solid rgba(232,198,74,.28);color:var(--warn);
+  border-radius:var(--r-tile);padding:12px 14px;margin-bottom:12px;
+  font-size:12.5px;font-weight:500;line-height:18px}
+
+/* Scan table */
+.trow{display:grid;grid-template-columns:1fr 3.6ch 5.4ch 4.6ch 5.2ch;gap:8px;
+  padding:9px 0;border-bottom:1px solid var(--hair);
+  font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right;align-items:center}
+.trow span:first-child{text-align:left;font-weight:600}
+.trow.thead{color:var(--ink38);font-size:10px;font-weight:600;letter-spacing:.9px;text-transform:uppercase}
+.trow .neg{color:var(--down)}
+/* The tag carries state — "in hand", the asset class — so it has to be read,
+   not merely noticed. ink45 on a 7% fill measured 3.6:1. */
+.tag{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:5px;
+  background:rgba(255,255,255,.1);color:var(--ink70);
+  font-size:9.5px;font-weight:700;letter-spacing:.855px;text-transform:uppercase}
+
+/* Store browser tiers */
+/* Tiers are independent blocks. Left to span the window each row put its key
+   and its value a thousand pixels apart with nothing between them. */
+#store{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:0 26px;align-items:start}
+.grp{margin-bottom:16px;break-inside:avoid}
+.grp h3{margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:1.32px;
+  text-transform:uppercase;color:var(--ink45)}
+.linkbtn{background:none;border:0;color:var(--ink50);font-family:inherit;
+  font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;cursor:pointer;padding:0}
+.linkbtn:hover{color:var(--ink)}
+
+input[type="datetime-local"]{
+  flex:1;min-width:0;height:44px;padding:0 12px;border-radius:var(--r-sq);
+  background:var(--bubble);border:1px solid var(--input-border);color:var(--ink);
+  font-family:inherit;font-size:13px;font-weight:500}
+
+/* ── the tab bar ────────────────────────────────────────────────────────
+   Agents sits centre because agent supervision, not order entry, is what
+   this product is for. */
+nav{flex:none;display:flex;padding:8px 8px 20px;border-top:1px solid var(--hair-strong);
+  background:var(--bg)}
+nav button{flex:1;background:none;border:0;cursor:pointer;padding:6px 4px;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  color:var(--ink30);font-family:inherit;transition:color .15s;position:relative}
+nav button[aria-selected="true"]{color:var(--ink)}
+nav svg{width:21px;height:21px;display:block}
+nav .tl{font-size:9.5px;font-weight:600;letter-spacing:.285px}
+nav .dot{position:absolute;top:2px;right:calc(50% - 14px);width:6px;height:6px;
+  border-radius:var(--r-full);background:var(--ink30)}
+nav .dot.on{background:var(--up)}
+
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
 </style>
-<!--
-THESIS: the readout of a measuring instrument, printed as a results table. It
-refuses the crypto-dashboard arrangement — neon on black, glass cards, glowing
-candles — because this agent's claim is measurement, and a results table is how
-measurement is published.
-OWN-WORLD: nine enumerated steps of warm anodised graphite, the dark sibling of
-the pad's own grey tray; green and red only where the keycaps are printed in
-that filament; one amber for the market in hand. Archivo silkscreen legends,
-Azeret Mono for every quantity. Hairline rules, never cards.
-STORY: the operator sees which remembered facts produced a verdict, confirms
-with a physical key, and watches the same press decide differently once the
-memory is gone.
-FIRST VIEWPORT: the decision at top-left with its reasons numbered beneath it;
-markets as a cut tab rail with the deck under it; the book, memory and the log
-ruled alongside.
-FORM: candidate 4 of the grounded list, the statistical results table; seed key
-4fed7f87. Raised by the drum-machine row (committed panel ground, silkscreen
-legends), the zone-sheet record (an enumerated ramp as the only greys), the
-manual's tab board (cut edges, no card shadow), and the dive profile (one
-measure column ruling every row).
-FINISH: unreviewed and undocumented is unfinished; this build ends with the
-finish review, the verdict, DESIGN.md, and every shipping raster carrying its
-provenance.
--->
-<header>
-  <h1>xorr&#8209;pad</h1>
-  <span class="stat" id="mode">chain <b>&mdash;</b></span>
-  <button type="button" class="stat" id="armed" disabled>state <b>&mdash;</b></button>
-  <span class="stat" id="agent">agent <b>&mdash;</b></span>
-  <span class="stat" id="blk">block <b>&mdash;</b></span>
-  <span class="addr" id="addr"></span>
-</header>
-<div id="authbar" class="warn" hidden style="margin:9px 18px 0"></div>
-<main>
-  <section><h2>Decision</h2>
-    <div class="row" id="sizerow"><span class="k">trade size</span>
-      <span><span class="sizes" id="sizes"></span></span></div>
-    <div id="sig"></div></section>
-  <section><h2>Holdings</h2><div id="pf"></div></section>
-  <section><h2>Markets, all on Base</h2>
-    <div class="mkts" id="mkts"></div>
-    <h2 class="rule-top">The deck: every key is clickable</h2>
-    <div class="keys" id="keys"></div></section>
-  <section><h2>The book: six measured strategies</h2>
-    <div id="scanhead" class="caveat" style="margin-top:0;padding-top:0;border-top:0">Press SCAN to run the book across every market.</div>
-    <div id="scan"></div>
-    <div id="delisted" class="caveat"></div>
-    <div class="caveat"><b>Measured, not profitable.</b> These edges are real and
-      published with their t&#8209;statistics. None has been shown to make money net of
-      fees: the source engine&rsquo;s live book was &#43;$4.32 gross and &minus;$23.07 net
-      over 30 trades, the loss entirely fees.</div></section>
-  <section class="wide" id="memsec"><h2>Memory: everything Sibyl is holding</h2>
-    <div class="brief" id="briefing" hidden></div>
-    <div class="warn">Wiping is the demo. The agent forgets its limits, positions and learned rules.</div>
-    <button class="r wipe" onclick="wipe()">Wipe memory</button>
-    <button class="g wipe" id="reteach" hidden onclick="reteach()">Re&#8209;teach its limits</button>
-    <div id="cost" hidden></div>
-    <div id="contra" hidden></div>
-    <div class="tt">
-      <span class="ttl">Replay what it knew at</span>
-      <input id="ttin" type="datetime-local" step="1">
-      <button class="b" onclick="replay()">Replay</button>
-      <button onclick="replayNow()">Now</button>
-      <button class="r" onclick="decay()">Retire unused rules</button>
+
+<div id="app">
+  <aside id="rail">
+    <div class="brand">
+      <span class="bmark"></span>
+      <span class="btext"><span class="bname">xorr&#8209;pad</span>
+        <span class="bsub">agent desk</span></span>
     </div>
-    <div id="ttout" hidden></div>
-    <div id="store"></div></section>
-  <section><h2>Activity</h2><div id="log"></div></section>
-</main>
+    <div id="nav" role="tablist"></div>
+    <div class="railfoot">
+      <div class="railstat">chain <b id="railchain">&mdash;</b></div>
+      <div class="railstat">block <b id="railblock">&mdash;</b></div>
+      <div class="railstat">wallet <b id="railaddr">&mdash;</b></div>
+      <button id="railkill" onclick="killToggle()">Stop all trading</button>
+    </div>
+  </aside>
+
+  <div id="main">
+    <div id="topbar">
+      <span class="livedot" id="livedot"></span>
+      <h1 id="title">Portfolio</h1>
+      <span id="topsub"></span>
+      <span id="topright"></span>
+    </div>
+    <div id="scroll">
+    <div id="authbar" hidden></div>
+
+    <!-- ══ HOME ══ -->
+    <section class="pane on" id="p-home"><div class="wrap">
+      <div style="padding:2px 0 20px">
+        <div class="eyebrow" style="margin-bottom:8px">Total value</div>
+        <div id="hero" style="font-size:46px;font-weight:700;line-height:53px;letter-spacing:-1.4px">—</div>
+        <div id="herosub" style="margin-top:6px;font-size:13.5px;font-weight:500;color:var(--ink45)">reading balances…</div>
+      </div>
+
+      <div class="cols side">
+        <div>
+          <div class="card" id="daycard"></div>
+          <div class="shead" style="margin-top:22px"><h2>Agents</h2><span class="chev">›</span>
+            <span class="aside" id="agentcount"></span></div>
+          <div class="agentrow" id="orbs"></div>
+          <div id="briefwrap" style="margin-top:16px"></div>
+          <div class="shead"><h2>Recent activity</h2><span class="aside">every press, from anywhere</span></div>
+          <div id="homelog"></div>
+        </div>
+        <div>
+          <div class="shead" style="margin-top:0"><h2>Coins</h2><span class="chev">›</span>
+            <span class="aside" id="coincount"></span></div>
+          <div id="pf"></div>
+        </div>
+      </div>
+    </div></section>
+
+    <!-- ══ MARKETS ══ -->
+    <section class="pane" id="p-markets"><div class="wrap">
+     <div class="cols side">
+      <div>
+       <div id="mkts"></div>
+       <div class="note" style="margin-top:14px"><span class="nd block"></span>
+         <span class="nt" id="delisted"></span></div>
+      </div>
+      <div>
+       <div class="shead" style="margin-top:0"><h2>The book</h2><span class="aside">six measured strategies</span></div>
+       <div class="card" id="bookcard">
+         <div id="scanhead" style="font-size:12.5px;line-height:18px;color:var(--ink55)"></div>
+         <button class="btn ghost" style="margin-top:12px" id="runbook" onclick="press('scan')">Run the book across all six</button>
+       </div>
+       <div id="scan"></div>
+      <div class="note"><span class="nd warn"></span><span class="nt">
+        <b>Measured, not profitable.</b> These edges are real and published with their
+        t‑statistics. None has been shown to make money net of fees: the source engine's
+        live book was +$4.32 gross and −$23.07 net over 30 trades, the loss entirely fees.</span></div>
+      </div>
+     </div>
+    </div></section>
+
+    <!-- ══ AGENTS ══ -->
+    <section class="pane" id="p-agents"><div class="wrap">
+     <div class="cols side">
+      <div>
+      <div class="shead" style="margin-top:0"><h2>Hire an agent</h2><span class="aside">one holds the baton</span></div>
+      <div id="agentgrid" class="cols three"></div>
+
+      <div class="shead"><h2>Voice</h2><span class="aside">say an order</span></div>
+      <button class="btn secondary" id="micbtn" onclick="micToggle()">Hold a conversation</button>
+      <div class="note" style="margin-top:10px"><span class="nd"></span><span class="nt">
+        A spoken order goes through the same gate as a key press: it arrives as a decision
+        waiting on a ✓, never as a fill.</span></div>
+
+      <div class="shead"><h2>Kill switch</h2><span class="aside" id="armlabel"></span></div>
+      <button class="btn danger" id="killbtn" onclick="killToggle()">Stop all trading</button>
+      <div class="note" style="margin-top:10px"><span class="nd block"></span><span class="nt" id="killnote"></span></div>
+      </div>
+      <div>
+        <div class="shead" style="margin-top:0"><h2>Activity</h2><span class="aside">what the pad did</span></div>
+        <div id="log"></div>
+      </div>
+     </div>
+    </div></section>
+
+    <!-- ══ TRADE ══ -->
+    <section class="pane" id="p-trade"><div class="wrap">
+     <div class="cols side">
+      <div>
+      <div class="shead" style="margin-top:0"><h2>The ticket</h2><span class="aside">choose, size, propose</span></div>
+      <div class="pills" id="tradepills"></div>
+      <div class="card" style="margin-top:6px">
+        <div class="eyebrow" style="text-align:center;margin-bottom:12px">Trade size</div>
+        <div class="stepper" id="sizes"></div>
+      </div>
+      <!-- Propose, then decide. The pair that raises a decision sits above the
+           card that answers it; the other way round read as two rival rows. -->
+      <div class="btnrow" style="margin:4px 0 0">
+        <button class="btn secondary" onclick="press('sell')">Sell</button>
+        <button class="btn secondary wide" onclick="press('buy')">Buy</button>
+      </div>
+      <div class="card" id="inhand" style="margin-top:16px"></div>
+      </div>
+      <div>
+        <div class="shead" style="margin-top:0"><h2>The decision</h2><span class="aside">and what it rests on</span></div>
+        <div id="sig"></div>
+        <div class="shead"><h2>On this market</h2><span class="aside" id="mktjrnlsub"></span></div>
+        <div id="mktjrnl"></div>
+      </div>
+     </div>
+    </div></section>
+
+    <!-- ══ MEMORY ══ -->
+    <section class="pane" id="p-memory"><div class="wrap">
+     <div class="cols side">
+      <div>
+      <div class="note" id="briefnote" hidden><span class="nd"></span><span class="nt" id="briefing"></span></div>
+      <div class="card" id="contra" hidden></div>
+      <div class="card" id="cost" hidden></div>
+
+      <div class="shead" style="margin-top:0"><h2>Time machine</h2><span class="aside">replay the journal</span></div>
+      <div class="card">
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input id="ttin" type="datetime-local" step="1" aria-label="replay at">
+          <button class="btn secondary" style="height:44px;width:auto;padding:0 16px;flex:none" onclick="replay()">Replay</button>
+          <button class="btn secondary" style="height:44px;width:auto;padding:0 16px;flex:none" onclick="replayNow()">Now</button>
+        </div>
+        <button class="btn ghost" onclick="decay()">Retire rules nothing has needed</button>
+      </div>
+      <div class="card" id="ttout" hidden></div>
+
+      <div class="note" style="margin-top:16px"><span class="nd warn"></span><span class="nt">
+        <b>Wiping is the demo.</b> Delete the store and the agent forgets its limits, its
+        positions and every rule you taught it — then press the same key and watch the
+        verdict change.</span></div>
+      <button class="btn danger" style="margin-top:10px" onclick="wipe()">Wipe memory</button>
+      <button class="btn secondary" style="margin-top:10px" id="reteach" hidden onclick="reteach()">Re‑teach its limits</button>
+      </div>
+      <div>
+        <div class="shead" style="margin-top:0"><h2>The store</h2><span class="aside">tier by tier</span></div>
+        <div id="store"></div>
+      </div>
+     </div>
+    </div></section>
+  </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
 // No default. A missing token has to look like a missing token, not silently
 // work because a well-known one was baked into the page.
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
 const H = {"content-type":"application/json","authorization":"Bearer "+TOKEN};
-const KEYS = [["dca"],["grid"],["momentum"],["rebalance"],["yield"],["risk"],["base","b"],["portfolio"],
-              ["buy","g"],["sell","r"],["yes","g"],["no","r"],["mic"],["kill","r"],["scan","b"]];
 const CLASS_LABEL = {crypto:"crypto", forex:"forex", defi:"defi", ai:"ai agents"};
 let MARKETS = {}, activeMarket = "ETH", lastPrices = {}, lastScanAt = null;
-let pending = null;
+let pending = null, armed = true, agentNow = "momentum";
 const el = (id) => document.getElementById(id);
-const row = (k,v) => `<div class="row"><span class="k">${k}</span><span class="mono">${v}</span></div>`;
 
-// Build the deck ONCE. Re-rendering it on every 4s poll threw away any click
-// that landed mid-swap, dropped keyboard focus, and reset hover — the buttons
-// only ever change which one is highlighted, so highlight is all that updates.
-let deckBuilt = false;
-function drawKeys(active){
-  if (!deckBuilt) {
-    el("keys").innerHTML = KEYS.map(([k,c]) =>
-      `<button class="${c||''}" data-key="${k}" onclick="press('${k}')">${k.toUpperCase()}</button>`).join("");
-    deckBuilt = true;
-  }
-  for (const b of el("keys").children) b.classList.toggle("on", b.dataset.key === active);
+/* ── agent identity ────────────────────────────────────────────────────────
+   Each agent owns a gradient and keeps it everywhere it appears. The
+   off-centre origin in the CSS is the specular highlight; these are only the
+   two stops. */
+const AGENTS = [
+  { id:"momentum",  name:"Momentum Scout", c1:"#5B93FF", c2:"#1B44CE" },
+  { id:"risk",      name:"Drawdown Guard", c1:"#B58CFF", c2:"#7A45E0" },
+  { id:"yield",     name:"Yield Keeper",   c1:"#49E39B", c2:"#12A45F" },
+  { id:"dca",       name:"Earnings Desk",  c1:"#F0BE55", c2:"#C98518" },
+  { id:"grid",      name:"Grid Strategist",c1:"#C79BFF", c2:"#7B3FE4" },
+  { id:"rebalance", name:"Rebalancer",     c1:"#5AD9E8", c2:"#1580A8" },
+];
+const agentOf = (id) => AGENTS.find(a => a.id === id) || AGENTS[0];
+
+/** A mark for an instrument. Colour is fixed per symbol so a row is
+ *  recognisable before the label is read. */
+const MARKS = {
+  ETH:{c1:"#7FA6FF",c2:"#2A4FD8"}, WETH:{c1:"#7FA6FF",c2:"#2A4FD8"},
+  cbBTC:{c1:"#F7A55C",c2:"#C4600F"}, USDC:{c1:"#5FC3F5",c2:"#1477B8"},
+  EURC:{c1:"#8FE0B4",c2:"#1E9660"}, AERO:{c1:"#7FE3F0",c2:"#128DA8"},
+  MORPHO:{c1:"#B8A0FF",c2:"#6A3FD0"}, VIRTUAL:{c1:"#F0A8D8",c2:"#B33B8E"},
+};
+const markOf = (sym) => MARKS[sym] || { c1:"#9AA3B2", c2:"#4A5261" };
+const markHtml = (sym) => { const m = markOf(sym);
+  return `<div class="mark" style="background:radial-gradient(circle at 32% 26%,${m.c1},${m.c2} 74%)">${esc(sym[0])}</div>`; };
+
+/** The orb. `face` draws the eyes and smile; `bloom` casts the agent's own c1. */
+function orb(a, size, {face=true, bloom=false}={}){
+  return `<div class="orb" style="width:${size}px;height:${size}px;--c1:${a.c1};--c2:${a.c2}` +
+    (bloom ? `;box-shadow:0 14px 40px ${a.c1}55` : ``) + `">` +
+    `<span class="spec"></span>` +
+    (face ? `<span class="eye l"></span><span class="eye r"></span><span class="smile"></span>` : ``) +
+    `</div>`;
 }
+
+/* ── tabs ─────────────────────────────────────────────────────────────────
+   Five destinations. The icons are 21px inline SVG on a 24-box, 1.8 stroke,
+   round cap and join, no fill — active and label share `currentColor`. */
+const TABS = [
+  { id:"home", label:"Portfolio", title:"Portfolio", sub:"what it holds and what it did",
+    d:`<path d="M3 10.5 L12 3.5 L21 10.5 V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/><path d="M9.5 21v-6h5v6"/>` },
+  { id:"markets", label:"Markets", title:"Markets", sub:"six, all on Base",
+    d:`<path d="M4 4v16h16"/><path d="M7.5 15.5 L11 11 L14 13.5 L19.5 7"/>` },
+  { id:"agents", label:"Agents", title:"Agents", sub:"one holds the baton", dot:true,
+    d:`<circle cx="12" cy="12" r="8.5"/><circle cx="9.3" cy="10.4" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.7" cy="10.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.4 15.2a3.6 3.6 0 0 0 5.2 0"/>` },
+  { id:"trade", label:"Trade", title:"Trade", sub:"nothing fills without a ✓",
+    d:`<path d="M7 4v16"/><path d="M4 7.5 L7 4 L10 7.5"/><path d="M17 20V4"/><path d="M20 16.5 L17 20 L14 16.5"/>` },
+  { id:"memory", label:"Memory", title:"Memory", sub:"everything Sibyl is holding",
+    d:`<rect x="3" y="6.5" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><path d="M16.5 15h2"/>` },
+];
+let tab = "home";
+function drawTabs(){
+  el("nav").innerHTML = TABS.map(t =>
+    `<button role="tab" aria-selected="${t.id===tab}" onclick="pickTab('${t.id}')" title="${t.title}">` +
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ` +
+    `stroke-linecap="round" stroke-linejoin="round">${t.d}</svg>` +
+    `<span>${t.label}</span>` +
+    // The status dot rides the Agents row: the one always-visible signal that
+    // something is trading on the operator's behalf.
+    (t.dot ? `<span class="dot${armed?" on":""}"></span>` : ``) +
+    `</button>`).join("");
+}
+function pickTab(id){
+  tab = id;
+  for (const t of TABS) el("p-"+t.id).classList.toggle("on", t.id===id);
+  const t = TABS.find(x=>x.id===id) || {};
+  el("title").textContent = t.title || "Portfolio";
+  el("topsub").textContent = t.sub || "";
+  el("scroll").scrollTop = 0;
+  drawTabs();
+}
+
+/** One control, both directions: stop it, or put it back. */
+async function killToggle(){ armed ? press("kill") : arm(); }
+
+/* ── the deck, as controls rather than keys ───────────────────────────── */
 async function press(id){
-  // MIC is the one key the screen owns rather than forwards. The server's
-  // handler for it only ever replied {ok:true, note:"voice handled on /voice"}
-  // — a no-op that reported success, so the key animated and nothing happened.
+  // MIC is the one control the screen owns rather than forwards. The server's
+  // handler for it only ever replied {ok:true} — a no-op that reported success.
   if (id === "mic") return micToggle();
 
   // A confirmed swap signs, submits and waits for a mine — several seconds in
-  // which nothing on the card changed and both buttons stayed live. It looked
-  // frozen, and a second ✓ was one click away. Say what is happening and take
-  // the buttons out of play.
+  // which nothing changed and both buttons stayed live. It looked frozen, and
+  // a second ✓ was one click away. Say what is happening, take them out of play.
   const confirmRow = el("sig").querySelector(".confirm");
   if (confirmRow && (id === "yes" || id === "no"))
     confirmRow.innerHTML = `<span class="working">${id === "yes"
-      ? "signing, submitting and waiting for the mine\u2026"
-      : "refusing\u2026"}</span>`;
+      ? "signing, submitting and waiting for the mine…" : "refusing…"}</span>`;
 
   // The scan keys run the book server-side and hand back the result with the
   // pending decision attached. Calling /scan as well would run it twice.
   const scanning = (id === "scan" || id === "base");
-  if (scanning) { el("scanhead").textContent = "scanning six markets…"; el("scan").innerHTML = ""; }
+  if (scanning) { pickTab("markets"); el("scanhead").textContent = "scanning six markets…";
+    el("runbook").disabled = true; el("scan").innerHTML = ""; }
+  if (id === "buy" || id === "sell") pickTab("trade");
+
   const r = await fetch("/key",{method:"POST",headers:H,body:JSON.stringify({id})})
-    .then(r=>r.json())
-    .catch(e=>({ok:false,error:String(e.message||e)}));
+    .then(r=>r.json()).catch(e=>({ok:false,error:String(e.message||e)}));
+  if (scanning) el("runbook").disabled = false;
   if (r.scan) drawScan(r.scan);
   else if (scanning) el("scanhead").textContent = "scan failed" + (r.error?": "+r.error:"");
   if(r.signal){ pending = r; render_signal(r); }
   // Any error, however it arrives. Gating this on `ok===false` meant a 401 —
-  // which answers {error:"bad pad token"} with no `ok` field at all — rendered
-  // NOTHING: the key was pressed, the request was refused, and the pane went on
-  // showing the idle instructions as though nobody had touched it.
-  if(r.error) el("sig").innerHTML += `<div class="fnote"><span class="fnref">!</span><span style="color:var(--sell-t)">${esc(r.error)}</span></div>`;
-  // Once answered, the card must stop looking like a live order awaiting a ✓.
-  if(r.fill) settle(`FILLED ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "x", r.fill.hash);
-  else if(r.rejected) settle("REFUSED", "n");
+  // which answers {error} with no `ok` field — rendered NOTHING at all.
+  if(r.error) el("sig").innerHTML += note("block", esc(r.error));
+  if(r.fill) settle(`Filled ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "exec", r.fill.hash);
+  else if(r.rejected) settle("Refused", "rej");
+  await refresh();
+}
+const note = (kind, html) => `<div class="note"><span class="nd ${kind}"></span><span class="nt">${html}</span></div>`;
+
+async function pickAgent(id){
+  await fetch("/key",{method:"POST",headers:H,body:JSON.stringify({id})}).then(r=>r.json()).catch(()=>null);
   await refresh();
 }
 
-// ── the microphone ──────────────────────────────────────────────────────────
-// Click to start, click again to send. The server wants raw 16-bit PCM at
-// 16 kHz mono, which is what Deepgram is asked for on the way back out, so the
-// browser resamples to that rather than shipping WebM the server cannot read.
+/* ── the microphone ──────────────────────────────────────────────────────
+   Click to start, click again to send. The server wants raw 16-bit PCM at
+   16 kHz mono — what Deepgram is asked for on the way back out — so the
+   browser resamples to that rather than shipping WebM it cannot read. */
 let micState = null;
-
-function micKey(){ return [...document.querySelectorAll(".keys button")].find(b => b.dataset.key === "mic"); }
-function micLabel(text, live){
-  const k = micKey(); if (!k) return;
-  k.textContent = text;
-  k.classList.toggle("live", !!live);
-}
+function micSay(html){ el("sig").innerHTML = html; if (tab !== "trade") pickTab("trade"); }
 
 async function micToggle(){
   if (micState) return micStop();
-  // Say what is happening BEFORE awaiting permission. The browser's prompt can
-  // sit unanswered for as long as the user likes — and with nothing on screen
-  // the pad simply looked frozen, which is the worst possible reading of a
-  // trading app that has just been asked to listen.
-  el("sig").innerHTML = `<div class="verdict"><span class="act">ASKING FOR THE MICROPHONE</span></div>` +
-    `<div class="fnote"><span class="fnref">&mdash;</span><span>Your browser is asking whether this page may listen. Allow it to carry on.</span></div>`;
+  // Say what is happening BEFORE awaiting permission. The prompt can sit
+  // unanswered as long as the user likes, and with nothing on screen the pad
+  // simply looked frozen — the worst reading of an app asked to listen.
+  micSay(`<div class="verdict"><div class="vhead"><span class="vact exec" style="font-size:20px">Asking for the microphone</span></div>` +
+    `<div class="fnote"><span class="fnref">—</span><span>Your browser is asking whether this page may listen. Allow it to carry on.</span></div></div>`);
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: {
       channelCount: 1, echoCancellation: true, noiseSuppression: true } });
   } catch (e) {
-    // A refused or missing microphone is a normal outcome, not a crash. Say
-    // which it was, in words, where the answer would have gone.
-    el("sig").innerHTML = `<div class="verdict n"><span class="act n">NO MICROPHONE</span></div>` +
+    // A refused or missing microphone is a normal outcome, not a crash.
+    micSay(`<div class="verdict"><div class="vhead"><span class="vact rej" style="font-size:20px">No microphone</span></div>` +
       `<div class="fnote"><span class="fnref">!</span><span>${esc(
         e && e.name === "NotAllowedError"
-          ? "The browser refused microphone access. Allow it for this page and press MIC again."
-          : "No microphone is available to this window: " + String(e && e.message || e))}</span></div>`;
+          ? "The browser refused microphone access. Allow it for this page and press again."
+          : "No microphone is available to this window: " + String(e && e.message || e))}</span></div></div>`);
     return;
   }
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
   const src = ctx.createMediaStreamSource(stream);
-  // ScriptProcessor is deprecated but is the one path that works without
-  // shipping a separate worklet file, which the CSP here would have to allow.
+  // ScriptProcessor is deprecated but is the one path that needs no separate
+  // worklet file, which the CSP here would have to allow.
   const node = ctx.createScriptProcessor(4096, 1, 1);
   const chunks = [];
   node.onaudioprocess = (ev) => chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
   src.connect(node); node.connect(ctx.destination);
   micState = { stream, ctx, src, node, chunks };
-  micLabel("SEND", true);
-  el("sig").innerHTML = `<div class="verdict"><span class="act">LISTENING</span></div>` +
-    `<div class="fnote"><span class="fnref">&mdash;</span><span>Ask it something, or say an order like "buy fifty dollars of ETH". Press MIC again to send.</span></div>`;
+  el("micbtn").textContent = "Send what you said";
+  el("micbtn").className = "btn primary";
+  micSay(`<div class="verdict"><div class="vhead"><span class="vact exec" style="font-size:20px">Listening</span></div>` +
+    `<div class="fnote"><span class="fnref">—</span><span>Ask it something, or say an order like “buy fifty dollars of ETH”. Press again to send.</span></div></div>`);
 }
 
 async function micStop(){
   const m = micState; micState = null;
-  micLabel("MIC", false);
+  el("micbtn").textContent = "Hold a conversation";
+  el("micbtn").className = "btn secondary";
   m.node.onaudioprocess = null;
   try { m.src.disconnect(); m.node.disconnect(); } catch {}
   m.stream.getTracks().forEach(t => t.stop());
@@ -445,12 +677,12 @@ async function micStop(){
   await m.ctx.close().catch(()=>{});
 
   const pcm = toPcm16(m.chunks, rate, 16000);
-  if (pcm.byteLength < 3200) {          // under 0.1s of audio is not a question
-    el("sig").innerHTML = `<div class="verdict n"><span class="act n">NOTHING RECORDED</span></div>` +
-      `<div class="fnote"><span class="fnref">!</span><span>That was too short to hear. Hold the key open a little longer.</span></div>`;
+  if (pcm.byteLength < 3200) {            // under 0.1s of audio is not a question
+    micSay(`<div class="verdict"><div class="vhead"><span class="vact rej" style="font-size:20px">Nothing recorded</span></div>` +
+      `<div class="fnote"><span class="fnref">!</span><span>That was too short to hear. Hold it open a little longer.</span></div></div>`);
     return;
   }
-  el("sig").innerHTML = `<div class="verdict"><span class="act">TRANSCRIBING…</span></div>`;
+  micSay(`<div class="verdict"><div class="vhead"><span class="vact exec" style="font-size:20px">Transcribing…</span></div></div>`);
   try {
     const r = await fetch("/voice", { method: "POST",
       headers: { "authorization": "Bearer " + TOKEN, "content-type": "application/octet-stream" },
@@ -460,20 +692,19 @@ async function micStop(){
     const said  = decodeURIComponent(r.headers.get("x-reply") || "");
     const action = r.headers.get("x-action") || "ANSWER";
     const audio = await r.arrayBuffer();
-    el("sig").innerHTML =
-      `<div class="verdict ${action === "EXECUTE" ? "" : action === "REJECT" ? "n" : "x"}">` +
-      `<span class="act">${esc(action === "UNHEARD" ? "DIDN\u2019T CATCH THAT" : action)}</span></div>` +
-      (heard ? `<div class="fnote"><span class="fnref">&ldquo;</span><span>${esc(heard)}</span></div>` : "") +
-      `<div class="fnote"><span class="fnref">&mdash;</span><span>${esc(said)}</span></div>`;
+    micSay(`<div class="verdict"><div class="vhead"><span class="vact ${action==="REJECT"?"rej":"exec"}" style="font-size:20px">` +
+      `${esc(action === "UNHEARD" ? "Didn’t catch that" : action === "ANSWER" ? "Answer" : action)}</span></div>` +
+      (heard ? `<div class="fnote"><span class="fnref">“</span><span>${esc(heard)}</span></div>` : "") +
+      `<div class="fnote"><span class="fnref">—</span><span>${esc(said)}</span></div></div>`);
     playPcm(audio);
     await refresh();
-    // A spoken order leaves a real decision waiting on a ✓, exactly as the key
-    // would have. Pick it up so YES/NO act on it.
+    // A spoken order leaves a real decision waiting on a ✓, exactly as a key
+    // press would. Pick it up so Confirm/Refuse act on it.
     const pd = await get("/pending");
-    if (pd?.pending) { pending = { signal: pd.signal, verdict: pd.verdict }; }
+    if (pd?.pending) { pending = { signal: pd.signal, verdict: pd.verdict }; render_signal(pending); }
   } catch (e) {
-    el("sig").innerHTML = `<div class="verdict n"><span class="act n">VOICE FAILED</span></div>` +
-      `<div class="fnote"><span class="fnref">!</span><span>${esc(String(e.message || e))}</span></div>`;
+    micSay(`<div class="verdict"><div class="vhead"><span class="vact rej" style="font-size:20px">Voice failed</span></div>` +
+      `<div class="fnote"><span class="fnref">!</span><span>${esc(String(e.message || e))}</span></div></div>`);
   }
 }
 
@@ -491,7 +722,6 @@ function toPcm16(chunks, from, out){
   }
   return pcm.buffer;
 }
-
 /** The reply comes back as the same raw 16 kHz PCM, so play it directly. */
 function playPcm(buf){
   try {
@@ -505,28 +735,33 @@ function playPcm(buf){
   } catch {}
 }
 
+/* ── the verdict ───────────────────────────────────────────────────────── */
 function settle(msg, kind, hash){
   pending = null;
   el("sig").innerHTML =
-    `<div class="verdict ${kind}"><span class="act ${kind}">${esc(msg)}</span></div>` +
-    (hash?`<div class="row"><span class="k">transaction</span><span class="mono">${esc(hash)}</span></div>`:"");
+    `<div class="verdict"><div class="vhead"><span class="vact ${kind}">${esc(msg)}</span></div>` +
+    (hash?`<div class="krow"><span class="k">transaction</span><span class="v" style="font-size:11px">${esc(hash)}</span></div>`:"") +
+    `</div>`;
 }
 // The reasons are numbered footnotes against the verdict, because that is what
 // they are: the remembered facts the decision rests on, cited.
 function render_signal(r){
   const v = r.verdict, ok = v.action==="EXECUTE";
   el("sig").innerHTML =
-    `<div class="verdict ${ok?'x':'n'}">
-       <span class="act ${ok?'x':'n'}">${v.action}</span>
-       <span class="sz">$${v.sizeUsd}</span>
-       <span style="margin-left:auto" class="order">${r.signal.side} ${r.signal.symbol} $${r.signal.sizeUsd}</span>
-       <span class="tag">${esc(r.signal.agent)}</span>
-     </div>` +
-    `<div class="resolve">` + v.why.map((w,i)=>
-      `<div class="fnote"><span class="fnref">${i+1}</span><span>${esc(w)}</span></div>`).join("") + `</div>` +
-    (ok?`<div class="confirm"><button class="g" onclick="press('yes')">Confirm and execute</button>
-         <button class="r" onclick="press('no')">Refuse</button></div>`:"");
+    `<div class="verdict">
+       <div class="vhead">
+         <span class="vact ${ok?'exec':'rej'}">${ok?"Execute":"Reject"}</span>
+         <span class="vsize">${dollars(v.sizeUsd)}</span>
+         <span class="vorder">${esc(r.signal.side)} ${esc(r.signal.symbol)}<br>${esc(r.signal.agent)}</span>
+       </div>` +
+    v.why.map((w,i)=>`<div class="fnote"><span class="fnref">${i+1}</span><span>${esc(w)}</span></div>`).join("") +
+    (ok?`<div class="confirm btnrow" style="margin-top:14px">
+         <button class="btn secondary" onclick="press('no')">Refuse</button>
+         <button class="btn primary wide" onclick="press('yes')">Confirm and execute</button></div>`:"") +
+    `</div>`;
+  if (tab !== "trade") pickTab("trade");
 }
+
 async function acceptRule(p){
   await fetch("/reflect/accept",{method:"POST",headers:H,body:JSON.stringify({proposal:p})});
   await refresh();
@@ -535,97 +770,93 @@ async function reteach(){
   await fetch("/memory/seed",{method:"POST",headers:H,body:"{}"});
   await refresh();
 }
+
+/* ── size, as a stepper ───────────────────────────────────────────────── */
 const SIZES = [10, 25, 50, 100];
 let sizeUsd = null;
 function drawSizes(active){
   if (sizeUsd === active) return;
   sizeUsd = active;
-  el("sizes").innerHTML = SIZES.map(v =>
-    `<button class="${v===active?'on':''}" onclick="setSize(${v})">$${v}</button>`).join("");
+  el("sizes").innerHTML =
+    `<button onclick="stepSize(-1)" aria-label="smaller">−</button>` +
+    `<span class="val">${dollars(active)}</span>` +
+    `<button onclick="stepSize(1)" aria-label="larger">+</button>`;
+}
+function stepSize(dir){
+  const i = SIZES.indexOf(sizeUsd);
+  const next = SIZES[Math.max(0, Math.min(SIZES.length-1, (i<0?2:i) + dir))];
+  if (next !== sizeUsd) setSize(next);
 }
 async function setSize(usd){
   const r = await fetch("/size",{method:"POST",headers:H,body:JSON.stringify({usd})}).then(r=>r.json());
   if (r.cappedBy) el("sig").innerHTML =
-    `<div class="fnote"><span class="fnref">!</span><span>capped to $${r.sizeUsd} by the remembered $${r.cappedBy}/trade limit</span></div>`;
+    note("warn", `capped to ${dollars(r.sizeUsd)} by the remembered ${dollars(r.cappedBy)}/trade limit`);
   await refresh();
 }
-// The whole store, tier by tier. recall_brief is the decision-shaped summary;
-// this is what Sibyl is actually holding, which is the thing being judged.
+
+/* ── the store, tier by tier ───────────────────────────────────────────── */
 let storeOpen = true;
 function toggleStore(){ storeOpen = !storeOpen; drawStore(lastStore); }
 let lastStore = null;
 function drawStore(st){
   lastStore = st;
   if (!st) { el("store").innerHTML = ""; return; }
-  const kv = (k,v) => `<div class="row"><span class="k">${esc(k)}</span><span class="mono">${esc(v)}</span></div>`;
+  const kv = (k,v) => `<div class="krow"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`;
   const parts = [];
   /** One tier = one block, so a heading can never be separated from its rows. */
-  const group = (head, body, cls = "") =>
-    `<div class="grp ${cls}"><h2 class="rule-top">${head}</h2>${body}</div>`;
+  const group = (head, body) => `<div class="grp"><h3>${head}</h3>${body}</div>`;
 
   for (const [cat, items] of Object.entries(st.entities || {})) {
-    parts.push(group(`entity / ${esc(cat)} &mdash; ${items.length}`, items.map(it => {
+    parts.push(group(`entity / ${esc(cat)} — ${items.length}`, items.map(it => {
       const b = it.body || {};
-      const detail = cat === "position"
-        ? `${qty(b.qty)} @ ${money(b.avg_entry_usd)}`
-        : cat === "rule"
-          ? esc(b.text || b.id || "")
-          : esc(JSON.stringify(b).slice(0, 90));
-      return `<div class="row"><span class="k">${esc(it.name)}</span><span class="mono">${detail}</span></div>`;
+      const detail = cat === "position" ? `${qty(b.qty)} @ ${money(b.avg_entry_usd)}`
+        : cat === "rule" ? esc(b.text || b.id || "")
+        : esc(JSON.stringify(b).slice(0, 90));
+      return `<div class="krow"><span class="k">${esc(it.name)}</span><span class="v">${detail}</span></div>`;
     }).join("")));
   }
-
   for (const [k, v] of Object.entries(st.references || {})) {
     parts.push(group(`reference / ${esc(k)}`,
       kv("per trade", money(v.max_trade_usd)) + kv("per day", money(v.max_day_usd)) +
-      `<div class="row"><span class="k">allowlist</span><span class="mono">${esc((v.allow||[]).join(" "))}</span></div>`));
+      `<div class="krow"><span class="k">allowlist</span><span class="v">${esc((v.allow||[]).join(" "))}</span></div>`));
   }
-
   for (const [k, v] of Object.entries(st.state || {})) {
-    parts.push(group(`state / ${esc(k)}`,
-      Object.entries(v).map(([kk,vv]) => kv(kk, String(vv))).join("")));
+    parts.push(group(`state / ${esc(k)}`, Object.entries(v).map(([kk,vv]) => kv(kk, String(vv))).join("")));
   }
-
   const arch = st.archived || [];
-  if (arch.length) {
-    parts.push(group(`archived &mdash; ${arch.length}`, arch.map(a =>
-      `<div class="row"><span class="k">${esc(a.category)}/${esc(a.name)}</span>` +
-      `<span class="mono dim">${esc(a.reason || "")}</span></div>`).join("")));
-  }
+  if (arch.length) parts.push(group(`archived — ${arch.length}`, arch.map(a =>
+    `<div class="krow"><span class="k">${esc(a.category)}/${esc(a.name)}</span>` +
+    `<span class="v dim" style="font-weight:400">${esc(a.reason || "")}</span></div>`).join("")));
 
   const j = st.journal || [];
-  // The journal is the one tier that may be taller than a column, so it is
-  // allowed to break internally — the heading still stays with its first rows.
-  parts.push(group(`journal &mdash; ${j.length} event${j.length===1?"":"s"}` +
-             ` <button style="float:right;padding:2px 8px;font-size:var(--t0)" onclick="toggleStore()">${storeOpen?"hide":"show"}</button>`,
+  parts.push(group(`journal — ${j.length} event${j.length===1?"":"s"}` +
+    ` <button class="linkbtn" style="float:right" onclick="toggleStore()">${storeOpen?"hide":"show"}</button>`,
     !storeOpen ? "" : j.map(e => {
-    const act = e.acted?.action || "—";
-    const sig = e.evaluated?.signal;
-    const what = sig ? `${sig.side} ${sig.symbol} $${sig.sizeUsd}`
-               : e.evaluated?.heard ? `heard "${String(e.evaluated.heard).slice(0,42)}"`
-               : e.evaluated?.proposal ? `rule ${e.evaluated.proposal.id}` : "";
-    return `<div class="row"><span class="k">${esc(act)} <span class="dim">${esc(what)}</span></span>` +
-           `<span class="mono dim">${new Date(e.ts).toLocaleTimeString([], {hour12:false})}</span></div>`;
-  }).join(""), "long"));
+      const act = e.acted?.action || "—";
+      const sig = e.evaluated?.signal;
+      const what = sig ? `${sig.side} ${sig.symbol} $${sig.sizeUsd}`
+        : e.evaluated?.heard ? `heard "${String(e.evaluated.heard).slice(0,42)}"`
+        : e.evaluated?.proposal ? `rule ${e.evaluated.proposal.id}` : "";
+      return `<div class="krow"><span class="k">${esc(act)} <span class="dim">${esc(what)}</span></span>` +
+             `<span class="v dim" style="font-weight:400">${new Date(e.ts).toLocaleTimeString([], {hour12:false})}</span></div>`;
+    }).join("")));
 
   const s2 = st.stats || {};
-  parts.push(group("store",
-    kv("file", String(s2.db || "").split("/").pop() || "—") +
+  parts.push(group("store", kv("file", String(s2.db || "").split("/").pop() || "—") +
     kv("size", `${Math.round((s2.size_bytes||0)/1024)} KB`) +
     kv("tier", (s2.tier && s2.tier.tier) || "—")));
 
   el("store").innerHTML = parts.join("");
 }
-async function arm(){
-  await fetch("/arm",{method:"POST",headers:H});
-  await refresh();
-}
+
+async function arm(){ await fetch("/arm",{method:"POST",headers:H}); await refresh(); }
 
 function drawContradictions(cx){
   const box = el("contra");
   if (!cx?.findings?.length) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = `<h3>${cx.findings.length} rule${cx.findings.length===1?"":"s"} cannot do what it claims</h3>` +
+  box.innerHTML = `<h3 style="margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:1.32px;text-transform:uppercase;color:var(--warn)">` +
+    `${cx.findings.length} rule${cx.findings.length===1?"":"s"} cannot do what it claims</h3>` +
     cx.findings.map(f => `<div class="fnote"><span class="fnref">${esc(f.kind[0].toUpperCase())}</span><span>${esc(f.text)}</span></div>`).join("");
 }
 
@@ -639,31 +870,33 @@ function drawCost(d){
   if (d.lost?.state?.length) bits.push(`${d.lost.state.length} state key${d.lost.state.length===1?"":"s"}`);
   if (d.lost?.journal) bits.push(`${d.lost.journal} journal events`);
   const when = d.at ? new Date(d.at).toLocaleTimeString([], {hour12:false}) : "";
-  box.innerHTML = `<h3>what the wipe cost${when ? ` &mdash; ${esc(when)}` : ""}</h3>` +
-    `<div>It held ${d.had.journal} journal events and lost ${bits.join(", ") || "nothing"}.</div>`;
+  box.innerHTML = `<h3 style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:1.32px;text-transform:uppercase;color:var(--down)">` +
+    `what the wipe cost${when ? ` — ${esc(when)}` : ""}</h3>` +
+    `<div style="font-size:12.5px;line-height:18px;color:var(--ink55)">It held ${d.had.journal} journal events and lost ${bits.join(", ") || "nothing"}.</div>`;
 }
 
 /** The temporal tier as a time machine: what it knew, at a moment you choose. */
 async function replay(){
   const v = el("ttin").value;
-  if (!v) { el("ttout").hidden = false; el("ttout").innerHTML = "<h3>replay</h3><div>Pick a time first.</div>"; return; }
+  if (!v) { el("ttout").hidden = false; el("ttout").innerHTML = ttHead("replay") + `<div class="krow"><span class="k">Pick a time first.</span></div>`; return; }
   await showAt(new Date(v).toISOString());
 }
 async function replayNow(){ await showAt(new Date().toISOString()); }
+const ttHead = (t) => `<h3 style="margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:1.32px;text-transform:uppercase;color:var(--ink45)">${esc(t)}</h3>`;
 
 let ttDrawnAt = 0;
 async function showAt(ts){
   const r = await get("/memory/at?ts=" + encodeURIComponent(ts));
   const box = el("ttout"); box.hidden = false; ttDrawnAt = Date.now();
-  if (!r || r.error) { box.innerHTML = `<h3>replay</h3><div>${esc(r?.error || "could not replay")}</div>`; return; }
+  if (!r || r.error) { box.innerHTML = ttHead("replay") + `<div class="krow"><span class="k">${esc(r?.error || "could not replay")}</span></div>`; return; }
   const pos = Object.entries(r.positions || {});
-  box.innerHTML = `<h3>what it knew at ${esc(String(ts).slice(0,19).replace("T"," "))}</h3>` +
-    `<div class="row"><span class="k">journal events replayed</span><span class="mono">${r.replayed}</span></div>` +
-    `<div class="row"><span class="k">executed by then</span><span class="mono">${dollars(r.spent)}</span></div>` +
+  box.innerHTML = ttHead(`what it knew at ${String(ts).slice(0,19).replace("T"," ")}`) +
+    `<div class="krow"><span class="k">journal events replayed</span><span class="v">${r.replayed}</span></div>` +
+    `<div class="krow"><span class="k">executed by then</span><span class="v">${dollars(r.spent)}</span></div>` +
     (pos.length
-      ? pos.map(([sym,p]) => `<div class="row"><span class="k">held ${esc(sym)}</span><span class="mono">${qty(p.qty)} @ ${money(p.avg_entry_usd)}</span></div>`).join("")
-      : `<div class="row"><span class="k">positions</span><span class="mono dim">flat</span></div>`) +
-    (r.rules?.length ? `<div class="row"><span class="k">rules in force</span><span class="mono">${esc(r.rules.map(x=>x.id).join(", "))}</span></div>` : "");
+      ? pos.map(([sym,p]) => `<div class="krow"><span class="k">held ${esc(sym)}</span><span class="v">${qty(p.qty)} @ ${money(p.avg_entry_usd)}</span></div>`).join("")
+      : `<div class="krow"><span class="k">positions</span><span class="v dim">flat</span></div>`) +
+    (r.rules?.length ? `<div class="krow"><span class="k">rules in force</span><span class="v">${esc(r.rules.map(x=>x.id).join(", "))}</span></div>` : "");
 }
 
 /** Forget deliberately: retire rules nothing has needed. */
@@ -673,7 +906,8 @@ async function decay(){
   // "Checked 0 rules. Every rule has either fired or is younger than the
   // window." is nonsense when there are no rules — the same failure as not
   // telling an empty store from one that simply has no match.
-  box.innerHTML = `<h3>retire unused rules</h3><div>` + (
+  box.innerHTML = ttHead("retire unused rules") +
+    `<div style="font-size:12.5px;line-height:18px;color:var(--ink55)">` + (
     r.checked === 0
       ? `You have not taught it any rules yet, so there is nothing to retire.`
       : `Checked ${r.checked} rule${r.checked===1?"":"s"} over ${r.days} days. ` +
@@ -689,19 +923,58 @@ async function wipe(){
   // The verdict on screen was reasoned from memory that no longer exists.
   // Leaving it up would be the one dishonest frame in the whole demo.
   pending = null;
-  el("sig").innerHTML = `<div class="verdict n"><span class="act n">MEMORY WIPED</span></div>`
-    + `<div class="fnote"><span class="fnref">&mdash;</span><span>the last verdict was reasoned from limits, positions and rules that are now gone. Press a key to decide again.</span></div>`;
+  el("sig").innerHTML = `<div class="verdict"><div class="vhead"><span class="vact rej">Memory wiped</span></div>` +
+    `<div class="fnote"><span class="fnref">—</span><span>the last verdict was reasoned from limits, positions and rules that are now gone. Press a key to decide again.</span></div></div>`;
   await refresh();
 }
-// The log lives on the server, so this pane shows what the PAD did too — not
-// just what was clicked in this tab — and survives a refresh.
-function drawLog(entries){
-  el("log").innerHTML = (entries||[]).map(e=>
-    `<div class="row"><span>${esc(e.m)}</span><span class="mono dim">${new Date(e.t).toLocaleTimeString([], {hour12:false})}</span></div>`).join("")
-    || `<div class="row"><span class="dim">Nothing yet. Press a key.</span></div>`;
+
+// The log lives on the server, so this shows what the PAD did too — not just
+// what was clicked in this tab — and survives a refresh.
+function drawLog(entries, into = "log", cap = 22){
+  el(into).innerHTML = (entries||[]).slice(0,cap).map(e=>
+    `<div class="krow"><span class="k" style="color:var(--ink55)">${esc(e.m)}</span>` +
+    `<span class="v dim" style="font-weight:400">${new Date(e.t).toLocaleTimeString([], {hour12:false})}</span></div>`).join("")
+    || `<div class="krow"><span class="k dim">Nothing yet. Propose a trade.</span></div>`;
 }
-// The pad trades assets from $0.58 to $79,000. One fixed decimal count cannot
-// serve both, so scale the precision to the magnitude.
+
+/**
+ * The day's budget, on every screen. It is drawn from what the journal says has
+ * already gone out against the limit the store remembers — wipe the store and
+ * the bar has nothing to measure, and says so instead of showing a full one.
+ */
+function drawBudget(mem){
+  const box = el("topright");
+  const lim = mem?.limits, spent = Number(mem?.spent_today);
+  if (!lim || !Number.isFinite(spent)) { box.innerHTML = ""; return; }
+  const pct = Math.max(0, Math.min(100, (spent / lim.max_day_usd) * 100));
+  box.innerHTML = `<span class="budget" title="${dollars(spent)} of ${dollars(lim.max_day_usd)} executed today">
+    <span class="bl">today</span>
+    <span class="bt"><span class="bf${pct >= 80 ? " hot" : ""}" style="width:${pct.toFixed(1)}%"></span></span>
+    <span class="bv">${dollars(spent)} / ${dollars(lim.max_day_usd)}</span></span>`;
+}
+
+/** What has already been decided on the instrument in hand. */
+function drawMarketJournal(store){
+  const box = el("mktjrnl"), sub = el("mktjrnlsub");
+  const j = (store?.journal || []).filter(e => e.evaluated?.signal?.symbol === activeMarket);
+  sub.textContent = `${j.length} decision${j.length===1?"":"s"} on ${activeMarket}`;
+  if (!j.length) {
+    box.innerHTML = `<div class="krow"><span class="k dim">Nothing has been decided on ${esc(activeMarket)} yet.</span></div>`;
+    return;
+  }
+  box.innerHTML = j.slice(0, 10).map(e => {
+    const sg = e.evaluated.signal, act = e.acted?.action || "—";
+    const kind = /FILL|APPROVED/.test(act) ? "up" : /REJECT/.test(act) ? "down" : "dim";
+    return `<div class="krow"><span class="k" style="color:var(--ink55)">
+        <span class="${kind}" style="font-weight:600">${esc(act)}</span>
+        ${esc(sg.side)} ${dollars(sg.sizeUsd)}</span>` +
+      `<span class="v dim" style="font-weight:400">${new Date(e.ts).toLocaleTimeString([], {hour12:false})}</span></div>`;
+  }).join("");
+}
+
+/* ── formatters ──────────────────────────────────────────────────────────
+   The pad trades assets from $0.58 to $79,000. One fixed decimal count cannot
+   serve both, so scale the precision to the magnitude. */
 function money(v){
   const n = Number(v);
   if (!isFinite(n)) return "—";
@@ -710,15 +983,16 @@ function money(v){
   const dp = a >= 1000 ? 0 : a >= 100 ? 2 : a >= 1 ? 3 : a >= 0.01 ? 4 : 6;
   return "$" + n.toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
 }
-/**
- * A budget figure, not a price. money() scales its precision by magnitude,
- * which is right for a $0.6458 token and wrong for a dollar total — "$50.000"
- * reads as a measurement, not as fifty dollars.
- */
+/** A budget figure, not a price. money() scales precision by magnitude, which
+ *  is right for a $0.6458 token and wrong for a dollar total — "$50.000" reads
+ *  as a measurement, not as fifty dollars. */
 function dollars(v){
   const n = Number(v);
   if (!isFinite(n)) return "—";
-  return "$" + n.toLocaleString(undefined,{maximumFractionDigits: Number.isInteger(n) ? 0 : 2});
+  // A whole figure keeps no decimals ($50, not $50.00); a fractional one takes
+  // exactly two, or a column reads "$662.8" beside "$473.79".
+  const dp = Number.isInteger(n) ? 0 : 2;
+  return "$" + n.toLocaleString(undefined,{minimumFractionDigits:dp, maximumFractionDigits:dp});
 }
 function qty(v){
   const n = Number(v); const a = Math.abs(n);
@@ -743,88 +1017,249 @@ async function get(path){
 function drawAuthBanner(){
   const b = el("authbar");
   // Say exactly what is unavailable. Market prices come from the exchange feed,
-  // not from Base, so they stay live while the node is down — claiming
-  // otherwise put a false statement on screen next to six correct prices.
+  // not from Base, so they stay live while the node is down.
   if (chainDown) { b.hidden = false; b.textContent = chainDown + " Holdings and on-chain data are unavailable until it does; market prices come from the exchange feed and are still live."; return; }
   b.hidden = !authBad;
   if (authBad) b.textContent =
     "Bad pad token. This page's ?token= value does not match PAD_TOKEN on the backend, so the data panes stay empty until it does.";
 }
 
+/* ── markets ─────────────────────────────────────────────────────────────
+   Hairline rows on Markets, scrolling pills on Trade. Pills never shrink to
+   fit — that is how the old market tabs broke. */
 let mktKeys = "";
 function drawMarkets(){
   const entries = Object.entries(MARKETS).filter(([k])=>!k.startsWith("__"));
   const sig = entries.map(([k])=>k).join(",") + "|" + entries.map(([k])=>lastPrices[k]).join(",") + "|" + activeMarket;
   if (sig === mktKeys) return;              // nothing visible changed
   mktKeys = sig;
+
   el("mkts").innerHTML = entries.map(([sym,m])=>{
     const px = lastPrices[sym];
-    return `<button class="mkt" type="button" aria-pressed="${sym===activeMarket}" onclick="pickMarket('${sym}')" title="${esc(m.label)}. Uniswap V3 ${m.fee/10000}% tier on Base.">
-      <span class="s">${sym}</span><span class="c">${CLASS_LABEL[m.class]||m.class}</span>
-      <span class="p">${px!=null?money(px):"\u2014"}</span></button>`;
+    return `<div class="lrow" role="button" tabindex="0" onclick="pickMarket('${sym}')"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickMarket('${sym}')}"
+        style="cursor:pointer" title="${esc(m.label)}. Uniswap V3 ${m.fee/10000}% tier on Base.">
+      ${markHtml(sym)}
+      <div class="lmain"><span class="lp">${esc(sym)}${sym===activeMarket?` <span class="tag">in hand</span>`:``}</span>
+        <span class="ls">${esc(m.label)} · ${CLASS_LABEL[m.class]||m.class}</span></div>
+      <div class="lval"><span class="lv">${px!=null?money(px):"—"}</span>
+        <span class="ld">${m.fee/10000}% tier</span></div>
+    </div>`;
   }).join("");
+
+  el("tradepills").innerHTML = entries.map(([sym])=>
+    `<button class="pill" type="button" aria-pressed="${sym===activeMarket}" onclick="pickMarket('${sym}')">${esc(sym)}</button>`).join("");
 }
 async function pickMarket(sym){
   const r = await fetch("/key",{method:"POST",headers:H,body:JSON.stringify({id:sym})}).then(r=>r.json());
-  if(r.ok===false){ el("sig").innerHTML = `<div class="fnote"><span class="fnref">!</span><span style="color:var(--sell-t)">${esc(r.error)}</span></div>`; return; }
-  activeMarket = sym; drawMarkets(); await refresh();
+  if(r.ok===false){ el("sig").innerHTML = note("block", esc(r.error)); return; }
+  activeMarket = sym; mktKeys = ""; drawMarkets(); await refresh();
 }
+
 function drawScan(r){
   if(!r || !r.markets){ el("scanhead").textContent="scan returned nothing"; return; }
   for (const m of r.markets) if (m.price!=null) lastPrices[m.symbol]=m.price;
-  drawMarkets();
+  mktKeys = ""; drawMarkets();
   // Stamp the run. The summary says what is true "right now", and a scan from
-  // seven minutes ago saying that is simply wrong — the reader has no way to
-  // tell a fresh book from a stale one without it.
-  el("scanhead").innerHTML = `<b style="color:${r.signals.length?'var(--buy)':'var(--s6)'}">${esc(r.summary)}</b>`
-    + `<div style="margin-top:3px">${esc(r.gate.reason)}</div>`
-    + (r.at ? `<div class="dim" style="margin-top:3px">book run at ${esc(new Date(r.at).toLocaleTimeString([], {hour12:false}))}</div>` : "");
+  // seven minutes ago saying that is simply wrong.
+  el("scanhead").innerHTML = `<b style="color:${r.signals.length?'var(--up)':'var(--ink70)'};font-weight:600">${esc(r.summary)}</b>`
+    + `<div style="margin-top:4px">${esc(r.gate.reason)}</div>`
+    + (r.at ? `<div class="dim" style="margin-top:4px">book run at ${esc(new Date(r.at).toLocaleTimeString([], {hour12:false}))}</div>` : "");
   const head = `<div class="trow thead"><span>market</span><span>rsi</span>` +
-    `<span>vs ema50</span><span>rel vol</span><span>regime</span></div>`;
+    `<span>ema50</span><span>vol</span><span>regime</span></div>`;
   const rows = r.markets.map(m=> m.error
-    ? `<div class="trow"><span>${m.symbol}</span><span style="grid-column:2/-1;text-align:left;color:var(--sell-t)">${esc(m.error)}</span></div>`
-    : `<div class="trow"><span class="sym">${m.symbol}<span class="tag">${CLASS_LABEL[m.class]||m.class}</span></span>` +
+    ? `<div class="trow"><span>${esc(m.symbol)}</span><span style="grid-column:2/-1;text-align:left;color:var(--down)">${esc(m.error)}</span></div>`
+    : `<div class="trow"><span>${esc(m.symbol)}<span class="tag">${CLASS_LABEL[m.class]||m.class}</span></span>` +
       `<span>${m.rsi}</span>` +
       `<span class="${m.emaGapPct<0?'neg':''}">${m.emaGapPct>0?"+":""}${m.emaGapPct}%</span>` +
-      `<span>${m.relVol}&times;</span>` +
-      `<span class="dim">${m.regime.toLowerCase().replace("_"," ")}</span></div>`).join("");
-  const fires = r.signals.map(sg=>`<div class="fire">
-      <div class="fire-h"><span class="sym">${sg.symbol}</span><span class="st">${esc(sg.strategy)}</span>
-        <span class="cf">conf ${sg.confidence}</span></div>
+      `<span>${m.relVol}×</span>` +
+      `<span class="dim">${esc(m.regime.toLowerCase().replace("_"," "))}</span></div>`).join("");
+  const fires = r.signals.map(sg=>`<div class="card">
+      <div class="vhead" style="margin-bottom:8px"><span class="vact exec" style="font-size:20px">${esc(sg.symbol)}</span>
+        <span class="vsize" style="font-size:13px">${esc(sg.strategy)}</span>
+        <span class="vorder">conf ${sg.confidence}</span></div>
       <div class="fnote"><span class="fnref">1</span><span>${esc(sg.rationale)}</span></div>
-      <div class="fnote"><span class="fnref">2</span><span>measured <span class="mono dim" style="text-align:left;min-width:0">${esc(sg.provenance?.measured||"")}</span></span></div>
-      <div class="row"><span class="k">stop / target / hold</span><span class="mono">${sg.stopPct}% &nbsp; ${sg.takeProfitPct}% &nbsp; ${sg.maxHoldMin}m</span></div>
+      <div class="fnote"><span class="fnref">2</span><span>measured ${esc(sg.provenance?.measured||"")}</span></div>
+      <div class="krow"><span class="k">stop / target / hold</span><span class="v">${sg.stopPct}% · ${sg.takeProfitPct}% · ${sg.maxHoldMin}m</span></div>
     </div>`).join("");
-  el("scan").innerHTML = fires + `<div class="resolve">${head}${rows}</div>`;
+  el("scan").innerHTML = fires + `<div class="card">${head}${rows}</div>`;
 }
+
+/* ── home ────────────────────────────────────────────────────────────────
+   The hero is the sum of what is actually held, priced by the same feed the
+   markets use. USDC is the quote asset and is taken at $1. */
+const STABLE = { USDC: 1 };
+function drawHome(p, brief, log, mem){
+  if (!p) { el("hero").textContent = "—"; el("herosub").textContent = chainDown ? "the node is not answering" : "reading balances…"; }
+  else {
+    let total = 0, coins = [];
+    for (const [sym, v] of Object.entries(p.balances)) {
+      if (!(v.amount > 0.000001)) continue;
+      const px = STABLE[sym] ?? lastPrices[sym] ?? (sym === "WETH" ? lastPrices.ETH : null);
+      const usd = px != null ? v.amount * px : null;
+      if (usd != null) total += usd;
+      coins.push({ sym, amount: v.amount, usd, px });
+    }
+    coins.sort((a,b) => (b.usd ?? -1) - (a.usd ?? -1));
+    el("hero").textContent = dollars(Math.round(total * 100) / 100);
+
+    // Unrealised P&L, and the only place green and red are allowed to mean
+    // anything. It is computed against the entry prices Sibyl remembers — with
+    // the store wiped there is no cost basis and the line says so rather than
+    // showing a zero it cannot justify.
+    const held = Object.entries(mem?.positions || {});
+    let open = 0, basis = 0;
+    for (const [sym, pos] of held) {
+      const px = STABLE[sym] ?? lastPrices[sym] ?? (sym === "WETH" ? lastPrices.ETH : null);
+      if (px == null || !(pos.qty > 0)) continue;
+      open  += pos.qty * px;
+      basis += pos.qty * Number(pos.avg_entry_usd || 0);
+    }
+    const sub = `${coins.length} asset${coins.length===1?"":"s"} on Base · via ${esc(p.route)}`;
+    if (basis > 0) {
+      const d = open - basis, pct = (d / basis) * 100;
+      el("herosub").innerHTML =
+        `<span class="${d >= 0 ? "up" : "down"}" style="font-weight:600">` +
+        `${d >= 0 ? "+" : "−"}${dollars(Math.abs(Math.round(d * 100) / 100))} ` +
+        `(${d >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(2)}%)</span>` +
+        `<span style="color:var(--ink38)"> unrealised · ${sub}</span>`;
+    } else {
+      el("herosub").innerHTML = held.length
+        ? `<span style="color:var(--ink38)">no remembered entry price · ${sub}</span>`
+        : `<span style="color:var(--ink38)">flat · ${sub}</span>`;
+    }
+    el("coincount").textContent = `${coins.length} held`;
+    el("pf").innerHTML = coins.map(c => {
+      return `<div class="lrow">
+        ${markHtml(c.sym)}
+        <div class="lmain"><span class="lp">${esc(c.sym)}</span>
+          <span class="ls">${qty(c.amount)}${c.px!=null?` · ${money(c.px)}`:``}</span></div>
+        <div class="lval"><span class="lv">${c.usd!=null?dollars(Math.round(c.usd*100)/100):"—"}</span></div>
+      </div>`;
+    }).join("") || `<div class="krow"><span class="k dim">Nothing held yet.</span></div>`;
+  }
+
+  // "In the last day" — the pad's own risk checks, drawn from the journal it
+  // actually wrote. The dot encodes the class the design system defines:
+  // green acted, amber adjusted the risk, red blocked it.
+  const evts = (log || []).slice(0, 40);
+  const CLASSES = [
+    { re:/refused|REJECT|rejected|disarmed|too thin|not in the allowlist|vetoed/i, dot:"block", title:"Blocked" },
+    { re:/clamped|capped|limit/i,                                                  dot:"warn",  title:"Risk adjusted" },
+    { re:/FILL|APPROVED|learned|ARMED|retired/i,                                   dot:"",      title:"Acted" },
+  ];
+  const classify = (m) => CLASSES.find(c => c.re.test(m)) || { dot:"warn", title:"Checked" };
+  const checks = evts.filter(e => classify(e.m).dot !== "");
+  const shown = (checks.length ? checks : evts).slice(0, 3);
+  el("daycard").innerHTML =
+    `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+       <span class="eyebrow">In the last day</span>
+       <span style="margin-left:auto;font-size:12.5px;color:var(--ink45)">${evts.length} event${evts.length===1?"":"s"}</span></div>
+     <div style="font-size:24px;font-weight:700;line-height:29px;letter-spacing:-.4px;margin-bottom:12px">
+       ${checks.length} risk check${checks.length===1?"":"s"}</div>` +
+    (shown.length
+      ? shown.map(e => { const c = classify(e.m);
+          return `<div style="display:flex;gap:10px;padding:7px 0">
+            <span class="nd ${c.dot}" style="width:8px;height:8px;border-radius:999px;flex:none;margin-top:6px;
+              background:${c.dot==="block"?"var(--down)":c.dot==="warn"?"var(--warn)":"var(--up)"}"></span>
+            <span style="min-width:0">
+              <span style="display:block;font-size:13.5px;font-weight:600;line-height:18px">${esc(c.title)}</span>
+              <span style="display:block;font-size:11.5px;line-height:17px;color:var(--ink38);
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.m)}</span></span></div>`;
+        }).join("") +
+        (evts.length > shown.length
+          ? `<button class="linkbtn" style="margin-top:10px" onclick="pickTab('agents')">and ${evts.length - shown.length} more ›</button>` : ``)
+      : `<div class="fnote"><span class="fnref">—</span><span>Nothing has been decided yet. Propose a trade and every check it runs lands here.</span></div>`);
+
+  // Recall as the first thing on screen: what it remembers, in one sentence.
+  el("briefwrap").innerHTML = brief?.text ? note("", esc(brief.text)) : "";
+}
+
+/**
+ * What the pad is holding and what it has been told, on the screen where a
+ * trade is decided. Every line here is recalled, not computed on the spot —
+ * wipe the store and this card empties, which is the whole claim.
+ */
+function drawInHand(mem){
+  const box = el("inhand");
+  const pos = mem?.positions?.[activeMarket];
+  const lim = mem?.limits;
+  if (!mem || (!pos && !lim)) {
+    box.innerHTML = `<div class="fnote"><span class="fnref">—</span><span>` +
+      `It remembers nothing about ${esc(activeMarket)}. With no limits recalled it will ` +
+      `refuse anything but the smallest trade.</span></div>`;
+    return;
+  }
+  const px = lastPrices[activeMarket];
+  const rows = [];
+  if (pos) {
+    rows.push(`<div class="krow"><span class="k">holding</span><span class="v">${qty(pos.qty)} ${esc(activeMarket)}</span></div>`);
+    rows.push(`<div class="krow"><span class="k">average entry</span><span class="v">${money(pos.avg_entry_usd)}</span></div>`);
+    if (px != null) {
+      const d = (px - pos.avg_entry_usd) * pos.qty;
+      rows.push(`<div class="krow"><span class="k">unrealised</span>` +
+        `<span class="v ${d>=0?"up":"down"}">${d>=0?"+":"−"}${dollars(Math.abs(Math.round(d*100)/100))}</span></div>`);
+    }
+  } else {
+    rows.push(`<div class="krow"><span class="k">holding</span><span class="v dim">nothing in ${esc(activeMarket)}</span></div>`);
+  }
+  if (lim) {
+    rows.push(`<div class="krow"><span class="k">per trade / per day</span>` +
+      `<span class="v">${dollars(lim.max_trade_usd)} · ${dollars(lim.max_day_usd)}</span></div>`);
+    if (Number.isFinite(mem.spent_today))
+      rows.push(`<div class="krow"><span class="k">spent today</span><span class="v">${dollars(mem.spent_today)}</span></div>`);
+  }
+  const ruleCount = (mem.rules || []).length;
+  if (ruleCount) rows.push(`<div class="krow"><span class="k">rules in force</span><span class="v">${ruleCount}</span></div>`);
+  box.innerHTML = `<div class="eyebrow" style="margin-bottom:8px">What it remembers</div>` + rows.join("");
+}
+
+function drawAgents(active){
+  const cards = AGENTS.map(a => {
+    const on = a.id === active;
+    return `<button class="agentcard" type="button" aria-pressed="${on}" onclick="pickAgent('${a.id}')">
+      <div class="orbwrap">${orb(a, 56, {bloom:on})}
+        <span class="orbname">${esc(a.name)}</span>
+        <span class="orbstatus ${on?"active":"paused"}">${on?"Active":"Paused"}</span></div></button>`;
+  });
+  el("orbs").innerHTML = cards.join("");
+  el("agentgrid").innerHTML = cards.join("");
+  el("agentcount").textContent = `1 of ${AGENTS.length} active`;
+}
+
+/* ── the loop ────────────────────────────────────────────────────────────── */
 async function refresh(){
   authBad = false; chainDown = null;
   const h = await fetch("/health").then(r=>r.json()).catch(()=>null);
   if (!h) return;
-  el("mode").innerHTML = `chain <b>${h.mode==="fork" ? "Base fork" : "Base mainnet"}</b>`;
-  el("mode").className = "stat " + (h.mode==="fork"?"":"off");
-  el("armed").innerHTML = `state <b>${h.armed?"armed":"disarmed"}</b>`;
-  el("armed").className = "stat " + (h.armed?"on":"off clickable");
-  // Disabled while armed: there is nothing to re-arm, and a focusable control
-  // that does nothing is worse than one that is plainly out of play.
-  el("armed").disabled = !!h.armed;
-  el("armed").onclick = h.armed ? null : arm;
-  el("armed").title = h.armed ? "trading enabled" : "the kill switch is engaged. Press to re-arm.";
-  el("armed").setAttribute("aria-label",
-    h.armed ? "trading is armed" : "the kill switch is engaged — activate to re-arm trading");
-  el("agent").innerHTML = `agent <b>${esc(h.agent)}</b>`; drawKeys(h.agent);
+  armed = !!h.armed; agentNow = h.agent;
+
+  el("livedot").className = "livedot" + (armed ? " on" : "");
+  el("livedot").title = armed ? "armed — trading enabled" : "disarmed — the kill switch is engaged";
+  // The rail's kill switch is reachable from every screen, and it reads both
+  // ways: red to stop while armed, white to put it back while disarmed.
+  const rk = el("railkill");
+  rk.textContent = armed ? "Stop all trading" : "Re‑arm trading";
+  rk.className = armed ? "armed" : "";
+  rk.setAttribute("aria-label", armed
+    ? "stop all trading — engage the kill switch"
+    : "the kill switch is engaged — activate to re-arm trading");
+  el("railchain").textContent = h.mode === "fork" ? "Base fork" : "Base MAINNET";
+  el("armlabel").textContent = armed ? "armed" : "disarmed";
+  el("killbtn").textContent = armed ? "Stop all trading" : "Re‑arm trading";
+  el("killbtn").className = "btn " + (armed ? "danger" : "primary");
+  el("killnote").textContent = armed
+    ? "Nothing trades without an explicit ✓. This stops even that: a confirmation while disarmed is refused, and the decision is kept so re-arming honours it."
+    : "Disarmed. Any ✓ is refused and the pending decision is held — re-arm and the same ✓ stands.";
+  drawAgents(h.agent);
+  drawTabs();
   if (Number.isFinite(h.sizeUsd)) drawSizes(h.sizeUsd);
 
   const p = await get("/portfolio");
-  if (!p) { el("blk").innerHTML = "block <b>&mdash;</b>"; el("addr").textContent = ""; el("pf").innerHTML = ""; }
-  else {
-  el("blk").innerHTML = `block <b>${p.chain.block}</b>`;
-  el("addr").textContent = p.chain.address;
-  el("pf").innerHTML = Object.entries(p.balances)
-    .filter(([,v])=>v.amount>0.000001)
-    .map(([k,v])=>row(k, qty(v.amount))).join("")
-    + row("route", p.route);
-  if (p.prices) { lastPrices = { ...lastPrices, ...p.prices }; drawMarkets(); } }
+  if (p?.prices) { lastPrices = { ...lastPrices, ...p.prices }; mktKeys = ""; drawMarkets(); }
+  el("railblock").textContent = p?.chain?.block ?? "—";
+  el("railaddr").textContent = p?.chain?.address
+    ? p.chain.address.slice(0, 6) + "…" + p.chain.address.slice(-4) : "—";
 
   const m = await get("/memory");
   el("reteach").hidden = !(m && !m.limits);
@@ -832,16 +1267,14 @@ async function refresh(){
   if (!MARKETS.__fromServer) {
     const mk = await get("/markets");
     if (mk) { MARKETS = mk.markets; MARKETS.__fromServer = true; activeMarket = mk.active || activeMarket;
-      // One line, with the measurements on hover. Six full reasons inline ate
-      // most of the pane and buried the deck below the fold.
       const d = Object.entries(mk.delisted);
       el("delisted").innerHTML = `<b>Delisted for thin liquidity.</b> ` +
-        d.map(([k,v])=>`${k} <span class="dim">(${esc(v.reason)})</span>`).join("; ") + `.`;
-      drawMarkets(); }
+        d.map(([k,v])=>`${esc(k)} <span class="dim">(${esc(v.reason)})</span>`).join("; ") + `.`;
+      mktKeys = ""; drawMarkets(); }
   }
 
-  // Restore a decision that is still live server-side (e.g. after a refresh,
-  // or one the physical pad raised), but never stomp on a card being read.
+  // Restore a decision that is still live server-side (after a refresh, or one
+  // the physical pad raised), but never stomp on a card being read.
   const pd = await get("/pending");
   if (pd) {
     if (pd.pending && !pending) { pending = pd; render_signal(pd); }
@@ -851,63 +1284,63 @@ async function refresh(){
   const full = await get("/memory/full");
   if (full) drawStore(full);
 
-  // Recall as the first thing on screen: what it remembers, in one sentence,
-  // before it is trusted with anything.
-  // An empty briefing is not a briefing. Left visible it renders as a bare
-  // 1843x50 blue block — furniture that reads as a rendering fault.
+  // An empty briefing is not a briefing — left visible it renders as a bare
+  // block, furniture that reads as a rendering fault.
   const bf = await get("/briefing");
-  el("briefing").hidden = !bf?.text;
+  el("briefnote").hidden = !bf?.text;
   if (bf?.text) el("briefing").textContent = bf.text;
 
-  // Rules that cannot do what they claim. Only shown when there are any —
-  // an empty warning block is furniture, not information.
   const cx = await get("/memory/contradictions");
   drawContradictions(cx);
 
-  // What the wipe actually cost, measured against the store as it stood.
   const cost = await get("/memory/diff");
   drawCost(cost);
-  // A wipe destroys the journal the replay panel was reading from, so its
-  // claim can no longer be substantiated. Clearing it only in this tab's wipe()
-  // left "held 0.02 ETH" sitting under "I remember nothing" whenever the wipe
-  // came from the pad, another tab, or the API — the same blind spot the
-  // activity log and the scan pane both had.
-  if (cost?.at && Date.parse(cost.at) > ttDrawnAt) {
-    el("ttout").hidden = true; el("ttout").innerHTML = "";
-  }
+  // A wipe destroys the journal the replay panel was reading from, so its claim
+  // can no longer be substantiated. Clearing it only in this tab's wipe() left
+  // it stale whenever the wipe came from the pad, another tab, or the API.
+  if (cost?.at && Date.parse(cost.at) > ttDrawnAt) { el("ttout").hidden = true; el("ttout").innerHTML = ""; }
 
   const ls = await get("/scan/last");
   if (ls && ls.summary && ls.at !== lastScanAt) { lastScanAt = ls.at; drawScan(ls); }
 
   const lg = await get("/log");
-  if (lg) drawLog(lg.log);
+  if (lg) { drawLog(lg.log, "log", 22); drawLog(lg.log, "homelog", 8); }
+
+  drawHome(p, bf, lg?.log, m);
+  drawInHand(m);
+  drawBudget(m);
+  drawMarketJournal(full);
 
   const rf = (await get("/reflect")) || { proposals: [] };
   if (m && rf.proposals?.length) {
-    el("store").innerHTML += `<div class="grp"><h2 class="rule-top">Learned from your yes/no</h2>` +
-      rf.proposals.map((p,i)=>`<div class="row"><span>${p.text}</span>
-        <span><button class="g" onclick='acceptRule(${JSON.stringify(p)})'>ACCEPT</button></span></div>`).join("") + `</div>`;
+    el("store").innerHTML += `<div class="grp"><h3>Learned from your yes/no</h3>` +
+      rf.proposals.map(p=>`<div class="krow"><span class="k" style="color:var(--ink55)">${esc(p.text)}</span>
+        <span><button class="linkbtn" onclick='acceptRule(${JSON.stringify(p)})'>accept</button></span></div>`).join("") + `</div>`;
   }
   drawAuthBanner();
 }
-// --- first paint -----------------------------------------------------------
-// The deck depends on nothing from the server, so draw it immediately. Waiting
-// for the first refresh left the page looking ready for several seconds while
-// every click fell through to nothing.
+
+// ── first paint ────────────────────────────────────────────────────────────
+// Nothing here depends on the server, so draw it immediately. Waiting for the
+// first refresh left the page looking ready while every click fell through.
 const BOOT_MARKETS = { ETH:{label:"Ethereum",class:"crypto",fee:100}, cbBTC:{label:"Bitcoin",class:"crypto",fee:500},
   EURC:{label:"Euro",class:"forex",fee:500}, AERO:{label:"Aerodrome",class:"defi",fee:500},
   MORPHO:{label:"Morpho",class:"defi",fee:10000}, VIRTUAL:{label:"Virtuals",class:"ai",fee:3000} };
 MARKETS = BOOT_MARKETS;
-drawKeys(null);
-drawMarkets();
-for (const [id, msg] of [["pf","reading balances\u2026"],["store","recalling\u2026"],["log","connecting\u2026"]])
-  el(id).innerHTML = `<div class="row"><span class="dim">${msg}</span></div>`;
+pickTab("home"); drawMarkets(); drawAgents("momentum");
+el("store").innerHTML = `<div class="krow"><span class="k dim">recalling…</span></div>`;
+el("log").innerHTML     = `<div class="krow"><span class="k dim">connecting…</span></div>`;
+el("homelog").innerHTML = `<div class="krow"><span class="k dim">connecting…</span></div>`;
+el("mktjrnl").innerHTML = `<div class="krow"><span class="k dim">recalling…</span></div>`;
+el("daycard").innerHTML = `<div class="krow"><span class="k dim">reading the journal…</span></div>`;
+el("scanhead").innerHTML = `Nothing has been run yet. The book tests six measured edges against all ` +
+  `six markets at once and reports honestly when none of them fires.`;
 // An Operate surface's empty state teaches the control that fills it.
 el("sig").innerHTML =
-  `<div class="fnote"><span class="fnref">&mdash;</span><span class="dim">Nothing in hand. ` +
-  `<b style="color:var(--s6);font-weight:600">Buy</b> or <b style="color:var(--s6);font-weight:600">Sell</b> proposes a trade on the market in hand; ` +
-  `<b style="color:var(--s6);font-weight:600">Scan</b> runs the book across all six. ` +
-  `Every verdict arrives with the remembered facts it rests on, numbered.</span></div>`;
+  `<div class="verdict"><div class="fnote"><span class="fnref">—</span><span>Nothing in hand. ` +
+  `<b style="color:var(--ink70);font-weight:600">Buy</b> or <b style="color:var(--ink70);font-weight:600">Sell</b> proposes a trade on the market in hand; ` +
+  `<b style="color:var(--ink70);font-weight:600">the book</b> runs across all six. ` +
+  `Every verdict arrives with the remembered facts it rests on, numbered.</span></div></div>`;
 
 // A thrown refresh must never kill the polling loop, or the pad goes silent.
 const tick = () => refresh().catch(e => console.warn("refresh failed:", e.message));

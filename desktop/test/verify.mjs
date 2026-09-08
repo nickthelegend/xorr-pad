@@ -438,7 +438,7 @@ try {
   chk("G9 malformed bodies never 500", noId.s === 200 && noId.b?.ok === false && junk.s === 400,
       `/key {} -> "${noId.b?.error}"; junk reject -> ${junk.s}`);
 
-  const fonts = await fetch(B + "/fonts/archivo-var.woff2");
+  const fonts = await fetch(B + "/fonts/inter-600.woff2");
   const trav = await fetch(B + "/fonts/..%2f..%2fpackage.json");
   chk("A3/A4 fonts serve, traversal does not",
       fonts.status === 200 && fonts.headers.get("content-type") === "font/woff2" && trav.status !== 200,
