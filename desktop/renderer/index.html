@@ -332,6 +332,20 @@ nav .dot{position:absolute;top:2px;right:calc(50% - 14px);width:6px;height:6px;
 nav .dot.on{background:var(--up)}
 
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+
+/* The pad's setup code. Shown on demand rather than always: it carries the pad
+   token, and the desk is often on a screen other people can see. */
+#padcode{position:fixed;inset:0;background:rgba(0,0,0,.72);display:grid;place-items:center;z-index:60}
+.padcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;width:330px;text-align:center}
+.padhead{font-size:15px;font-weight:600;margin-bottom:14px}
+.padsvg{background:#fff;border-radius:10px;padding:8px;display:inline-block;line-height:0}
+.padsvg svg{width:230px;height:230px;display:block}
+.padwhy{font-size:11.5px;color:var(--ink45);margin:13px 0 12px;line-height:1.55}
+.padkv{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;padding:5px 0;border-top:1px solid var(--line)}
+.padkv span{color:var(--ink45)}
+.padkv b{font-weight:500;word-break:break-all;text-align:right}
+.padclose{margin-top:14px;width:100%;background:var(--control);color:var(--ink);border:0;border-radius:9px;padding:9px;font:inherit;font-weight:500;cursor:pointer}
+#railpad{width:100%;background:var(--control);color:var(--ink);border:0;border-radius:9px;padding:8px;font:inherit;font-size:12px;font-weight:500;cursor:pointer;margin-bottom:8px}
 </style>
 
 <div id="app">
@@ -346,6 +360,7 @@ nav .dot.on{background:var(--up)}
       <div class="railstat">chain <b id="railchain">&mdash;</b></div>
       <div class="railstat">block <b id="railblock">&mdash;</b></div>
       <div class="railstat">wallet <b id="railaddr">&mdash;</b></div>
+      <button id="railpad" onclick="togglePadCode()">Connect the pad</button>
       <button id="railkill" onclick="killToggle()">Stop all trading</button>
     </div>
   </aside>
@@ -498,6 +513,19 @@ nav .dot.on{background:var(--up)}
   </div>
 
     </div>
+  </div>
+</div>
+
+<div id="padcode" hidden onclick="if(event.target===this)togglePadCode()">
+  <div class="padcard">
+    <div class="padhead">Connect the pad</div>
+    <div class="padsvg" id="padsvg"></div>
+    <div class="padwhy">Scan this with a phone, then paste both halves into the
+      pad's captive portal (<b>xorr&#8209;pad&#8209;setup</b>). They are separated
+      by a <code>|</code>.</div>
+    <div class="padkv"><span>backend</span><b id="padurl">&mdash;</b></div>
+    <div class="padkv"><span>token</span><b id="padtok">&mdash;</b></div>
+    <button class="padclose" onclick="togglePadCode()">Close</button>
   </div>
 </div>
 
@@ -1440,4 +1468,28 @@ el("sig").innerHTML =
 // A thrown refresh must never kill the polling loop, or the pad goes silent.
 const tick = () => refresh().catch(e => console.warn("refresh failed:", e.message));
 tick(); setInterval(tick, 4000);
+
+/**
+ * The pad's setup code, on demand.
+ *
+ * Provisioning means typing the desk's LAN address and the pad token into a
+ * captive portal on a phone keyboard. Scanning beats typing, and the QR is
+ * generated on the backend with no library and no CDN — the desk has to work on
+ * venue wi-fi.
+ */
+async function togglePadCode(){
+  const box = el("padcode");
+  if (!box.hidden) { box.hidden = true; return; }
+  el("padsvg").innerHTML = "";
+  el("padurl").textContent = "…"; el("padtok").textContent = "…";
+  box.hidden = false;
+  const r = await get("/padqr");
+  if (!r || r.error) { el("padsvg").innerHTML = `<div style="padding:24px;color:#000;font-size:12px">${esc(r?.error || "could not build the code")}</div>`; return; }
+  el("padsvg").innerHTML = r.svg;
+  el("padurl").textContent = r.url;
+  el("padtok").textContent = r.token;
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !el("padcode").hidden) togglePadCode();
+});
 </script>

@@ -898,6 +898,121 @@ try {
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
 
+// ── J. the setup code the pad is provisioned with ───────────────────────────
+section("J. the QR the pad is set up from");
+try {
+  const { encode } = await import("../main/qr.mjs");
+
+  // The invariant that matters, and the one that caught the real bug: a QR is
+  // a Reed-Solomon codeword, so its syndromes must all be zero. A stream with
+  // non-zero syndromes still looks like a QR, still places correctly, and still
+  // reads its own payload back — and every real scanner rejects it.
+  const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
+  { let x = 1;
+    for (let i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
+    for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255]; }
+  const gmul = (a, b) => (a === 0 || b === 0 ? 0 : EXP[LOG[a] + LOG[b]]);
+
+  const MASKS = [(r, c) => (r + c) % 2 === 0, (r) => r % 2 === 0, (r, c) => c % 3 === 0,
+    (r, c) => (r + c) % 3 === 0, (r, c) => (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0,
+    (r, c) => ((r * c) % 2) + ((r * c) % 3) === 0,
+    (r, c) => (((r * c) % 2) + ((r * c) % 3)) % 2 === 0,
+    (r, c) => (((r + c) % 2) + ((r * c) % 3)) % 2 === 0];
+
+  /** Read a matrix back the way a scanner does: format, then unmasked data. */
+  const readBack = (g) => {
+    const size = g.length;
+    let fmt = 0;
+    for (let i = 0; i < 15; i++) {
+      let v; if (i < 6) v = g[8][i]; else if (i < 8) v = g[8][i + 1];
+      else if (i === 8) v = g[7][8]; else v = g[14 - i][8];
+      fmt |= (v ? 1 : 0) << (14 - i);
+    }
+    const raw = fmt ^ 0x5412, mask = (raw >>> 10) & 7, ecLevel = (raw >>> 13) & 3;
+    const res = Array.from({ length: size }, () => new Array(size).fill(false));
+    const mark = (r, c) => { if (r >= 0 && r < size && c >= 0 && c < size) res[r][c] = true; };
+    for (const [fr, fc] of [[0, 0], [0, size - 7], [size - 7, 0]])
+      for (let dr = -1; dr <= 7; dr++) for (let dc = -1; dc <= 7; dc++) mark(fr + dr, fc + dc);
+    for (let i = 0; i < size; i++) { mark(6, i); mark(i, 6); }
+    for (let i = 0; i < 9; i++) { mark(8, i); mark(i, 8); }
+    for (let i = 0; i < 8; i++) { mark(8, size - 1 - i); mark(size - 1 - i, 8); }
+    // The alignment patterns are data-region holes too. Leaving them out of the
+    // reader shifts every codeword after the first one and reads back garbage —
+    // which is a bug in the reader, not in the encoder.
+    const version = (size - 17) / 4;
+    const CENTRES = { 1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30] }[version] || [];
+    for (const ar of CENTRES) for (const ac of CENTRES) {
+      const overlapsFinder = (ar <= 8 && ac <= 8) || (ar <= 8 && ac >= size - 9) || (ar >= size - 9 && ac <= 8);
+      if (overlapsFinder) continue;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) mark(ar + dr, ac + dc);
+    }
+    const bits = []; let up = true;
+    for (let right = size - 1; right >= 1; right -= 2) {
+      if (right === 6) right = 5;
+      for (let st = 0; st < size; st++) { const y = up ? size - 1 - st : st;
+        for (const x of [right, right - 1]) if (!res[y][x]) bits.push((g[y][x] !== MASKS[mask](y, x)) ? 1 : 0); }
+      up = !up;
+    }
+    const words = [];
+    for (let i = 0; i + 8 <= bits.length; i += 8) words.push(bits.slice(i, i + 8).reduce((a, b) => (a << 1) | b, 0));
+    const len = bits.slice(4, 12).reduce((a, b) => (a << 1) | b, 0);
+    let text = "";
+    for (let i = 0; i < len; i++) text += String.fromCharCode(bits.slice(12 + i * 8, 20 + i * 8).reduce((a, b) => (a << 1) | b, 0));
+    return { mask, ecLevel, words, mode: bits.slice(0, 4).join(""), text };
+  };
+
+  const syndromesZero = (cw, nsym) => {
+    for (let j = 0; j < nsym; j++) {
+      let acc = 0;
+      for (let i = 0; i < cw.length; i++) acc ^= gmul(cw[i], EXP[(j * (cw.length - 1 - i)) % 255]);
+      if (acc !== 0) return false;
+    }
+    return true;
+  };
+
+  // version -> [total codewords, ec per block, blocks] for the sizes used here
+  const SPEC = { 1: [26, 10, 1], 2: [44, 16, 1], 3: [70, 26, 1], 4: [100, 18, 2] };
+  // Single-block versions only (1-3). This reader walks codewords in placement
+  // order and does not de-interleave the multiple blocks that version 4 and up
+  // use, so a longer payload would fail here for the reader's reasons rather
+  // than the encoder's. Version 3 holds 42 bytes — comfortably more than a LAN
+  // URL and a token, which is all this code ever carries.
+  const cases = ["http://192.168.1.19:8080",
+                 "http://192.168.1.19:8080|xorrpad-dev",
+                 "http://192.168.1.19:8080|a-token-1234567"];
+
+  const bad = [];
+  for (const text of cases) {
+    const g = encode(text);
+    const r = readBack(g);
+    const version = (g.length - 17) / 4;
+    const spec = SPEC[version];
+    if (r.text !== text) { bad.push(`${text}: read back "${r.text}"`); continue; }
+    if (r.mode !== "0100") { bad.push(`${text}: mode ${r.mode}`); continue; }
+    if (spec && spec[2] === 1 && !syndromesZero(r.words.slice(0, spec[0]), spec[1]))
+      bad.push(`${text}: non-zero Reed-Solomon syndromes — no scanner will read this`);
+  }
+  chk("J1 the codes read back as themselves and are valid codewords", bad.length === 0,
+      bad.length ? bad[0] : `${cases.length}/${cases.length}: payload, byte mode, zero syndromes`);
+
+  const g = encode("http://192.168.1.19:8080");
+  chk("J2 the finder patterns are where a scanner looks",
+      g[0][0] && g[0][6] && g[6][0] && g[6][6] && !g[7][7] &&
+      g[0][g.length - 1] && g[g.length - 1][0],
+      `${g.length}x${g.length}, three finders and their separators`);
+
+  // The real payload, at the real length, must stay inside what this reader —
+  // and therefore this check — can actually verify.
+  const real = `http://192.168.1.19:8080|${TOKEN}`;
+  chk("J2b the code the desk actually shows is a single-block version",
+      (encode(real).length - 17) / 4 <= 3,
+      `${real.length} bytes -> version ${(encode(real).length - 17) / 4}`);
+
+  chk("J3 an oversized payload is refused rather than silently truncated",
+      (() => { try { encode("x".repeat(5000)); return false; } catch { return true; } })(),
+      "throws instead of encoding a code that decodes to the wrong thing");
+} catch (e) { chk("J crashed", false, String(e.message || e).slice(0, 92)); }
+
 // ── K. the tokenized equities ───────────────────────────────────────────────
 section("K. equities, priced and refused");
 try {

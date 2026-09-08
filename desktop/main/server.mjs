@@ -24,6 +24,7 @@ import { IS_FORK, fundOnFork, chainReachable, pub } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
 import { prices as feedPrices } from "./scan.mjs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
 import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
@@ -41,6 +42,14 @@ const HOST = process.env.HOST || "0.0.0.0";
  * and the browser can be pointed at it.
  */
 const GENERATED = !process.env.PAD_TOKEN;
+
+/** The address the pad can actually reach — not 127.0.0.1, which it cannot. */
+function lanAddress() {
+  for (const list of Object.values(networkInterfaces()))
+    for (const n of list || [])
+      if (n.family === "IPv4" && !n.internal) return `http://${n.address}:${PORT}`;
+  return `http://127.0.0.1:${PORT}`;
+}
 const TOKEN = process.env.PAD_TOKEN || randomBytes(16).toString("hex");
 
 export const state = {
@@ -370,6 +379,18 @@ export function createServer(mem) {
       // the physical pad updated the server and never appeared on the desk.
       if (url.pathname === "/scan/last")
         return send(200, state.lastScan || { markets: [], signals: [], summary: null });
+
+      // ── the code that provisions the pad ────────────────────────────────
+      // Typing http://192.168.1.19:8080 and a token into a captive portal on a
+      // phone keyboard, in front of an audience, is where a demo dies.
+      if (url.pathname === "/padqr") {
+        const { svg } = await import("./qr.mjs");
+        const lan = lanAddress();
+        const payload = `${lan}|${TOKEN}`;
+        try {
+          return send(200, { svg: svg(payload, { scale: 5 }), url: lan, token: TOKEN, payload });
+        } catch (e) { return send(500, { error: String(e.message || e) }); }
+      }
 
       if (url.pathname === "/markets")
         return send(200, {

@@ -322,9 +322,26 @@ dependencies and **empty `devDependencies`**: no build tooling at all.
   Proven on the packaged app, not the dev server: `/speak` answered **502**
   before setup and **200** immediately after, with no restart in between.
 
-- **T5.4 — Hand the pad its token.** *NOT STARTED*
+- **T5.4 — Hand the pad its token.** *DONE — 2026-09-09*
   Show the desk's LAN URL and token as a QR the pad's portal can consume,
   instead of typing an IP on a phone keyboard.
+  **Done — "Connect the pad" in the rail, `GET /padqr`, `main/qr.mjs`.** The
+  encoder is written from scratch rather than pulled from a CDN, because the
+  desk has to work on venue wi-fi and a QR that fails to load is a QR missing
+  exactly when it is needed. It is shown on demand, not always: it carries the
+  pad token and the desk is often on a screen other people can see.
+
+  **It was wrong three times, and only a real decoder found it.** The first
+  version produced codes that placed correctly, read their own payload back, and
+  were rejected by every scanner: the format word was written LSB-first when bit
+  14 is placed first, and — the real one — `ecc()` fed the generator polynomial
+  in ascending order when the division needs it descending with the leading term
+  dropped, so the Reed-Solomon syndromes were non-zero. Verified 4/4 against
+  OpenCV's decoder, which was then uninstalled rather than shipped.
+
+  The suite check needs no decoder: it reads the matrix back the way a scanner
+  does and asserts the syndromes are zero, which is the invariant that was
+  actually broken.
 
 ---
 
