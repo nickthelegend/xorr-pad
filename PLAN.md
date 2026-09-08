@@ -3,305 +3,273 @@
 **An AI agent that trades on your desk.**
 
 A builder agent should be able to pick any single task below and execute it
-without reading anything else first. Every task says where the code goes and how
-to prove it works.
+without reading anything else first. Every task names the file it touches and
+how you know it is done. Status tags: **DONE** · **IN PROGRESS** ·
+**NOT STARTED** · **BLOCKED**.
 
-Repo: `/Volumes/Extreme SSD/Projects/xorr-pad` · GitHub `nickthelegend/xorr-pad`
-Reference (read-only, do NOT ship): `/Volumes/Extreme SSD/Projects/agent-lab/_references/xorr-eth`
-
-Status legend: **DONE** · **IN PROGRESS** · **NOT STARTED** · **BLOCKED**
+Audited against the code on 2026-09-08, not against the README.
 
 ---
 
 ## 1. What "done" and "winning" mean here
 
-### 1.1 The product claim, in one sentence
-A physical deck on your desk runs an autonomous agent that trades on **Base**
-through **1inch**, and it **remembers** — positions, limits, and every decision
-you approved or rejected — so it never starts cold.
+This is a Sibyl Labs hackathon entry (hack.sibyllabs.org, slot 0x0D), judged
+**40% on whether memory is load-bearing**, with Builder Score raised by the
+**Base** and **Virtuals** partner stacks.
 
-### 1.2 The hackathon bar (Sibyl Labs, hack.sibyllabs.org, slot 0x0D)
-Four milestones, each self-marking when its artifact is added:
+**Done** means all five of these hold at once:
 
-| Milestone | State |
-|---|---|
-| Public repo URL | **DONE** — github.com/nickthelegend/xorr-pad |
-| Demo video URL | NOT STARTED |
-| 2+ build-in-public posts (X / Farcaster) | NOT STARTED |
-| Memory fields (what breaks + walkthrough + primitives) | NOT STARTED |
+1. **A physical keypress on the pad moves real money on Base.** Not a
+   simulation: a signed transaction, a mined receipt, a balance that changed.
+2. **Deleting the memory demonstrably changes the trade.** Not a slogan — the
+   same signals, run with and without the store, produce different verdicts,
+   asserted by a test that fails if they ever converge.
+3. **Every number on screen can be traced to where it came from.** A verdict
+   shows the remembered facts it rests on; a market shows its measured
+   liquidity; a strategy shows its t-statistic.
+4. **A judge can run it.** Clone, three commands, working app — without the
+   operator present and without hitting the failure modes we already found.
+5. **The honest facts stay in.** The negative performance result, the blocked
+   credential, the delisted market, the dead switch. Removing them to look
+   better is a failure condition, not a polish step.
 
-**40% of the score is "is memory load-bearing".** Judges explicitly reject
-decorative memory. The memory walkthrough is three lines: what you persist, how
-a fresh session recalls it, and *the decision it changes*. Partner stacks
-**Base** and **Virtuals** each raise the Builder Score.
+**Winning** additionally means: the memory story is the *demo*, not a feature
+list; the pad is visibly a real object that was actually built; and nothing in
+the repo contradicts the product being pitched.
 
-### 1.3 Done — the product bar
-1. The pad is a working input device: every key press reaches the backend and
-   does something visible.
-2. Sibyl memory is **load-bearing**: delete `~/.sibyl-memory/memory.db` and the
-   agent demonstrably behaves worse — wrong size, forgotten limits, re-asking
-   what it already learned. This must be *demonstrable on camera*.
-3. A real swap executes on a **Base mainnet fork** through **1inch**, with a tx
-   hash you can show.
-4. The Electron desk app mirrors every pad control, so a dead switch never
-   breaks a demo.
-5. No secret is ever committed. `.env` only.
-
-### 1.4 The rule that settles arguments
-**If deleting memory doesn't change what the agent does, it isn't memory — it's
-a database.** Every feature below is subordinate to that.
+**Explicit non-goals.** Profitability (the ported edges are measured and do not
+pay for their fees — that stays stated). Real-mainnet autonomous trading. A
+hosted multi-user service. Showing xorr-eth, which is a separate product.
 
 ---
 
-## 2. Hard constraints (learned, do not re-litigate)
+## 2. Phases
 
-- **1inch has no testnet.** No Base Sepolia 1inch exists. That is why xorr-eth
-  runs a *Base mainnet fork* "where fills actually execute". xorr-pad does the
-  same. Do not waste a day rediscovering this.
-- **Sibyl is Python-only** — `sibyl-memory-client`, no JS SDK, no HTTP API.
-  Node must reach it via a Python sidecar and/or the MCP server.
-- **Sibyl works with no auth** on the free tier (5 MB local SQLite).
-  `sibyl init` (browser) is only needed for the hackathon Pro tier.
-- **The pad's hardware is partly broken.** At least `RUN` (matrix r2c1) is a
-  dead joint. Execution must therefore be **automatic on the fork**, and the
-  desk app must be able to drive everything without the pad.
-- **Real mainnet always requires an explicit ✓.** Auto-trade is fork-only.
-- Voice stays **Deepgram (STT/TTS) + Groq (LLM)**. Both existing keys are
-  compromised and must be rotated before use.
+### Phase A — The trading core  ·  DONE
 
----
-
-## 3. Where the project actually is right now
-
-*(updated after the build run — verified, not assumed)*
-
-| Area | State |
-|---|---|
-| CAD / keycaps | **DONE** — v8 caps, 5 filament batches, Bambu 3MF |
-| Case (tray/plate/deck/knob) | **DONE** — unchanged, already printed |
-| Physical pad | **IN PROGRESS** — `RUN` dead, row 3 unswept |
-| keytest firmware | **DONE** — map builder + per-key beeps + raw pin monitor |
-| Main firmware | **DONE (code)** — posts every press to `/key`; compiles at 90% flash |
-| Memory (Sibyl) | **DONE** — sidecar, Node client, recallBrief, journal, reflection |
-| Load-bearing proof | **DONE — PASSES** (3 of 4 decisions change when wiped) |
-| Base chain + swaps | **DONE** — anvil fork of Base mainnet, real Uniswap V3 fills |
-| Agent loop | **DONE** — 6 agents, decide(), executor, journal writeback |
-| Desk app | **DONE** — Electron + 4 panes, every key clickable |
-| Voice | **DONE** — Deepgram STT/TTS + Claude Code brain, memory-grounded |
-| 1inch route | **BLOCKED** — no API key on this machine |
-| Submission artifacts | **PARTIAL** — README + memory fields written; video/posts are the operator's |
-
----
-
-## 4. Phases
-
-### Phase 0 — Finish the hardware  ·  IN PROGRESS
-Blocks the demo video, nothing else.
-
-- [DONE] Design v8 trading keycaps (buy/sell/base/6 agents/portfolio/mic/kill).
-- [DONE] Export per-filament STL batches + `xorr-pad-keycaps.3mf`.
-- [IN PROGRESS] Print caps: white ×9, green ×2, red ×3, legends ×14. 3MF +
-  per-filament STLs exported and opened in Bambu Studio; printing is the
-  operator's step.
-- [IN PROGRESS] keytest sweep. Flashed and run live: 8 of 14 cells mapped,
-  `RUN` (r2c1) confirmed DEAD, row 3 never observed. keytest now also beeps
-  per key (pitch encodes the cell) and has a raw pin monitor (`x`).
-- [IN PROGRESS] Diagnose the dead region. Evidence so far: rows 0 and 1 fully
-  alive (cols 0–2), row 2 partly (c2, c3), row 3 never observed. Suspect a
-  single broken **row-3 wire (GPIO 13)** plus a joint on r2c1.
-- [BLOCKED — needs the operator at the bench] Re-solder or re-map. Prefer re-mapping in software; only open
-  the case if a whole row is gone.
-- [IN PROGRESS] agents.h now carries the 8 MEASURED cells; the rest are
-  marked UNVERIFIED pending the finished sweep.
-
-### Phase 1 — Memory core (the judged 40%)  ·  NOT STARTED
-Build this **first**. Everything else is a consumer of it.
-
-- [DONE] `desktop/memory/sibyl_bridge.py` — a long-lived Python process
-  wrapping `MemoryClient`, speaking newline-delimited JSON on stdin/stdout.
-  Verified API: `Storage(db_path)` → `MemoryClient(storage)`, then
-  `set_state/get_state`, `set_entity/get_entity/list_entities/search_entities`,
-  `set_reference/get_reference`, `write_event/read_events`, `search`, `learn`.
-- [DONE] Define the memory schema and write it into this file:
-  - `state:baton` — active agent, active market, size
-  - `entity:position/<SYMBOL>` — qty, avg entry, opened_at
-  - `entity:rule/<id>` — a learned rule + accepted/rejected
-  - `reference:risk/limits` — max per trade, max per day, token allowlist
-  - `entity:watchlist/<SYMBOL>`
-  - journal via `write_event` — every signal, decision and fill
-- [DONE] `desktop/main/memory.mjs` — Node client: spawns the sidecar,
-  request/response by id, auto-restart on crash.
-- [NOT STARTED — needs `sibyl init`] MCP path: register `sibyl-memory-mcp` so Claude Code shares the
-  same store (this is Sibyl's blessed integration — say so in the submission).
-- [DONE] `recallBrief()` — one call returning limits + open positions +
-  active agent + accepted rules, formatted for prompt injection.
-- [DONE, via the journal] Reflection loop: periodically call `learn()`, surface
-  `SkillProposal`s as rules the operator accepts/rejects (YES/NO on the pad).
-- [DONE — PASSES] **Proof test** `desktop/memory/test_loadbearing.mjs`: run a
-  decision with memory present, wipe the db, run the identical input, assert the
-  outputs differ. This test IS the 40%.
-
-### Phase 2 — Market + trading core  ·  NOT STARTED
-
-- [DONE] `desktop/main/chain.mjs` — viem client. `CHAIN_MODE=fork` →
-  local anvil fork of Base mainnet; `CHAIN_MODE=mainnet` → real Base.
-- [DONE] Fork runner script: `anvil --fork-url <BASE_RPC> --chain-id 8453`,
-  documented in the README with a one-liner.
-- [DONE] Agent wallet from `AGENT_PRIVATE_KEY` (.env, gitignored). On
-  fork, fund it via `anvil_setBalance`. Never log the key.
-- [BLOCKED — no ONEINCH_API_KEY] 1inch route (in dex.mjs, activates with the key) — 1inch Swap API v6 on Base
-  (chain 8453): `/quote`, `/swap`, allowance + approve. Needs `ONEINCH_API_KEY`.
-- [DONE] Token registry: ETH/WETH, USDC, cbBTC, DEGEN with decimals +
-  Base addresses. This is the allowlist enforced from memory.
-- [DONE] `quote()` and `swap()` and `executeSwap(...)` returning a
-  tx hash. On the fork, assert the balance actually moved.
-- [DONE, on-chain] Price feed for signals + the portfolio pane (1inch spot price or
-  a public price API), with an explicit `SIMULATED` tag if a price is unavailable.
-
-### Phase 3 — The agent loop  ·  NOT STARTED
-Where memory becomes load-bearing rather than decorative.
-
-- [DONE] `desktop/main/agents.mjs` — one signal generator per kind, matching
-  xorr's real roster: `dca`, `grid`, `momentum`, `rebalance`, `yield`, `risk`.
-  Each exports `evaluate(market, memory) -> Signal | null`. Deterministic and
-  explainable — no LLM invention.
-- [DONE] `Signal` shape: `{agent, side, symbol, sizeUsd, reason, confidence}`.
-- [DONE] `decide(signal, memory)` — the load-bearing step. Must:
-  reject a token not in the remembered allowlist; clamp size to remembered
-  limits; veto if an accepted rule matches; adjust for existing position.
-  Return `{action, sizeUsd, why[]}` where `why` cites the memory it used.
-- [DONE] Executor: on the fork, auto-execute. On mainnet, require ✓.
-  Journal the outcome with `write_event` either way.
-- [DONE] Kill switch — `/panic`: halt the loop, cancel pending, and
-  (mainnet) require a signed action. Wire it to the red KILL key.
-
-### Phase 4 — Electron desk app  ·  NOT STARTED
-Hosts the backend the pad talks to, and is the thing on camera.
-
-- [DONE] Scaffold Electron in `desktop/` (main + preload + renderer),
-  `npm start` runs everything including the Sibyl sidecar and the HTTP server.
-- [DONE] Embed the HTTP server (Phase 5) in the main process, bound to
-  `0.0.0.0` so the pad can reach it over Wi-Fi. Print the LAN URL on screen.
-- [DONE] Pane 1 **Signals** — live signals with YES/NO buttons mirroring
-  the pad.
-- [DONE] Pane 2 **Portfolio** — balances, open positions, P&L, tx links.
-- [DONE] Pane 3 **MEMORY** — what Sibyl knows: limits, positions, rules,
-  recent journal, plus a **Wipe memory** button for the demo.
-- [DONE] Pane 4 (the deck doubles as the agent roster) — the six agents, active one highlighted,
-  arm/disarm.
-- [DONE] Every pad control is clickable in the UI (the pad has dead keys).
-
-### Phase 5 — Pad ↔ backend protocol + firmware  ·  NOT STARTED
-
-- [DONE] Replace the Loom-era API with the trading one:
-  `POST /key {id}`, `POST /voice` (PCM in → PCM out), `GET /health`,
-  `GET /portfolio`, `POST /signal/:id/{yes,no}`, `POST /panic`.
-- [DONE] Keep `PAD_TOKEN` bearer auth; keep `/health` open.
-- [IN PROGRESS] Rewrite `firmware/orchestrator_pad/agents.h` for the new deck
-  (6 agents + buy/sell/yes/no/base/portfolio/mic/kill) using the **verified**
-  map from Phase 0.
-- [DONE] LED feedback: agent colour on select, green/red flash on
-  fill/reject.
-- [DONE] Keep the captive-portal provisioning (already works) — it asks
-  for backend URL + token, which now point at the Electron app.
-
-### Phase 6 — Voice  ·  NOT STARTED
-
-- [DONE] Port the speech pipeline from `backend/` into the
-  desk app. It already does mic PCM → STT → LLM → TTS → PCM.
-- [DONE] Rewrite the system prompt for trading, and inject
-  `recallBrief()` so spoken answers use memory.
-- [DONE] Intent parsing: "buy fifty dollars of ETH" → a Signal that goes
-  through the same `decide()` gate as an automated one.
-- [DONE — it is now the default brain] **Claude Code CLI layer**: route reasoning turns to
-  `claude -p`, which has the Sibyl MCP memory attached natively. Strong
-  submission story; keep Groq for low-latency chat.
-- [BLOCKED — operator action] Rotate the compromised GROQ + DEEPGRAM keys before any demo.
-
-### Phase 7 — Safety  ·  NOT STARTED
-
-- [DONE] Caps enforced server-side from memory, not the UI.
-- [DONE] `CHAIN_MODE=mainnet` refuses auto-trade unless an explicit
-  opt-in flag is set, and always requires ✓.
-- [DONE] Never log private keys or full API keys.
-- [DONE, gitignore] Secret scan; `.env`, `*.bak` gitignored (already true).
-
-### Phase 8 — Submission  ·  NOT STARTED
-
-- [NOT STARTED] Demo video (≤3 min): pad on desk → signal → YES → fill on Base
-  fork with tx hash → **wipe memory live** → same signal now mis-sized/blocked
-  → restore. That single beat wins the memory score.
-- [NOT STARTED] Two build-in-public posts (hardware shot + memory demo clip).
-- [DONE — see SUBMISSION.md] Memory fields:
-  - *What breaks when memory is deleted?* — it forgets your risk limits, open
-    positions and every rule it learned from your YES/NO history, so it sizes
-    blind, re-proposes trades you already rejected, and treats a held position
-    as a new entry.
-  - *Walkthrough* — persist limits/positions/rules/journal; a fresh session
-    recalls them via `recallBrief()`; that changes whether a trade executes,
-    at what size, and whether it is vetoed.
-  - *Primitives* — recall, entities, semantic search, temporal/time-travel,
-    summarization, reflection, consolidation.
-- [DONE] README rewrite for the trading product.
-- [BLOCKED — interactive browser login] `sibyl init` for the Pro tier; star the Sibyl repo.
-
-### Phase 9 — Stretch: Virtuals  ·  NOT STARTED
-- [NOT STARTED] Register the agent on Virtuals for the second partner stack.
-
----
-
-## 5. Gap audit — closed, and still open
-
-*(re-verified after the build run)*
-
-| # | Gap | State |
+| Task | Status | Where |
 |---|---|---|
-| G1 | No trading code at all | **CLOSED** — viem + Uniswap V3; real fill `0xabcc2986…` (0.05 ETH → 123.96 USDC) |
-| G2 | No Sibyl integration | **CLOSED** — sidecar + Node client, real SQLite writes |
-| G3 | `desktop/` was three empty dirs | **CLOSED** — Electron app with four panes, runs |
-| G4 | Backend was the wrong product | **CLOSED** — `/key /portfolio /memory /tick /panic /voice /reflect` |
-| G5 | Firmware was the wrong product | **CLOSED (code)** — posts to `/key`, compiles; map partly UNVERIFIED |
-| G6 | Hardware not verified | **OPEN** — `RUN` (r2c1) dead, row 3 unswept. Needs the operator at the bench |
-| G7 | No fork infrastructure | **CLOSED** — anvil fork of Base mainnet, chainId 8453, agent wallet funded |
-| G8 | No load-bearing proof | **CLOSED** — `loadbearing.test.mjs` PASSES; 3 of 4 verdicts change on wipe |
-| G9 | Compromised secrets | **PARTLY** — never committed and gitignored, but **not rotated** (operator action) |
-| G10 | Sibyl venv in the wrong repo | **CLOSED** — `xorr-pad/.venv` |
-| G11 | No Pro tier | **OPEN** — `sibyl init` is an interactive browser login. This also gates Sibyl's own `learn()` (TierGateError on free), so reflection is done from the journal instead |
-| G12 | Docs describe the old product | **CLOSED** — README rewritten |
-| G13 | Stale `CAP_IDS` in render_video | **CLOSED** |
-| G14 | No Virtuals work | **OPEN** — stretch, untouched |
-| G15 | No price feed | **CLOSED** — prices come from the same pools we trade against |
-| G16 *(new)* | 1inch route unusable | **OPEN** — no `ONEINCH_API_KEY`. The keyless Uniswap route keeps fills real meanwhile |
-| G18 *(new)* | Proposals ignored the wallet balance — a \$50 buy on a 13.96 USDC balance reverted with `STF` | **CLOSED** — `spendable()` guard in `dex.swap()`, and the executor clamps an over-sized order down to the balance instead of reverting |
-| G17 *(new)* | Every Groq model blocked | **OPEN** — key authenticates, all models `model_permission_blocked_project`. Claude Code CLI is the brain instead |
-| G19 *(new)* | **The kill switch did not stop the human path** — `KILL` gated only the automated pass, so `BUY → YES` still executed. Proven with a mined fill while `armed:false` | **CLOSED** — `yes` is refused while disarmed, `pending` kept so the same ✓ stands after re-arming |
-| G20 *(new)* | **`armed` was a one-way latch** — nothing ever set it back, so one KILL bricked the pad until restart | **CLOSED** — `POST /arm` plus a deliberate UI affordance; KILL and `/panic` stay pure-disarm |
-| G21 *(new)* | `/reflect/accept` 500ed on a malformed body | **CLOSED** — 400 with a readable message |
-| G22 *(new)* | **The Activity pane was blind** — the server logged every action but never exposed it, so the UI showed only its own clicks; pad presses and ticks were invisible and a refresh erased the history | **CLOSED** — `GET /log`, rendered from the server each poll |
-| G23 *(new)* | The signal card kept offering YES/NO after a fill, and kept a stale verdict after a wipe | **CLOSED** — the card settles to the outcome, and a wipe states the verdict was voided |
-| G24 *(new)* | Raw 17-digit floats were being **read aloud** by the speech layer and shown in the log | **CLOSED** — rounded at both sites |
-| G25 *(new)* | `spendable("ETH")` ignored WETH, so the agent could not sell what a buy had just delivered | **CLOSED** — counts native (less gas) plus WETH |
-| G26 *(new)* | **The "conservative" no-memory fallback was identical to the normal limits** — the code claimed a wiped memory was restrictive; it was equally permissive | **CLOSED** — split into `DEFAULT_LIMITS` and `NO_MEMORY_LIMITS` ($10/trade, $25/day, ETH+USDC); asserted stricter |
-| G27 *(new)* | **A wipe did not void an outstanding ✓** — YES then filled against limits that had just been deleted | **CLOSED** — the wipe clears `pending` and reports `pendingVoided` |
-| G28 *(new)* | A wrong token threw an uncaught TypeError every 4s and showed a blank app | **CLOSED** — guarded fetches, a visible banner, a poll loop that cannot die |
-| G30 *(new)* | **A wipe was one-way until restart** — nothing could re-teach the limits, so the demo ran once per boot | **CLOSED** — `POST /memory/seed` and a RE-TEACH button shown only while limits are missing |
-| G29 *(new)* | **A mis-heard ticker silently turned a spoken order into chit-chat** — Deepgram renders "E T H" as "an e t" | **CLOSED** — spelled-out letters glued, aliases, and a fall back to the active market when the verb and amount are unambiguous |
+| A1 Base client, fork/mainnet modes, key guards | **DONE** | `desktop/main/chain.mjs` |
+| A2 Token + market registry with measured liquidity | **DONE** | `desktop/main/markets.mjs`, `tokens.mjs` |
+| A3 Uniswap V3 quote + swap, real signed fills | **DONE** | `desktop/main/dex.mjs` |
+| A4 Price-impact gate, fails closed when unmeasurable | **DONE** | `dex.mjs: priceImpact()` |
+| A5 Balance guard + over-size clamp | **DONE** | `dex.mjs: spendable()`, `server.mjs` yes-path |
+| A6 Receipt waits that fail readably, never hang | **DONE** | `dex.mjs: mined()` |
+| A7 Market data: real hourly OHLCV per market | **DONE** | `desktop/main/candles.mjs` |
 
-### Non-gaps (deliberate, don't "fix")
-- The `mock` hits in `cad/` are the **mock knob** — a snap-fit display dial,
-  intentional because there is no potentiometer in this build.
-- `plate/tray/switch-deck` geometry is intentionally byte-identical to the
-  LoomPad so the already-soldered pad still fits. Do not regenerate them.
+### Phase B — Memory, the judged 40%  ·  DONE
+
+| Task | Status | Where |
+|---|---|---|
+| B1 Sibyl sidecar over stdio JSON | **DONE** | `desktop/memory/sibyl_bridge.py` |
+| B2 Node client, no in-memory fallback by design | **DONE** | `desktop/main/memory.mjs` |
+| B3 Schema: limits, positions, rules, baton, journal | **DONE** | `sibyl_bridge.py: recall_brief` |
+| B4 `decide()` built only from the recalled brief | **DONE** | `desktop/main/decide.mjs` |
+| B5 Memoryless fallback that is strictly *stricter* | **DONE** | `memory.mjs: NO_MEMORY_LIMITS` |
+| B6 Wipe that really destroys db + wal + shm | **DONE** | `sibyl_bridge.py: wipe` |
+| B7 Wipe voids any outstanding confirmation | **DONE** | `server.mjs: /memory/wipe` |
+| B8 Re-teach, so the demo can be run twice | **DONE** | `server.mjs: /memory/seed` |
+| B9 Journal-mined rule proposals + accept/reject | **DONE** | `desktop/main/reflect.mjs` |
+| B10 Load-bearing proof as an executable test | **DONE** | `desktop/test/loadbearing.test.mjs` |
+
+### Phase C — The strategy book  ·  DONE
+
+| Task | Status | Where |
+|---|---|---|
+| C1 Port the six measured-edge strategies verbatim | **DONE** | `desktop/main/strategies.mjs` |
+| C2 Shared gates: BTC 200-day trend, no falling knives | **DONE** | `strategies.mjs`, `candles.mjs` |
+| C3 Scan the book across every market | **DONE** | `desktop/main/scan.mjs` |
+| C4 Carry each strategy's provenance to the UI | **DONE** | `strategies.mjs: PROVENANCE` |
+
+### Phase D — The desk app  ·  DONE
+
+| Task | Status | Where |
+|---|---|---|
+| D1 HTTP surface the pad talks to (19 routes) | **DONE** | `desktop/main/server.mjs` |
+| D2 Bearer auth; generate a token when unset | **DONE** | `server.mjs` |
+| D3 Electron shell; refuse to open on a port it lost | **DONE** | `desktop/main/electron.mjs` |
+| D4 Six-pane readout, every pad key clickable | **DONE** | `desktop/renderer/index.html` |
+| D5 Server-side activity log, so pad presses show | **DONE** | `server.mjs: /log` |
+| D6 Pending decision survives a refresh | **DONE** | `server.mjs: /pending` |
+| D7 Last scan renders whoever ran it | **DONE** | `server.mjs: /scan/last` |
+| D8 Committed visual system + DESIGN.md | **DONE** | `DESIGN.md`, `index.html` |
+
+### Phase E — Voice and the brain  ·  IN PROGRESS
+
+| Task | Status | Where |
+|---|---|---|
+| E1 Deepgram STT + TTS, 16 kHz PCM end to end | **DONE** | `desktop/main/voice.mjs` |
+| E2 Spoken orders gated by the same `decide()` | **DONE** | `server.mjs: /voice` |
+| E3 Intent parsing incl. tickers and homophones | **DONE** | `voice.mjs: parseIntent` |
+| E4 Claude Code CLI as the brain, grounded in memory | **DONE** | `voice.mjs: brainClaude` |
+| E5 Groq as the alternate brain | **BLOCKED** | `voice.mjs: brainGroq` — see G1 |
+
+### Phase F — Hardware  ·  IN PROGRESS
+
+| Task | Status | Where |
+|---|---|---|
+| F1 Parametric CAD, printable, watertight | **DONE** | `cad/` |
+| F2 Per-filament print batches + Bambu 3MF | **DONE** | `cad/export_print_batches.py`, `export_3mf.py` |
+| F3 Firmware posts key presses to `/key` | **DONE** | `firmware/orchestrator_pad/net.h` |
+| F4 Keymap re-indexed to scanned matrix cells | **IN PROGRESS** | `firmware/orchestrator_pad/agents.h` — see G4 |
+| F5 Complete the matrix sweep; fix the dead switch | **BLOCKED** | needs the operator at the bench — see G4 |
+| F6 Print the trading keycaps and fit them | **NOT STARTED** | `cad/exports/print/` — see G5 |
+
+### Phase G — Verification  ·  DONE
+
+| Task | Status | Where |
+|---|---|---|
+| G1 Explicit test plan with per-item pass criteria | **DONE** | `TESTPLAN.md` (96 items) |
+| G2 End-to-end suite against the live product | **DONE** | `desktop/test/verify.mjs` (74 checks) |
+| G3 Load-bearing proof exits non-zero on regression | **DONE** | `desktop/test/loadbearing.test.mjs` |
+| G4 Design-slop detector clean across the repo | **DONE** | Impeccable `detect.mjs` |
+| G5 Reproducible product screenshots from the real app | **DONE** | `desktop/shots.mjs` |
+
+### Phase H — Submission readiness  ·  NOT STARTED
+
+This is the phase with the most open work. Everything below is a real gap.
+
+| Task | Status | Where |
+|---|---|---|
+| H1 Delete or quarantine the dead `backend/` tree | **NOT STARTED** | see G2 |
+| H2 Rewrite `SPEC.md` for the trading pad | **NOT STARTED** | see G3 |
+| H3 Correct `SUBMISSION.md`'s stale test output + CI claim | **NOT STARTED** | see G6, G7 |
+| H4 Fix `package.json`'s `fork` script to match `fork.sh` | **NOT STARTED** | see G8 |
+| H5 Add CI that runs the load-bearing proof on push | **NOT STARTED** | see G7 |
+| H6 Give trade size a real control | **NOT STARTED** | see G9 |
+| H7 Let the pad switch markets | **NOT STARTED** | see G10 |
+| H8 Record the demo walkthrough | **NOT STARTED** | see G11 |
+| H9 Rotate the leaked credentials | **BLOCKED** | operator-only — see G12 |
 
 ---
 
-## 6. Suggested order of attack
+## 3. Gap list
 
-1. **P1 memory core** — it is the score, and everything consumes it.
-2. **P2 chain + 1inch on a fork** — proves a real fill.
-3. **P3 decide()** — the join where memory changes the trade. Build G8's proof
-   test the moment this lands.
-4. **P4 Electron shell** — makes it visible.
-5. **P5 protocol + firmware** — connects the box.
-6. **P0 finish** in parallel whenever the printer/soldering iron is free.
-7. **P6 voice**, then **P8 submission**, then **P9** if time remains.
+Every gap below was found by reading the code, and each names the task it
+blocks. Ordered by how much damage it does to the submission.
+
+### G1 — Groq is blocked at the account level  ·  blocks **E5**
+`GROQ_API_KEY` authenticates and lists 14 models, but **every one** returns
+`model_permission_blocked_project` or `_org`. This is a switch in the operator's
+Groq console (Settings → Model permissions), not a code defect: `brainGroq()`
+already walks the models the account exposes and, when all are blocked, names
+the setting to change. Claude Code CLI is the brain meanwhile.
+**Operator action required. Untestable until then — do not mark it working.**
+
+### G2 — `backend/` is dead code from the pre-pivot product  ·  blocks **H1**
+~500 lines describing a *coding-agent* voice backend: a Loom-daemon bridge,
+`/select` and `/speak`, "an agent key is a handoff". Nothing in `desktop/`
+imports it; the only live reference is `desktop/run-dev.sh` sourcing
+`../backend/.env` for credentials. A judge reading the repo finds a whole
+backend arguing for the product this one explicitly stopped being.
+**Fix:** move the credentials to a top-level `.env`, delete `backend/`, update
+`run-dev.sh`. Keep `backend/.env` out of git (it already is).
+
+### G3 — `SPEC.md` documents the old product  ·  blocks **H2**
+Opens with *"Open-source ESP32 macropad for orchestrating coding agents: lock a
+target agent (Grok / Codex / Claude Code / Antigravity / opencode / Kiro /
+Cursor) … a dial that sets model effort low → ultracode."* Every dimension in it
+is still correct; every word about what the pad *is* is wrong.
+**Fix:** keep the dimensional tables, rewrite the framing and the key table for
+the 15-key trading deck.
+
+### G4 — The pad's key mapping is partly guessed  ·  blocks **F4, F5**
+`agents.h` marks row 2 cols 0–1 and **all of row 3** as `UNVERIFIED`, and records
+`r2c1` as **DEAD — cold joint, never fired**. Row 3 holds `kill`, `mic`, `sell`
+and `portfolio`, so the kill switch and the entire voice feature sit on cells
+nobody has confirmed.
+**Fix:** flash `firmware/keytest`, run the guided MAP mode, paste the emitted
+KEYMAP back into `agents.h`. Re-solder the dead joint.
+**Needs the operator at the bench.** Mitigation already shipped: every key is
+clickable in the desk app.
+
+### G5 — The printed caps are the old legends  ·  blocks **F6**
+`cad/partlib.py: key_layout()` is the v8 trading deck, but the pad physically
+wears the **LoomPad caps** (CURSOR/CODEX/CLAUDE/…). The colours are bought
+(green/red/white filament) and the exports exist; nothing has been printed.
+**Fix:** print `exports/print/caps-*.stl` + legends, fit them.
+
+### G6 — `SUBMISSION.md` prints test output that no longer exists  ·  blocks **H3**
+The walkthrough shows the *old* load-bearing fixtures (`DEGEN buy $80 →
+EXECUTE $80`, `ETH buy $250 → EXECUTE $100 (default)`). The test now runs
+ETH-only signals against a timid `$10` fallback, because DEGEN was delisted for
+liquidity and the fallback was made stricter. The judged document misreports
+its own headline evidence.
+**Fix:** paste the current output of `node desktop/test/loadbearing.test.mjs`.
+
+### G7 — `SUBMISSION.md` claims CI that does not exist  ·  blocks **H3, H5**
+It states the memory divergence *"is asserted in CI, not claimed."* There is no
+`.github/` directory and no CI anywhere in the repo. The claim is false as
+written.
+**Fix:** either add a workflow that runs `loadbearing.test.mjs` (and drop the
+env-dependent suites, which need credentials), or reword the sentence. Adding
+the workflow is better — the claim is worth making true.
+
+### G8 — The README's fork command is the one that breaks  ·  blocks **H4**
+`README.md` says `npm run fork`, and `desktop/package.json` defines that as
+`anvil --fork-url https://mainnet.base.org --port 8545 --silent` — no pinned
+block, no rate throttle. That exact command is what wedged and then killed the
+node repeatedly during testing. `desktop/fork.sh` has the working invocation and
+documents why each upstream fails, but nothing points at it.
+**Fix:** point the `fork` script at `./fork.sh`.
+
+### G9 — Trade size cannot be changed  ·  blocks **H6**
+`state.sizeUsd` is initialised to `50` in `server.mjs` and **never written
+again**: no route, no key, no UI control sets it. The physical knob is a *mock*
+snap-fit part with no encoder (`cad/part_knob.py`: "there is no
+potentiometer/EC11 in this build"), and nothing replaced it in software. The
+operator cannot size a trade.
+**Fix:** a `POST /size {usd}` route plus a control in the Decision pane, clamped
+by the remembered per-trade limit. Optionally map it to a key.
+
+### G10 — The pad cannot switch markets  ·  blocks **H7**
+The desk app supports six markets and the server accepts a market id on `/key`,
+but `agents.h`'s KEYMAP has no market keys and no `scan` key — 14 bindings for a
+15-key deck. From the hardware you can only trade whichever market the desk app
+last selected, which undercuts the four-asset-class story in a hardware demo.
+**Fix:** bind a spare cell to `market` (the server already cycles markets on
+that id), or add market ids to the long-press layer.
+
+### G11 — No demo recording  ·  blocks **H8**
+Eight real screenshots exist (`docs/images/app/`, captured from the live
+Electron window by `desktop/shots.mjs`), but there is no walkthrough video. The
+memory demo — wipe, press, watch the verdict change — is a *motion* argument and
+loses most of its force as stills.
+**Fix:** record the wipe → press → re-teach loop against the running app.
+
+### G12 — Leaked credentials are still unrotated  ·  blocks **H9**
+A GitHub PAT was pasted into a chat, and Groq + Deepgram keys were briefly in a
+`backend/.env.bak`. They were never committed (`*.bak` and `.env` are
+gitignored, and GitHub's push protection was respected, never bypassed), but
+they are still live.
+**Operator action required:** rotate the GitHub token and the Groq and Deepgram
+keys.
+
+### G13 — 1inch has never executed  ·  blocks nothing; keep stated
+`ROUTE` reports `1inch` only when `ONEINCH_API_KEY` is set; it is not, so every
+fill goes direct to Uniswap V3. The 1inch path is written and has never run.
+**Do not claim it works.** Either obtain a key and test it, or leave the code
+and the honest note as they are.
+
+### G14 — Virtuals is a listed market, not an integration  ·  blocks nothing
+`VIRTUAL` is one of the six tradeable markets, which is a genuine Base-native
+touchpoint, but no Virtuals *protocol* feature (agent tokens, ACP) is used.
+Partner-stack credit is therefore thin.
+**Optional:** deepen it, or state the scope plainly.
+
+---
+
+## 4. What a builder should pick up first
+
+In order, by value per unit of effort:
+
+1. **G8** — one line, and it stops a judge hitting the failure we spent hours
+   diagnosing.
+2. **G6 + G7** — the judged document currently misstates its own evidence.
+3. **G2** — deleting the dead backend removes the loudest contradiction in the
+   repo.
+4. **G9** — a fixed $50 trade size is the most visible functional hole.
+5. **G3** — SPEC.md is the last document still describing the old product.
+6. **G11** — the demo video is what the memory argument actually needs.
+
+**G1, G5, G12 and the bench half of G4 need the operator**, not a builder agent.
