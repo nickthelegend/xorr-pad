@@ -177,6 +177,19 @@ button.on{background:var(--live);color:var(--ink);box-shadow:var(--drop)}
   box-shadow:var(--drop-sm)}
 .wipe{width:100%;margin-bottom:8px}
 #store{column-count:2;column-gap:22px}
+.brief{border:3px solid var(--ink);background:var(--live);color:var(--ink);
+  padding:10px 12px;margin:0 0 10px;box-shadow:var(--drop);font-weight:600}
+.tt{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0 0;
+  padding:10px;border:3px solid var(--ink);background:var(--paper-2)}
+.tt .ttl{font:700 11px/1 Archivo,system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase}
+.tt input{border:3px solid var(--ink);padding:6px 8px;background:var(--paper);
+  font-family:"Azeret Mono",ui-monospace,monospace;font-size:14px;font-weight:600}
+#ttout,#cost,#contra{border:3px solid var(--ink);padding:10px 12px;margin-top:10px;box-shadow:var(--drop)}
+#ttout{background:var(--paper-2)}
+#cost{background:var(--sell);color:var(--ink)}
+#contra{background:var(--warn);color:var(--ink)}
+#cost h3,#contra h3,#ttout h3{font:700 11px/1 Archivo,system-ui,sans-serif;
+  letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px}
 #store>*{break-inside:avoid}
 /* A tier's heading and its rows are one thing. Pushed as separate children they
    broke across the column boundary — "archived — 1" sat at the foot of column
@@ -279,9 +292,20 @@ provenance.
       fees: the source engine&rsquo;s live book was &#43;$4.32 gross and &minus;$23.07 net
       over 30 trades, the loss entirely fees.</div></section>
   <section class="wide" id="memsec"><h2>Memory: everything Sibyl is holding</h2>
+    <div class="brief" id="briefing">&nbsp;</div>
     <div class="warn">Wiping is the demo. The agent forgets its limits, positions and learned rules.</div>
     <button class="r wipe" onclick="wipe()">Wipe memory</button>
     <button class="g wipe" id="reteach" hidden onclick="reteach()">Re&#8209;teach its limits</button>
+    <div id="cost" hidden></div>
+    <div id="contra" hidden></div>
+    <div class="tt">
+      <span class="ttl">Replay what it knew at</span>
+      <input id="ttin" type="datetime-local" step="1">
+      <button class="b" onclick="replay()">Replay</button>
+      <button onclick="replayNow()">Now</button>
+      <button class="r" onclick="decay()">Retire unused rules</button>
+    </div>
+    <div id="ttout" hidden></div>
     <div id="store"></div></section>
   <section><h2>Activity</h2><div id="log"></div></section>
 </main>
@@ -442,6 +466,64 @@ async function arm(){
   await fetch("/arm",{method:"POST",headers:H});
   await refresh();
 }
+
+function drawContradictions(cx){
+  const box = el("contra");
+  if (!cx?.findings?.length) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<h3>${cx.findings.length} rule${cx.findings.length===1?"":"s"} cannot do what it claims</h3>` +
+    cx.findings.map(f => `<div class="fnote"><span class="fnref">${esc(f.kind[0].toUpperCase())}</span><span>${esc(f.text)}</span></div>`).join("");
+}
+
+function drawCost(d){
+  const box = el("cost");
+  if (!d || d.had === null) { box.hidden = true; return; }
+  box.hidden = false;
+  const ents = Object.entries(d.lost?.entities || {}).map(([k,v]) => `${v.length} ${k}${v.length===1?"":"s"} (${v.join(", ")})`);
+  const bits = [...ents];
+  if (d.lost?.references?.length) bits.push(`${d.lost.references.length} reference${d.lost.references.length===1?"":"s"} (${d.lost.references.join(", ")})`);
+  if (d.lost?.state?.length) bits.push(`${d.lost.state.length} state key${d.lost.state.length===1?"":"s"}`);
+  if (d.lost?.journal) bits.push(`${d.lost.journal} journal events`);
+  const when = d.at ? new Date(d.at).toLocaleTimeString([], {hour12:false}) : "";
+  box.innerHTML = `<h3>what the wipe cost${when ? ` &mdash; ${esc(when)}` : ""}</h3>` +
+    `<div>It held ${d.had.journal} journal events and lost ${bits.join(", ") || "nothing"}.</div>`;
+}
+
+/** The temporal tier as a time machine: what it knew, at a moment you choose. */
+async function replay(){
+  const v = el("ttin").value;
+  if (!v) { el("ttout").hidden = false; el("ttout").innerHTML = "<h3>replay</h3><div>Pick a time first.</div>"; return; }
+  await showAt(new Date(v).toISOString());
+}
+async function replayNow(){ await showAt(new Date().toISOString()); }
+
+let ttDrawnAt = 0;
+async function showAt(ts){
+  const r = await get("/memory/at?ts=" + encodeURIComponent(ts));
+  const box = el("ttout"); box.hidden = false; ttDrawnAt = Date.now();
+  if (!r || r.error) { box.innerHTML = `<h3>replay</h3><div>${esc(r?.error || "could not replay")}</div>`; return; }
+  const pos = Object.entries(r.positions || {});
+  box.innerHTML = `<h3>what it knew at ${esc(String(ts).slice(0,19).replace("T"," "))}</h3>` +
+    `<div class="row"><span class="k">journal events replayed</span><span class="mono">${r.replayed}</span></div>` +
+    `<div class="row"><span class="k">executed by then</span><span class="mono">${dollars(r.spent)}</span></div>` +
+    (pos.length
+      ? pos.map(([sym,p]) => `<div class="row"><span class="k">held ${esc(sym)}</span><span class="mono">${qty(p.qty)} @ ${money(p.avg_entry_usd)}</span></div>`).join("")
+      : `<div class="row"><span class="k">positions</span><span class="mono dim">flat</span></div>`) +
+    (r.rules?.length ? `<div class="row"><span class="k">rules in force</span><span class="mono">${esc(r.rules.map(x=>x.id).join(", "))}</span></div>` : "");
+}
+
+/** Forget deliberately: retire rules nothing has needed. */
+async function decay(){
+  const r = await (await fetch("/memory/decay",{method:"POST",headers:H,body:JSON.stringify({days:14})})).json();
+  const box = el("ttout"); box.hidden = false;
+  box.innerHTML = `<h3>retire unused rules</h3>` +
+    `<div>Checked ${r.checked} rule${r.checked===1?"":"s"} over ${r.days} days. ` +
+    (r.archived?.length
+      ? `Retired ${r.archived.join(", ")} into the archive — readable, not deleted.`
+      : `Nothing retired: every rule has either fired or is younger than the window.`) + `</div>`;
+  await refresh();
+}
+
 async function wipe(){
   await fetch("/memory/wipe",{method:"POST",headers:H});
   // The verdict on screen was reasoned from memory that no longer exists.
@@ -467,6 +549,16 @@ function money(v){
   const a = Math.abs(n);
   const dp = a >= 1000 ? 0 : a >= 100 ? 2 : a >= 1 ? 3 : a >= 0.01 ? 4 : 6;
   return "$" + n.toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});
+}
+/**
+ * A budget figure, not a price. money() scales its precision by magnitude,
+ * which is right for a $0.6458 token and wrong for a dollar total — "$50.000"
+ * reads as a measurement, not as fifty dollars.
+ */
+function dollars(v){
+  const n = Number(v);
+  if (!isFinite(n)) return "—";
+  return "$" + n.toLocaleString(undefined,{maximumFractionDigits: Number.isInteger(n) ? 0 : 2});
 }
 function qty(v){
   const n = Number(v); const a = Math.abs(n);
@@ -586,6 +678,28 @@ async function refresh(){
 
   const full = await get("/memory/full");
   if (full) drawStore(full);
+
+  // Recall as the first thing on screen: what it remembers, in one sentence,
+  // before it is trusted with anything.
+  const bf = await get("/briefing");
+  if (bf?.text) el("briefing").textContent = bf.text;
+
+  // Rules that cannot do what they claim. Only shown when there are any —
+  // an empty warning block is furniture, not information.
+  const cx = await get("/memory/contradictions");
+  drawContradictions(cx);
+
+  // What the wipe actually cost, measured against the store as it stood.
+  const cost = await get("/memory/diff");
+  drawCost(cost);
+  // A wipe destroys the journal the replay panel was reading from, so its
+  // claim can no longer be substantiated. Clearing it only in this tab's wipe()
+  // left "held 0.02 ETH" sitting under "I remember nothing" whenever the wipe
+  // came from the pad, another tab, or the API — the same blind spot the
+  // activity log and the scan pane both had.
+  if (cost?.at && Date.parse(cost.at) > ttDrawnAt) {
+    el("ttout").hidden = true; el("ttout").innerHTML = "";
+  }
 
   const ls = await get("/scan/last");
   if (ls && ls.summary && ls.at !== lastScanAt) { lastScanAt = ls.at; drawScan(ls); }

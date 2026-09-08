@@ -1,0 +1,12 @@
+{
+  "_comment": "Points Claude Code at the SAME Sibyl store the pad writes, so the brain can query memory directly through the sponsor's own 8 MCP tools. Note SIBYL_MEMORY_DB: the MCP server reads a different variable from the SDK client's SIBYL_DB, so both are set to the same file.",
+  "mcpServers": {
+    "sibyl-memory": {
+      "command": "${PWD}/.venv/bin/sibyl-memory-mcp",
+      "env": {
+        "SIBYL_MEMORY_DB": "${SIBYL_DB:-/tmp/xorrpad-server.db}",
+        "SIBYL_DB": "${SIBYL_DB:-/tmp/xorrpad-server.db}"
+      }
+    }
+  }
+}

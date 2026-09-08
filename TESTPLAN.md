@@ -162,7 +162,7 @@ through a real browser.
 **94 of 96 items PASS. 2 are untestable for want of a credential and are marked
 as such, not passed.**
 
-- `node desktop/test/verify.mjs` — **80 pass, 0 fail**, 2 skipped, stable across
+- `node desktop/test/verify.mjs` — **96 pass, 0 fail**, 2 skipped, stable across
   three consecutive runs against the same accumulating store.
 - `node desktop/test/loadbearing.test.mjs` — exits 0; 3 of 4 verdicts change on
   a wipe, control unchanged.
@@ -244,3 +244,21 @@ it, so it depended on whichever market the *previous* run happened to end on:
 it passed against a fresh store and failed on the second run against the same
 one. It now names its market. Three consecutive runs against one accumulating
 store: **80 passed, 0 failed** each time.
+
+
+## Defects found while building the memory features
+
+| # | Defect | Fix | Re-verified |
+|---|---|---|---|
+| 18 | **The pad's own refusals were never journalled.** Only the operator's NO was recorded, so the store could not answer "what did you turn down, and which rule did it", and a rule that had just vetoed a trade still looked as though it had never fired. | A REJECT verdict is journalled with the rule that caused it. A refusal an existing rule caused is not counted as evidence for mining that same rule — otherwise a rule cites its own vetoes and grows forever on nothing. | PASS — O4, O6 |
+| 19 | **`POST /memory/decay {days:0}` silently became 14.** `Number(body.days) \|\| 14` treats an explicit zero as absent, so the caller was ignored and nothing was retired. | Check for a finite number, not a truthy one. | PASS — O8 |
+| 20 | **The wipe diff reported a NEGATIVE loss.** It compared a snapshot taken at the wipe against the store as it stood *now*, which had since regrown — "lost -7 journal events", and tiers the wipe had certainly emptied listed as losing nothing. | The cost is settled at the moment of the wipe and stamped with the time. | PASS — O14, O16 |
+| 21 | **The replay panel outlived its own evidence.** After a wipe it went on asserting "held 0.0200 ETH" directly under "I remember nothing" — and clearing it only in this tab's `wipe()` left it stale whenever the wipe came from the pad, another tab or the API. | Any wipe newer than the panel clears it, wherever the wipe came from. | PASS — visible in `11-cost.png` |
+| 22 | **A dollar total was formatted as a price.** `money()` scales precision by magnitude, which is right for a $0.6458 token and wrong for a budget: "$50.000" reads as a measurement. | A separate `dollars()` for budget figures. | PASS — the replay pane reads $50 |
+| 23 | **The MCP integration check talked to the server wrongly.** Piping requests in and closing stdin made the later ones race the EOF: `tools/list` answered and the `tools/call` after it was dropped, which looked exactly like a broken integration. | Hold the pipe open and wait for the answers. The MCP server also reads `SIBYL_MEMORY_DB`, not the SDK's `SIBYL_DB` — `.mcp.json` sets both. | PASS — O12, O13 |
+
+**One more harness defect:** `B9` pressed ✓ expecting "nothing pending" without
+first ensuring nothing *was* pending. A pending decision survives restarts by
+design, so the check depended on whether the previous run ended mid-decision —
+and a stray ✓ there would confirm a real trade, not merely fail a test. It now
+clears the decision first, as `B7` now names its own market.

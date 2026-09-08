@@ -207,3 +207,37 @@ where it is swappable are at the bottom.
 **41–50 exist to mark the line.** Anything below ~40 uses Sibyl as a key-value
 store, which any file could do; a judge on this track will read that as a
 checkbox. 48–50 are listed as explicit anti-features.
+
+
+## Status after the build pass
+
+Eleven of the twelve core features are built, wired into a product flow and
+covered by a check in `desktop/test/verify.mjs` — sections N and O. Nothing here
+is a stub; each one was verified against the running app with real fills on the
+Base fork.
+
+| # | Feature | Where it lives | Proof |
+|---|---|---|---|
+| 1 | Forget-and-watch | the Wipe key, and `loadbearing.test.mjs` | 3 of 4 verdicts change on a wipe |
+| 2 | Position archaeology | `trader.mjs` archives on close; the store browser renders the tier | N2 |
+| 3 | Rule provenance chain | `reflect.mjs` keeps the events; `decide.mjs` cites them in the veto | O2, O3 |
+| 4 | "Never knew" vs "answer is no" | `voice.mjs` reads the `VerdictCode` | E3, and the spoken answer |
+| 5 | Time-travel replay | `GET /memory/at?ts=`, and the Replay control | O9, O10, O11 |
+| 6 | Yesterday's budget | `recall_brief` over `read_events(since=local midnight)` | N1 |
+| 7 | Memory diff | settled at the wipe, `GET /memory/diff` | O14, O16 |
+| 8 | Contradiction finder | `findContradictions`, shown in yellow above the store | O5 |
+| 9 | Cold-start briefing | `GET /briefing`, the first line of the Memory pane | O1, O15 |
+| 10 | Shared brain via MCP | `.mcp.json` points the sponsor's server at the pad's own store | O12, O13 |
+| 11 | Per-market memory tenants | **not built** | — |
+| 12 | Rule decay | `decayRules`, the "Retire unused rules" control | O6, O7, O8 |
+
+**#11 is the honest gap.** Multi-tenancy would mean re-scoping every read and
+write in the bridge, and a half-done tenancy change is the kind of thing that
+silently splits a store in two. It is not built, and it is not claimed.
+
+**What building #12 turned up:** the pad's own refusals were never journalled at
+all. Only the operator's NO was recorded, so the store could not answer "what
+did you turn down, and which rule did it" — and a rule that had just vetoed a
+trade still looked as though it had never fired. Fixed, along with the
+circularity it would otherwise have introduced: a refusal an existing rule
+caused is no longer counted as evidence for mining that same rule.

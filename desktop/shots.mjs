@@ -112,8 +112,24 @@ async function run() {
   await key("AERO"); await key("buy"); await key("yes");
   await key("sell"); await key("yes");
 
+  // Plant a rule that cannot fire, so the contradiction finder has something
+  // true to say rather than an empty block.
+  const rfx = await api("/reflect");
+  const seed = rfx?.proposals?.[0] ||
+    { symbol: "ETH", side: "SELL", evidence: 0, text: "a rule for a market the allowlist already refuses" };
+  await api("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: { ...seed, id: "dead-doge-rule", symbol: "DOGE" } }) });
+
   await scrollTo("#memsec");
   await shot("09-memory", "the whole Sibyl store: every entity, reference, state key and journal event", 6500);
+
+  // The store reasoned about rather than reported: what it remembers said in a
+  // sentence, a rule that can never fire, and the journal replayed to a moment.
+  await win.webContents.executeJavaScript("replayNow()").catch(() => {});
+  await shot("10-replay", "the temporal tier as a time machine: what it knew, at a moment you pick", 3000);
+
+  // And the demo's other half, measured: what the wipe actually cost.
+  await api("/memory/wipe", { method: "POST" });
+  await shot("11-cost", "wiped, and told exactly what it forgot", 6000);
 
   console.log(`\nwritten to ${path.relative(path.join(HERE, ".."), OUT)}\n`);
   app.quit();

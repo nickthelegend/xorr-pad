@@ -21,7 +21,7 @@ import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
 import { swap, spendable } from "./dex.mjs";
 import { IS_FORK, fundOnFork } from "./chain.mjs";
-import { reflect, acceptRule, rejectRule } from "./reflect.mjs";
+import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
 import { readFile } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
@@ -46,6 +46,11 @@ export const state = {
   pending: null,            // a signal waiting on YES/NO
   lastFill: null,
   lastScan: null,
+  // What the last wipe cost, settled at the moment it happened. Kept in the
+  // process and never written back — a record of the wipe living inside the
+  // store would mean the wipe had not really wiped, which is the one claim
+  // this product must not fudge.
+  wipeCost: null,
   log: [],
 };
 
@@ -163,7 +168,15 @@ export function createServer(mem) {
         return send(200, { log: state.log });
 
       if (url.pathname === "/memory/wipe" && req.method === "POST") {
+        // Photograph the store on the way out and settle the cost immediately.
+        // Recomputing it later compared a historical snapshot against a store
+        // that had since regrown, which reported "lost -7 journal events" and
+        // listed nothing as lost from tiers the wipe had certainly emptied.
+        const preWipe = await mem.fullStore(200).catch(() => null);
         const out = await mem.wipe();
+        if (preWipe)
+          state.wipeCost = { at: new Date().toISOString(),
+                             ...diffStores(preWipe, await mem.fullStore(200).catch(() => null)) };
         // Any outstanding ✓ was reasoned from limits, positions and rules that
         // no longer exist. Honouring it would execute against forgotten facts,
         // so the wipe invalidates it and the operator has to decide again.
@@ -221,6 +234,47 @@ export function createServer(mem) {
         if (!body.proposal?.id) return send(400, { error: "body must be {proposal:{id,…}}" });
         return send(200, await rejectRule(mem, body.proposal));
       }
+
+      // Rules that cannot do what they claim. An accepted rule reads like a
+      // guarantee; one that can never fire is worse than none at all.
+      if (url.pathname === "/memory/contradictions" && req.method === "GET") {
+        const b = await mem.recallBrief();
+        return send(200, { findings: findContradictions(b.rules || [], b.limits), rules: (b.rules || []).length });
+      }
+
+      // Forget deliberately: retire rules nothing has needed. Archived with the
+      // reason, never deleted, so the operator can still read them back.
+      if (url.pathname === "/memory/decay" && req.method === "POST") {
+        // `Number(body.days) || 14` would turn an explicit 0 back into 14 —
+        // silently ignoring the caller and retiring nothing.
+        const d = Number(body.days);
+        const r = await decayRules(mem, { days: Number.isFinite(d) && d >= 0 ? d : 14 });
+        if (r.archived.length) note(`retired ${r.archived.length} unused rule(s): ${r.archived.join(", ")}`);
+        return send(200, r);
+      }
+
+      // What the pad knew at a moment in the past, rebuilt by replaying the
+      // journal up to that timestamp — the temporal tier used as a time
+      // machine rather than a log.
+      if (url.pathname === "/memory/at" && req.method === "GET") {
+        const ts = url.searchParams.get("ts");
+        if (!ts || Number.isNaN(Date.parse(ts)))
+          return send(400, { error: "pass ?ts=<ISO timestamp>" });
+        return send(200, await stateAt(mem, ts));
+      }
+
+      // What a wipe actually cost, measured against the snapshot taken as it
+      // happened. Held in the process, not the store — writing it to the store
+      // would mean the wipe had not really wiped.
+      if (url.pathname === "/memory/diff" && req.method === "GET") {
+        if (!state.wipeCost) return send(200, { had: null, note: "nothing has been wiped this session" });
+        return send(200, state.wipeCost);
+      }
+
+      // Recall as the first thing that happens: what the pad remembers, in one
+      // sentence, before it is trusted with anything.
+      if (url.pathname === "/briefing" && req.method === "GET")
+        return send(200, { text: await briefing(mem) });
 
       // Trade size. The pad's knob is a mock part with no encoder, so the size
       // has to be settable from somewhere — it was pinned at $50 with no route,
@@ -341,6 +395,18 @@ async function onKey(mem, id) {
                   sizeUsd: state.sizeUsd, reason: `${id} pressed on the pad`, confidence: 1 };
     const verdict = decide(sig, brief);
     state.pending = { sig, verdict, market };
+    // A refusal decided HERE used to leave no trace at all. The journal only
+    // ever recorded what the operator rejected by pressing NO — never what the
+    // gate itself refused — so the store could not answer "what did you turn
+    // down, and which rule did it", and a rule that had just vetoed a trade
+    // still looked like it had never fired.
+    if (verdict.action === "REJECT")
+      await mem.journal({
+        evaluated: { signal: sig },
+        acted: { action: "REJECT", usd: 0, executed: false,
+                 ...(verdict.vetoedBy ? { vetoedBy: verdict.vetoedBy } : {}) },
+        forward: { why: verdict.why },
+      });
     note(`${id.toUpperCase()} ${state.market} $${state.sizeUsd} -> ${verdict.action} $${verdict.sizeUsd}`);
     return { ok: true, signal: sig, verdict, awaiting: verdict.action === "EXECUTE" ? "yes/no" : null };
   }
@@ -388,6 +454,92 @@ async function onKey(mem, id) {
   if (id === "mic")       return { ok: true, note: "voice handled on /voice" };
 
   return { ok: false, error: `unknown key '${id}'` };
+}
+
+
+/**
+ * What the pad knew at a past moment.
+ *
+ * read_events(until=ts) gives the journal up to that instant; replaying it
+ * rebuilds the positions it held and the rules it had accepted by then. This
+ * is the temporal tier used as a time machine rather than a log — and it is
+ * honest about its limits: it reconstructs what the journal recorded, so
+ * anything never journalled cannot be recovered.
+ */
+export async function stateAt(mem, ts) {
+  const events = await mem.eventsBetween({ until: ts, limit: 1000 }).catch(() => []);
+  const positions = {}, rules = [], fills = [];
+  let spent = 0;
+  const parse = (v) => (typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return null; } })() : v);
+
+  for (const e of events) {
+    const ev = parse(e.evaluated), ac = parse(e.acted), fw = parse(e.forward);
+    if (ac?.action === "RULE_ACCEPTED" && ev?.proposal) rules.push(ev.proposal);
+    if (ac?.action !== "FILL" || !ev?.signal) continue;
+    const sig = ev.signal, usd = Number(ac.usd) || 0;
+    spent += usd;
+    const got = Number(fw?.received) || 0;
+    const px = got > 0 ? usd / got : 0;
+    const cur = positions[sig.symbol] || { qty: 0, avg_entry_usd: 0 };
+    if (sig.side === "BUY") {
+      const q = px > 0 ? usd / px : 0;
+      const newQty = cur.qty + q;
+      positions[sig.symbol] = { qty: newQty,
+        avg_entry_usd: newQty ? ((cur.qty * cur.avg_entry_usd) + usd) / newQty : px };
+    } else {
+      const q = px > 0 ? usd / px : cur.qty;
+      const newQty = Math.max(0, cur.qty - q);
+      if (newQty * (px || 0) < 0.01) delete positions[sig.symbol];
+      else positions[sig.symbol] = { qty: newQty, avg_entry_usd: cur.avg_entry_usd };
+    }
+    fills.push({ ts: e.ts, side: sig.side, symbol: sig.symbol, usd });
+  }
+  return { at: ts, replayed: events.length, positions, rules, spent, fills: fills.slice(-12) };
+}
+
+/** What a wipe cost, tier by tier. */
+export function diffStores(before, after) {
+  const rows = (s, cat) => (s?.entities?.[cat] || []).map((r) => r.name);
+  const cats = [...new Set([...Object.keys(before?.entities || {}), ...Object.keys(after?.entities || {})])];
+  const lost = {};
+  for (const c of cats) {
+    const b = rows(before, c), a = new Set(rows(after, c));
+    const gone = b.filter((n) => !a.has(n));
+    if (gone.length) lost[c] = gone;
+  }
+  const refs = Object.keys(before?.references || {}).filter((k) => !(after?.references || {})[k]);
+  const states = Object.keys(before?.state || {}).filter((k) => !(after?.state || {})[k]);
+  return {
+    had: {
+      entities: Object.fromEntries(cats.map((c) => [c, rows(before, c).length])),
+      references: Object.keys(before?.references || {}).length,
+      state: Object.keys(before?.state || {}).length,
+      journal: (before?.journal || []).length,
+    },
+    lost: { entities: lost, references: refs, state: states,
+            journal: Math.max(0, (before?.journal || []).length - (after?.journal || []).length) },
+  };
+}
+
+/**
+ * What the pad remembers, in one sentence, said before it is trusted with
+ * anything. If it remembers nothing it says exactly that, because an agent
+ * that opens by implying it knows you when it does not is the failure this
+ * whole product is about.
+ */
+export async function briefing(mem) {
+  const b = await mem.recallBrief().catch(() => null);
+  if (!b) return "I cannot reach my memory, so I know nothing. Nothing should be traded on my say-so.";
+  if (!b.limits)
+    return "I remember nothing — no limits, no positions, no rules. Until you teach me again I will refuse anything but the smallest trade.";
+  const bits = [`I remember your limits: $${b.limits.max_trade_usd} a trade, $${b.limits.max_day_usd} a day.`];
+  const pos = Object.entries(b.positions || {});
+  bits.push(pos.length
+    ? `You are holding ${pos.map(([s, p]) => `${Number(p.qty).toFixed(4)} ${s}`).join(" and ")}.`
+    : "You are flat.");
+  if (b.rules?.length) bits.push(`${b.rules.length} rule${b.rules.length === 1 ? "" : "s"} you taught me ${b.rules.length === 1 ? "is" : "are"} in force.`);
+  if (Number.isFinite(b.spent_today) && b.spent_today > 0) bits.push(`$${b.spent_today} has already gone out today.`);
+  return bits.join(" ");
 }
 
 export async function start() {

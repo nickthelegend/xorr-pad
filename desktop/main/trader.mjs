@@ -98,7 +98,10 @@ export async function runOnce(mem, { execute = IS_FORK, cfgs = {}, market } = {}
   // what reflection later turns into rules.
   await mem.journal({
     evaluated: { signal, market: mkt.prices },
-    acted: { action: verdict.action, usd: verdict.sizeUsd, executed: false },
+    // vetoedBy is what lets decayRules tell a rule that is doing work from one
+    // that has never stopped anything.
+    acted: { action: verdict.action, usd: verdict.sizeUsd, executed: false,
+             ...(verdict.vetoedBy ? { vetoedBy: verdict.vetoedBy } : {}) },
     forward: { why: verdict.why },
   });
 

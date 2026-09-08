@@ -59,7 +59,15 @@ export function decide(signal, brief) {
     memoryUsed = true;
     if (matches(rule, signal)) {
       why.push(`vetoed by remembered rule '${rule.id}': ${rule.text}`);
-      return { action: "REJECT", sizeUsd: 0, why, memoryUsed };
+      // A rule is a claim about your own past behaviour, so it should be able
+      // to show its working rather than just assert. The dates come off the
+      // journal events the rule was mined from.
+      if (rule.from?.length) {
+        const days = [...new Set(rule.from.map((f) => String(f.ts).slice(0, 10)))];
+        why.push(`mined from ${rule.from.length} of your own refusals on ` +
+                 `${days.slice(0, 3).join(", ")}${days.length > 3 ? ` and ${days.length - 3} more` : ""}`);
+      }
+      return { action: "REJECT", sizeUsd: 0, why, memoryUsed, vetoedBy: rule.id };
     }
   }
 

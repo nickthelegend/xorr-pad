@@ -20,7 +20,8 @@ import { MARKETS, DELISTED, SYMBOLS } from "../main/markets.mjs";
 import { klines, marketUptrend, regimeOf } from "../main/candles.mjs";
 import { BOOK, runBook, ema, rsi } from "../main/strategies.mjs";
 import { priceImpact, MAX_IMPACT } from "../main/dex.mjs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -76,6 +77,11 @@ try {
   chk("B10 unknown key is handled", unknown.s === 200 && unknown.b.ok === false &&
       /unknown key/.test(unknown.b.error), `"${unknown.b.error}"`);
 
+  // Make sure nothing IS pending before asserting on the orphan case. The
+  // pending decision survives restarts by design, so leaving this implicit made
+  // the check depend on whether the previous run happened to end mid-decision —
+  // and a stray ✓ here would confirm a real trade, not just fail a test.
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
   const orphanYes = await j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) });
   chk("B9 YES with nothing pending", orphanYes.b?.ok === false && /nothing pending/.test(orphanYes.b.error), "no 500");
 
@@ -591,6 +597,150 @@ try {
   // Leave the baton where the suite found it, so the next run starts clean.
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
 } catch (e) { chk("N crashed", false, String(e.message || e).slice(0, 92)); }
+
+// ── O. the store, reasoned about rather than reported ───────────────────────
+section("O. memory that derives, forgets and remembers when");
+try {
+  const k = (id) => j("/key", { method: "POST", body: JSON.stringify({ id }) });
+  const DB = process.env.SIBYL_DB || "/tmp/xorrpad-server.db";
+  await j("/memory/wipe", { method: "POST" });
+  await j("/memory/seed", { method: "POST", body: "{}" });
+  await j("/arm", { method: "POST" });
+  await k("ETH");
+
+  // #9 — recall as the first thing that happens, and honest when it is empty.
+  const t0 = new Date().toISOString();
+  await k("buy"); await k("yes");
+  const b1 = await j("/briefing");
+  chk("O1 the briefing states what it remembers", /limits/i.test(b1.b.text) && /holding/i.test(b1.b.text),
+      `"${b1.b.text.slice(0, 76)}…"`);
+
+  // #3 — a rule that can show its working.
+  for (let i = 0; i < 3; i++) { await k("sell"); await k("no"); }
+  const rf = await j("/reflect");
+  const live = rf.b.proposals[0];
+  chk("O2 a proposal carries the events it was mined from",
+      Array.isArray(live?.from) && live.from.length >= 3, `from ${live?.from?.length} journal events`);
+  await j("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: live }) });
+  const veto = await k("sell");
+  chk("O3 the veto cites its provenance",
+      veto.b.verdict?.vetoedBy === live.id && veto.b.verdict.why.some((w) => /mined from/.test(w)),
+      `"${veto.b.verdict.why.find((w) => /mined from/.test(w)) || veto.b.verdict.why[0]}"`);
+  const jr = (await j("/memory/full")).b.journal || [];
+  const vetoed = jr.some((e) => {
+    const a = typeof e.acted === "string" ? JSON.parse(e.acted) : e.acted;
+    return a?.vetoedBy === live.id;
+  });
+  chk("O4 the gate's own refusal is journalled", vetoed,
+      vetoed ? `acted.vetoedBy=${live.id}` : "the pad's refusals leave no trace");
+
+  // #8 — a rule that cannot fire is worse than no rule.
+  await j("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: { ...live, id: "dead-doge-rule", symbol: "DOGE" } }) });
+  const cx = await j("/memory/contradictions");
+  chk("O5 a rule that can never fire is surfaced", cx.b.findings?.some((f) => f.kind === "dead"),
+      `"${cx.b.findings?.[0]?.text?.slice(0, 74)}"`);
+
+  // #12 — forgetting deliberately. Backdate both rules so age cannot be the
+  // reason either survives, which is how this passed for the wrong reason once.
+  {
+    const mem2 = new Memory({ db: DB });
+    const br = await mem2.recallBrief();
+    const old = new Date(Date.now() - 30 * 86400_000).toISOString();
+    for (const r of br.rules || []) await mem2.setEntity("rule", r.id, { ...r, accepted_at: old });
+    mem2.stop();
+  }
+  await k("sell");                                  // make the live rule fire again
+  const dec = await j("/memory/decay", { method: "POST", body: JSON.stringify({ days: 1 }) });
+  const firedKept = (dec.b.kept || []).filter((x) => x.why === "fired inside the window").map((x) => x.id);
+  chk("O6 a rule that is doing work survives the sweep",
+      firedKept.includes(live.id) && !dec.b.archived.includes(live.id),
+      `kept as fired: [${firedKept.join(", ")}]`);
+  chk("O7 a rule nothing needs is archived, not deleted",
+      dec.b.archived.includes("dead-doge-rule") &&
+      ((await j("/memory/full")).b.archived || []).some((a) => a.name === "dead-doge-rule"),
+      `archived: [${dec.b.archived.join(", ")}]`);
+  const dz = await j("/memory/decay", { method: "POST", body: JSON.stringify({ days: 0 }) });
+  chk("O8 days:0 is honoured, not silently 14", dz.b.days === 0, `days=${dz.b.days}`);
+
+  // #5 — the temporal tier as a time machine.
+  const past = await j(`/memory/at?ts=${encodeURIComponent(t0)}`);
+  const now = await j(`/memory/at?ts=${encodeURIComponent(new Date(Date.now() + 1000).toISOString())}`);
+  const store = await j("/memory");
+  chk("O9 replay shows a past that differs from now",
+      Object.keys(past.b.positions).length === 0 && Object.keys(now.b.positions).length > 0,
+      `${Object.keys(past.b.positions).length} positions then, ${Object.keys(now.b.positions).length} now`);
+  chk("O10 and the replayed present matches the live store",
+      Object.keys(now.b.positions).sort().join(",") === Object.keys(store.b.positions || {}).sort().join(","),
+      `replay [${Object.keys(now.b.positions).sort().join(", ")}] vs store [${Object.keys(store.b.positions || {}).sort().join(", ")}]`);
+  chk("O11 a junk timestamp is refused", (await j("/memory/at?ts=banana")).s === 400, "400 on ?ts=banana");
+
+  // #10 — the sponsor's own MCP server, on the store the pad writes.
+  {
+    const frame = (o) => JSON.stringify(o) + "\n";
+    const rpcInit = frame({ jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "verify", version: "1" } } })
+      + frame({ jsonrpc: "2.0", method: "notifications/initialized" });
+    const rpcList = frame({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    const rpcPos = frame({ jsonrpc: "2.0", id: 3, method: "tools/call",
+      params: { name: "memory_list", arguments: { category: "position" } } });
+    const bin = path.join(ROOT, "..", ".venv", "bin", "sibyl-memory-mcp");
+    // An MCP server is long-lived by design. Piping the requests in and closing
+    // stdin makes the later ones race the EOF — tools/list answered and the
+    // tools/call that followed it was simply dropped, which looked exactly like
+    // a broken integration. Hold the pipe open and wait for the answers.
+    const rpcCall = () => new Promise((resolve) => {
+      const proc = spawn(bin, [], { env: { ...process.env, SIBYL_MEMORY_DB: DB, SIBYL_DB: DB },
+                                    stdio: ["pipe", "pipe", "ignore"] });
+      const seen = new Map();
+      let buf = "";
+      const done = (r) => { try { proc.kill(); } catch {} resolve(r); };
+      const timer = setTimeout(() => done(seen), 25000);
+      proc.stdout.on("data", (d) => {
+        buf += d;
+        const lines = buf.split("\n"); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let m; try { m = JSON.parse(line); } catch { continue; }
+          if (m.id != null) seen.set(m.id, m);
+          if (m.id === 1) proc.stdin.write(rpcList);
+          if (m.id === 2) proc.stdin.write(rpcPos);
+          if (m.id === 3) { clearTimeout(timer); done(seen); }
+        }
+      });
+      proc.on("error", () => { clearTimeout(timer); done(seen); });
+      proc.stdin.write(rpcInit);
+    });
+    const seen = await rpcCall();
+    const tools = seen.get(2)?.result?.tools?.length || 0;
+    let positions = -1;
+    try { positions = JSON.parse(seen.get(3).result.content[0].text).count; } catch {}
+
+    chk("O12 the sponsor's MCP server exposes its tools", tools === 8, `${tools} tools over stdio`);
+    chk("O13 MCP reads what the pad wrote", positions > 0,
+        positions < 0 ? "the MCP server did not answer" : `memory_list(position) -> ${positions}`);
+  }
+
+  // #7 — what a wipe actually cost, measured rather than asserted.
+  await j("/memory/wipe", { method: "POST" });
+  const d = await j("/memory/diff");
+  chk("O14 the wipe diff names what was lost",
+      (d.b.lost?.entities?.position || []).length > 0 && d.b.lost.references.includes("risk/limits"),
+      `lost [${(d.b.lost?.entities?.position || []).join(", ")}] + ${d.b.lost?.references?.length} reference(s) + ${d.b.lost?.journal} events`);
+  // The cost is settled at the wipe. Recomputing it later compared the old
+  // snapshot against a store that had regrown, and reported a NEGATIVE loss.
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+  const d2 = await j("/memory/diff");
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });   // leave nothing pending
+  chk("O16 the cost stays what it was, and is never negative",
+      d2.b.lost.journal === d.b.lost.journal && d2.b.lost.journal >= 0 && !!d2.b.at,
+      `${d2.b.lost.journal} events, stamped ${String(d2.b.at).slice(11, 19)}`);
+  const b2 = await j("/briefing");
+  chk("O15 the briefing after a wipe is honest", /remember nothing/i.test(b2.b.text), `"${b2.b.text.slice(0, 60)}…"`);
+
+  await j("/memory/seed", { method: "POST", body: "{}" });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+} catch (e) { chk("O crashed", false, String(e.message || e).slice(0, 92)); }
 
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             "   (2 skipped: credentials unavailable)\n");
