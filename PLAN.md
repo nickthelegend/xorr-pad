@@ -102,7 +102,7 @@ hosted multi-user service. Showing xorr-eth, which is a separate product.
 | E2 Spoken orders gated by the same `decide()` | **DONE** | `server.mjs: /voice` |
 | E3 Intent parsing incl. tickers and homophones | **DONE** | `voice.mjs: parseIntent` |
 | E4 Claude Code CLI as the brain, grounded in memory | **DONE** | `voice.mjs: brainClaude` |
-| E5 Groq as the alternate brain | **BLOCKED** | `voice.mjs: brainGroq` — see G1 |
+| E5 Groq as the alternate brain | **BLOCKED** | every model blocked in the operator's Groq console — see G1 |
 
 ### Phase F — Hardware  ·  IN PROGRESS
 
@@ -131,14 +131,14 @@ This is the phase with the most open work. Everything below is a real gap.
 
 | Task | Status | Where |
 |---|---|---|
-| H1 Delete or quarantine the dead `backend/` tree | **NOT STARTED** | see G2 |
-| H2 Rewrite `SPEC.md` for the trading pad | **NOT STARTED** | see G3 |
-| H3 Correct `SUBMISSION.md`'s stale test output + CI claim | **NOT STARTED** | see G6, G7 |
-| H4 Fix `package.json`'s `fork` script to match `fork.sh` | **NOT STARTED** | see G8 |
-| H5 Add CI that runs the load-bearing proof on push | **NOT STARTED** | see G7 |
-| H6 Give trade size a real control | **NOT STARTED** | see G9 |
-| H7 Let the pad switch markets | **NOT STARTED** | see G10 |
-| H8 Record the demo walkthrough | **NOT STARTED** | see G11 |
+| H1 Delete the dead `backend/` tree; credentials moved to `/.env` | **DONE** | G2 closed |
+| H2 Rewrite `SPEC.md` for the trading pad, verified against `key_layout()` | **DONE** | G3 closed |
+| H3 Correct `SUBMISSION.md`'s test output, CI claim and primitives list | **DONE** | G6, G7 closed |
+| H4 `npm run fork` now runs `fork.sh`; added `warm`, `shots`, `verify` | **DONE** | G8 closed |
+| H5 CI runs the load-bearing proof on every push, credential-free | **DONE** | `.github/workflows/memory.yml` |
+| H6 `POST /size` + a UI control, clamped by the remembered cap | **DONE** | G9 closed |
+| H7 Let the pad switch markets | **NOT STARTED** | firmware; needs the bench — see G10 |
+| H8 Record the demo walkthrough | **NOT STARTED** | 9 real captures exist; video still owed — see G11 |
 | H9 Rotate the leaked credentials | **BLOCKED** | operator-only — see G12 |
 
 ---
@@ -156,7 +156,7 @@ already walks the models the account exposes and, when all are blocked, names
 the setting to change. Claude Code CLI is the brain meanwhile.
 **Operator action required. Untestable until then — do not mark it working.**
 
-### G2 — `backend/` is dead code from the pre-pivot product  ·  blocks **H1**
+### G2 — `backend/` is dead code from the pre-pivot product  ·  **CLOSED**
 ~500 lines describing a *coding-agent* voice backend: a Loom-daemon bridge,
 `/select` and `/speak`, "an agent key is a handoff". Nothing in `desktop/`
 imports it; the only live reference is `desktop/run-dev.sh` sourcing
@@ -165,7 +165,7 @@ backend arguing for the product this one explicitly stopped being.
 **Fix:** move the credentials to a top-level `.env`, delete `backend/`, update
 `run-dev.sh`. Keep `backend/.env` out of git (it already is).
 
-### G3 — `SPEC.md` documents the old product  ·  blocks **H2**
+### G3 — `SPEC.md` documents the old product  ·  **CLOSED**
 Opens with *"Open-source ESP32 macropad for orchestrating coding agents: lock a
 target agent (Grok / Codex / Claude Code / Antigravity / opencode / Kiro /
 Cursor) … a dial that sets model effort low → ultracode."* Every dimension in it
@@ -189,7 +189,7 @@ wears the **LoomPad caps** (CURSOR/CODEX/CLAUDE/…). The colours are bought
 (green/red/white filament) and the exports exist; nothing has been printed.
 **Fix:** print `exports/print/caps-*.stl` + legends, fit them.
 
-### G6 — `SUBMISSION.md` prints test output that no longer exists  ·  blocks **H3**
+### G6 — `SUBMISSION.md` prints test output that no longer exists  ·  **CLOSED**
 The walkthrough shows the *old* load-bearing fixtures (`DEGEN buy $80 →
 EXECUTE $80`, `ETH buy $250 → EXECUTE $100 (default)`). The test now runs
 ETH-only signals against a timid `$10` fallback, because DEGEN was delisted for
@@ -197,7 +197,7 @@ liquidity and the fallback was made stricter. The judged document misreports
 its own headline evidence.
 **Fix:** paste the current output of `node desktop/test/loadbearing.test.mjs`.
 
-### G7 — `SUBMISSION.md` claims CI that does not exist  ·  blocks **H3, H5**
+### G7 — `SUBMISSION.md` claims CI that does not exist  ·  **CLOSED**
 It states the memory divergence *"is asserted in CI, not claimed."* There is no
 `.github/` directory and no CI anywhere in the repo. The claim is false as
 written.
@@ -205,7 +205,7 @@ written.
 env-dependent suites, which need credentials), or reword the sentence. Adding
 the workflow is better — the claim is worth making true.
 
-### G8 — The README's fork command is the one that breaks  ·  blocks **H4**
+### G8 — The README's fork command is the one that breaks  ·  **CLOSED**
 `README.md` says `npm run fork`, and `desktop/package.json` defines that as
 `anvil --fork-url https://mainnet.base.org --port 8545 --silent` — no pinned
 block, no rate throttle. That exact command is what wedged and then killed the
@@ -213,7 +213,7 @@ node repeatedly during testing. `desktop/fork.sh` has the working invocation and
 documents why each upstream fails, but nothing points at it.
 **Fix:** point the `fork` script at `./fork.sh`.
 
-### G9 — Trade size cannot be changed  ·  blocks **H6**
+### G9 — Trade size cannot be changed  ·  **CLOSED**
 `state.sizeUsd` is initialised to `50` in `server.mjs` and **never written
 again**: no route, no key, no UI control sets it. The physical knob is a *mock*
 snap-fit part with no encoder (`cad/part_knob.py`: "there is no
@@ -273,3 +273,48 @@ In order, by value per unit of effort:
 6. **G11** — the demo video is what the memory argument actually needs.
 
 **G1, G5, G12 and the bench half of G4 need the operator**, not a builder agent.
+
+
+---
+
+## 5. Closed in the execution pass (2026-09-08)
+
+**G2** dead `backend/` deleted, credentials relocated to `/.env`, `run-dev.sh`
+repointed, Deepgram verified working from the new location.
+**G3** `SPEC.md` reframed for the trading pad and cross-checked against
+`key_layout()` — it claimed 15 caps and the CAD builds 14, so the spec now says
+14 and names the missing SCAN key as a known hardware gap.
+**G6** `SUBMISSION.md` now prints the output the test actually produces.
+**G7** `.github/workflows/memory.yml` runs the load-bearing proof on every push,
+verified to pass with no Deepgram, no Groq and no chain.
+**G8** `npm run fork` runs `fork.sh`; `warm`, `shots` and `verify` added.
+**G9** `POST /size` plus a UI control, clamped by the remembered per-trade cap
+and persisted on the baton so a restart does not reset it.
+
+### Found and fixed while executing
+
+- **The primitives claim was partly false.** `summarization` and
+  `consolidation` were never called. Rather than delete the claim, `semantic
+  search` was given a real consumer: spoken questions now search the journal
+  ("have I traded AERO before?"), with ticker aliases so a transcriber's
+  "Arrow" still finds AERO. The doc now lists only what the code calls.
+- **The spoken layer reported a wrong price.** `groundIn()` rounded to whole
+  dollars, so AERO at $0.64 was read aloud as "at $1". Precision now scales.
+- **The page was cacheable**, so an edit shipped and the window kept rendering
+  the previous build. `no-store` on the HTML.
+- **`quote()` blamed liquidity for a slow node** — a timeout was reported as
+  "no Uniswap V3 pool", sending you after a liquidity problem that did not
+  exist. Timeouts now say so.
+- **The fork was the real bottleneck.** Reads took 16s and a first pool quote
+  55s, because anvil fetches state lazily from a rate-limited upstream. Added
+  `warm.mjs` and `--state` persistence: after one 138s warm-up every read is
+  local and answers in single-digit milliseconds. `/portfolio` went from a 16s
+  503 to 5ms, and the suite from 71/74 to 74/74.
+- **A redesign, pinned by the operator.** A photograph of the built hardware
+  showed the case is vivid blue, not the grey the design system claimed. The
+  interface was rebuilt neo-brutalist in the real colours, and white-on-green
+  (2.24:1) and white-on-red (3.55:1) were caught failing AA and replaced with
+  black on bright fills.
+- **The whole Sibyl store is now visible**, not a summary: every entity by
+  category, references, state keys, the journal with a toggle, and the engine's
+  own size and tier.

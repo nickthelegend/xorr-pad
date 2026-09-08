@@ -1,0 +1,43 @@
+name: memory is load-bearing
+
+# The claim this project is judged on is that deleting the memory changes what
+# the agent does. This runs the proof on every push: it seeds a real Sibyl
+# store, runs four signals, physically deletes the store, runs the identical
+# signals again, and fails if the verdicts stop diverging — or if the control
+# signal ever moves.
+#
+# It deliberately does NOT run verify.mjs: that suite needs Deepgram, an anvil
+# fork of Base and a funded wallet, none of which belong in CI. The memory
+# proof needs none of them, which is what makes it the honest thing to gate on.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  load-bearing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Sibyl memory client
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --quiet --upgrade pip
+          .venv/bin/pip install --quiet sibyl-memory-client
+
+      - name: Prove memory is load-bearing
+        env:
+          SIBYL_PY: ${{ github.workspace }}/.venv/bin/python
+          SIBYL_DB: ${{ runner.temp }}/xorrpad-ci.db
+        run: node desktop/test/loadbearing.test.mjs

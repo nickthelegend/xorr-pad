@@ -13,7 +13,10 @@
     "test": "node --test test/",
     "start": "electron .",
     "backend": "node main/server.mjs",
-    "fork": "anvil --fork-url https://mainnet.base.org --port 8545 --silent"
+    "fork": "./fork.sh",
+    "shots": "electron shots.mjs",
+    "verify": "node test/verify.mjs",
+    "warm": "node warm.mjs"
   },
   "license": "MIT",
   "dependencies": {

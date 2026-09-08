@@ -15,7 +15,7 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Memory, DEFAULT_LIMITS } from "./memory.mjs";
+import { Memory, DEFAULT_LIMITS, NO_MEMORY_LIMITS } from "./memory.mjs";
 import { runOnce, getMarket, snapshot, applyFill } from "./trader.mjs";
 import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
@@ -95,7 +95,7 @@ export function createServer(mem) {
             ? `${sig.side} ${sig.sizeUsd} dollars of ${sig.symbol}. ${verdict.why.slice(-1)[0]}. Press yes to confirm.`
             : `I can't. ${verdict.why.slice(-1)[0]}.`;
         } else {
-          reply = await think(transcript, brief, market);
+          reply = await think(transcript, brief, market, mem);
         }
         await mem.journal({ evaluated: { heard: transcript },
                             acted: { action: sig ? "PROPOSED" : "ANSWERED", executed: false },
@@ -122,7 +122,11 @@ export function createServer(mem) {
     try {
       if (url.pathname === "/" || url.pathname === "/index.html") {
         const html = await readFile(new URL("../renderer/index.html", import.meta.url));
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        // The page is the app. Letting a client cache it means an edit ships
+        // and the window keeps rendering yesterday's build, which reads as
+        // "the fix did not work" rather than "you are looking at a cached page".
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8",
+                             "cache-control": "no-store, must-revalidate" });
         return res.end(html);
       }
 
@@ -141,10 +145,16 @@ export function createServer(mem) {
 
       if (url.pathname === "/health")
         return send(200, { ok: true, mode: IS_FORK ? "fork" : "mainnet", agent: state.agent,
-                           armed: state.armed, pending: !!state.pending });
+                           armed: state.armed, pending: !!state.pending,
+                           market: state.market, sizeUsd: state.sizeUsd });
 
       if (url.pathname === "/memory" && req.method === "GET")
         return send(200, await mem.recallBrief());
+
+      // Everything Sibyl holds, tier by tier — not the decision-shaped summary.
+      // The operator asked to see the whole store, so show the whole store.
+      if (url.pathname === "/memory/full" && req.method === "GET")
+        return send(200, await mem.fullStore(Number(url.searchParams.get("limit")) || 60));
 
       // The deck's own history. Without this the UI could only ever show what
       // was clicked in that one tab — every physical pad press and every
@@ -210,6 +220,25 @@ export function createServer(mem) {
       if (url.pathname === "/reflect/reject" && req.method === "POST") {
         if (!body.proposal?.id) return send(400, { error: "body must be {proposal:{id,…}}" });
         return send(200, await rejectRule(mem, body.proposal));
+      }
+
+      // Trade size. The pad's knob is a mock part with no encoder, so the size
+      // has to be settable from somewhere — it was pinned at $50 with no route,
+      // no key and no control, which meant the operator could not size a trade
+      // at all. Clamped to the remembered per-trade cap so this cannot be used
+      // to walk around the risk limits.
+      if (url.pathname === "/size" && req.method === "POST") {
+        const asked = Number(body.usd);
+        if (!Number.isFinite(asked) || asked <= 0)
+          return send(400, { error: "body must be {usd:<positive number>}" });
+        const brief = await mem.recallBrief();
+        const cap = brief.limits?.max_trade_usd ?? NO_MEMORY_LIMITS.max_trade_usd;
+        const sizeUsd = Math.min(Math.round(asked * 100) / 100, cap);
+        state.sizeUsd = sizeUsd;
+        await mem.setState("baton", { agent: state.agent, market: state.market, sizeUsd,
+                                      at: new Date().toISOString() });
+        note(`size -> $${sizeUsd}${sizeUsd < asked ? ` (asked $${asked}, capped by the remembered $${cap} limit)` : ""}`);
+        return send(200, { sizeUsd, asked, cappedBy: sizeUsd < asked ? cap : null });
       }
 
       // Disarming is one-way from the red key and from /panic. Re-arming is
@@ -365,6 +394,8 @@ export async function start() {
   const mem = new Memory();
   await mem.ping();
   const brief = await mem.recallBrief();
+  // The baton remembers the size, so a restart does not silently reset it.
+  if (Number.isFinite(brief.baton?.sizeUsd)) state.sizeUsd = brief.baton.sizeUsd;
   if (!brief.limits) {
     await mem.setReference("risk/limits", DEFAULT_LIMITS);
     console.log("  seeded default risk limits into memory");

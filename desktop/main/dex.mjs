@@ -61,7 +61,7 @@ export async function quote(sell, buy, amountIn) {
   const amt = parseUnits(String(amountIn), tIn.decimals);
   const known = tIn.fee ?? tOut.fee;
   const tiers = known ? [known, ...UNISWAP_V3.fees.filter((f) => f !== known)] : UNISWAP_V3.fees;
-  let best = null;
+  let best = null, stalled = false;
   for (const fee of tiers) {
     try {
       const { result } = await pub.simulateContract({
@@ -73,8 +73,16 @@ export async function quote(sell, buy, amountIn) {
       const out = result[0];
       if (!best || out > best.amountOutRaw) best = { fee, amountOutRaw: out };
       if (fee === known) break;              // the measured-deepest tier answered
-    } catch { /* no pool at this tier */ }
+    } catch (e) {
+      // A tier with no pool and a node that did not answer look identical here,
+      // and calling a timeout "no pool" sends you hunting for a liquidity
+      // problem that does not exist. Keep them apart.
+      const m = String(e?.message || e);
+      if (/timed out|took too long|fetch failed|ECONNREFUSED/i.test(m)) stalled = true;
+    }
   }
+  if (!best && stalled)
+    throw new Error(`could not quote ${sell}->${buy}: the Base node did not answer. This is not a liquidity problem.`);
   if (!best) throw new Error(`no Uniswap V3 pool for ${sell}->${buy}`);
   return {
     route: "uniswap", fee: best.fee,

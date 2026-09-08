@@ -61,11 +61,21 @@ export async function tts(text) {
 }
 
 /** The memory a spoken answer must be grounded in. */
+// The pad trades assets from $0.64 to $79,000. Rounding to whole dollars said
+// AERO was "at $1" out loud, which is simply a wrong number spoken with
+// confidence — scale the precision to the magnitude, as the readout does.
+function usd(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return "unknown";
+  const a = Math.abs(n);
+  return "$" + n.toFixed(a >= 1000 ? 0 : a >= 100 ? 2 : a >= 1 ? 2 : a >= 0.01 ? 4 : 6);
+}
+
 function groundIn(brief, market) {
   const pos = Object.entries(brief.positions || {})
-    .map(([s, p]) => `${s} ${Number(p.qty).toFixed(5)} @ $${Math.round(p.avg_entry_usd)}`).join(", ") || "none";
+    .map(([s, p]) => `${s} ${Number(p.qty).toFixed(5)} @ ${usd(p.avg_entry_usd)}`).join(", ") || "none";
   const px = Object.entries(market?.prices || {})
-    .map(([s, v]) => `${s} $${Number(v).toFixed(2)}`).join(", ") || "unknown";
+    .map(([s, v]) => `${s} ${usd(v)}`).join(", ") || "unknown";
   return [
     `Risk limits: ${brief.limits ? `$${brief.limits.max_trade_usd}/trade, $${brief.limits.max_day_usd}/day, allowed ${brief.limits.allow.join("/")}` : "NONE REMEMBERED"}.`,
     `Open positions: ${pos}.`,
@@ -113,8 +123,63 @@ async function brainGroq(question, context) {
     : `groq unavailable — ${refusals.join(", ")}`);
 }
 
-export async function think(question, brief, market) {
-  const context = groundIn(brief, market);
+// Spoken tickers get spelled out, and speech-to-text renders "E T H" as
+// anything from "eth" to "e t h" to "an e t". Glue single-letter runs back
+// together before matching so the pad hears a ticker as a ticker.
+const glue = (s) => s.replace(/\b(?:[a-z][\s.]+)+[a-z]\b/g, (m) => m.replace(/[\s.]/g, ""));
+
+// One alias set per tradeable market, spelled the way people actually say them.
+const ALIASES = {
+  ETH:     /\b(eth|ether|ethereum|eeth|aeth)\b/,
+  USDC:    /\b(usdc|usd\s?c|you\s?s\s?d\s?c|dollars?coin)\b/,
+  cbBTC:   /\b(cbbtc|bitcoin|btc|cb\s?btc|bit\s?coin)\b/,
+  EURC:    /\b(eurc|euro|euros|eur|yuroc)\b/,
+  AERO:    /\b(aero|aerodrome|arrow)\b/,
+  MORPHO:  /\b(morpho|morfo|morph)\b/,
+  VIRTUAL: /\b(virtual|virtuals|vertual)\b/,
+};
+
+/**
+ * Pull the operator's own history into the answer.
+ *
+ * recallBrief() carries the current state: limits, open positions, accepted
+ * rules. It does not carry what HAPPENED — and "have I bought AERO before?" is
+ * a question about the journal, not the balance sheet. Sibyl's FTS5 search
+ * spans every tier, so ask it with the question's own salient words and hand
+ * the model what it finds.
+ */
+const STOP = new Set(["what","when","where","which","have","has","did","do","does","is","are","was",
+  "the","a","an","my","me","i","you","of","in","on","at","to","for","and","or","how","much","many",
+  "ever","before","again","any","it","that","this","tell","show","about","with"]);
+
+async function recallHistory(mem, question) {
+  if (!mem) return "";
+  const raw = String(question).toLowerCase();
+  // Speech-to-text hears "Arrow" for AERO and "virtuals" for VIRTUAL. Search
+  // the store for the TICKER the journal actually wrote, not the word the
+  // transcriber guessed, or the history is invisible to the question about it.
+  const tickers = Object.keys(ALIASES).filter((sym) => ALIASES[sym].test(glue(raw)));
+  const words = raw.replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP.has(w)).slice(0, 3);
+  const terms = [...new Set([...tickers, ...words])].slice(0, 5);
+  if (!terms.length) return "";
+  try {
+    const hits = await mem.search(terms.join(" "), 6);
+    if (!Array.isArray(hits) || !hits.length) return "";
+    const lines = hits.map((h) => {
+      const when = h.ts ? String(h.ts).slice(0, 16).replace("T", " ") : "";
+      const what = typeof h.snippet === "string" ? h.snippet.slice(0, 120) : JSON.stringify(h.body || {}).slice(0, 120);
+      return `- ${h.tier}${h.category ? `/${h.category}` : ""} ${when} ${what}`;
+    });
+    const note = tickers.length
+      ? `\nThe operator may have said a ticker the transcriber garbled; it resolves to ${tickers.join(", ")}. Answer about that ticker.`
+      : "";
+    return `${note}\nFrom your own history (searched for "${terms.join(" ")}"):\n${lines.join("\n")}`;
+  } catch { return ""; }
+}
+
+export async function think(question, brief, market, mem = null) {
+  const context = groundIn(brief, market) + (await recallHistory(mem, question));
   if (BRAIN === "groq" && GROQ) return brainGroq(question, context);
   try { return await brainClaude(question, context); }
   catch (e) {
@@ -138,22 +203,6 @@ export function parseAmount(t) {
   const bare = t.match(/\b(\d+(?:\.\d+)?)\b/);
   return bare ? Number(bare[1]) : null;
 }
-
-// Spoken tickers get spelled out, and speech-to-text renders "E T H" as
-// anything from "eth" to "e t h" to "an e t". Glue single-letter runs back
-// together before matching so the pad hears a ticker as a ticker.
-const glue = (s) => s.replace(/\b(?:[a-z][\s.]+)+[a-z]\b/g, (m) => m.replace(/[\s.]/g, ""));
-
-// One alias set per tradeable market, spelled the way people actually say them.
-const ALIASES = {
-  ETH:     /\b(eth|ether|ethereum|eeth|aeth)\b/,
-  USDC:    /\b(usdc|usd\s?c|you\s?s\s?d\s?c|dollars?coin)\b/,
-  cbBTC:   /\b(cbbtc|bitcoin|btc|cb\s?btc|bit\s?coin)\b/,
-  EURC:    /\b(eurc|euro|euros|eur|yuroc)\b/,
-  AERO:    /\b(aero|aerodrome|arrow)\b/,
-  MORPHO:  /\b(morpho|morfo|morph)\b/,
-  VIRTUAL: /\b(virtual|virtuals|vertual)\b/,
-};
 
 /** Does this sound like an order? Returns a signal, or null for chit-chat. */
 export function parseIntent(text, fallbackAgent = "momentum", market = "ETH") {

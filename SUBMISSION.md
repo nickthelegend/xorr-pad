@@ -29,25 +29,45 @@ already knows the book.
 size to the remembered cap, vetoes a signal that matches a learned rule, refuses
 to sell an unremembered position, and subtracts today's journalled spend from the
 daily budget. Wipe the store and the same signals produce different trades —
-that is asserted in CI, not claimed.
+that is asserted on every push by
+[`.github/workflows/memory.yml`](.github/workflows/memory.yml), not claimed.
 
 ```
 $ node desktop/test/loadbearing.test.mjs
 
-signal            WITH memory                              WITHOUT memory
-A  DEGEN buy $80  REJECT  $0   vetoed by learned rule      EXECUTE $80
-B  ETH buy $250   EXECUTE $40  clamped to remembered cap   EXECUTE $100  (default)
-C  ETH sell $30   EXECUTE $30  position is remembered      REJECT  $0    (cannot see it)
-D  cbBTC buy $20  EXECUTE $20  (control)                   EXECUTE $20   (control)
+signal            WITH memory                                  WITHOUT memory
+A  ETH buy $80    REJECT  $0    vetoed by remembered rule       EXECUTE $10   clamped $80 -> $10
+B  ETH buy $30    EXECUTE $30   within the remembered $40 cap   EXECUTE $10   clamped $30 -> $10
+C  ETH sell $30   EXECUTE $30   the position is remembered      REJECT  $0    cannot see the bag
+D  ETH buy $8     EXECUTE $8    (control)                       EXECUTE $8    (control)
 
 3 of 4 decisions changed when memory was deleted (control D unchanged).
 memory is load-bearing: PASS
 ```
 
+Every signal is ETH, and that is deliberate: a token that drops off the
+allowlist when memory goes would change verdict for a second reason, and the
+test would stop measuring the thing it exists to measure. The control is a
+trade small enough to clear both envelopes, so it must never move.
+
 ## Memory primitives used
 
-`recall` · `entities` · `semantic search` · `temporal / time-travel` ·
-`summarization` · `reflection` · `consolidation`
+Only what the code actually calls:
+
+| primitive | where it runs |
+|---|---|
+| **recall** | `recall_brief()` before every decision, and injected into the voice brain |
+| **entities** | positions, accepted rules and the watchlist (`entity:position/<SYM>`, `entity:rule/<id>`) |
+| **references** | risk limits and the token allowlist (`reference:risk/limits`) |
+| **state** | the active agent and market (`state:baton`) |
+| **temporal** | `write_event` / `read_events` — the journal every decision is mined from |
+| **semantic search** | FTS5 across every tier, used to answer spoken questions about your own history ("have I traded AERO before?") |
+| **reflection** | rules mined from the journal and accepted on the pad |
+
+**Not used, and not claimed:** summarization and consolidation. Sibyl's own
+`learn()` is called and its report is surfaced, but on the free tier it returns
+`TierGateError: self-learning requires a paid tier`, so the reflection that
+actually ships is ours — mined from the journal the pad writes.
 
 - **recall** — `recall_brief()` before every decision
 - **entities** — positions, rules and the watchlist as first-class records

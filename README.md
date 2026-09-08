@@ -86,13 +86,23 @@ every yes/no teaches it. Hold MIC and just say *"buy fifty dollars of ETH"*.
 ## Run it
 
 ```bash
-# 1. a Base mainnet fork — real contracts and liquidity, no real money
-cd desktop && npm run fork
+cd desktop && npm install
 
-# 2. the desk app (hosts the backend the pad talks to)
-npm install
+# 1. a Base mainnet fork — real contracts and liquidity, no real money
+npm run fork
+
+# 2. pull the pools and balances into the fork's cache, once (~2 min)
+npm run warm
+
+# 3. the desk app (hosts the backend the pad talks to)
 CHAIN_MODE=fork PAD_TOKEN=xorrpad-dev npm start
 ```
+
+Step 2 is not optional theatre. anvil fetches state from the upstream lazily,
+the public Base RPC rate-limits hard, and the first read of a pool can take
+**55 seconds** — in the middle of a trade, which looks like the app hanging.
+Warming pulls it all in once; after that every read is local and answers in
+single-digit milliseconds.
 
 It prints the LAN URL to type into the pad's captive portal. Point a browser at
 `http://localhost:8080/?token=xorrpad-dev` if you'd rather drive it by hand —

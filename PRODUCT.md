@@ -74,28 +74,38 @@ guaranteed path when the hardware fails mid-demo.
 
 ## Brand Commitments
 
-**The palette is already physical and is binding.** It is filament and plastic,
-chosen and bought:
+**The palette comes from the object that was actually printed**, photographed by
+the operator on 2026-09-08. An earlier version of this record described a grey
+tray with green and red filament keycaps; that was wrong, and the photograph is
+the authority.
 
 | role | value | where it exists |
 |---|---|---|
-| buy / yes | `#22C55E` | green filament keycaps |
-| sell / no / kill | `#EF4444` | red filament keycaps |
-| agent keys, mic, portfolio | `#F2F3F5` | white filament |
-| the Base key | `#FFFFFF` | plain white |
-| tray | `#AEB4BC` | grey |
-| plate | `#F4F5F7` | off-white |
-| legend infill | `#FFFFFF` / `#3F444D` | painted deboss |
+| case / tray | `#2438C8` | vivid blue, glitter-flecked filament — the loudest thing on the desk |
+| light keycaps | `#F4F5F7` | white, dark legends |
+| dark keycaps | `#2C3038` | charcoal, glitter-flecked, white legends |
+| accent caps | `#7C3AED` · `#EC4899` · `#FB6A45` · `#2B7FFF` | purple, pink, orange, blue — one per agent |
+| legend infill | `#FFFFFF` / `#2C3038` | painted into the deboss |
+
+**Direction, pinned by the operator:** neo-brutalism in blue and white, with
+motion. This is a binding brief, not a preference to be reasoned around: thick
+hard borders, flat saturated fields, offset shadows with no blur, chunky type,
+and animation that is felt rather than decorative.
+
+The screen is the blue case's other half. It is not a quiet instrument panel —
+that reading was derived from a tray colour the object never had.
 
 Name: **xorr-pad**, always lowercase. Tagline: *"An AI agent that trades on your
 desk."*
 
-**Voice — the strongest brand asset in the repo.** The existing prose states
-what is true and what is not, in the same breath, without hedging: *"no strategy
-has been shown to make money"*, *"a $500 order moves the pool 239.7%"*, *"the
-pad runs them because they are real and explainable, not because they print."*
-Plain, lowercase, measured, unafraid of a bad number. Interface copy must sound
-like the same person wrote it.
+**Voice — unchanged and still the strongest asset in the repo.** The prose states
+what is true and what is not in the same breath: *"no strategy has been shown to
+make money"*, *"a $500 order moves the pool 239.7%"*. Plain, measured, unafraid
+of a bad number. A louder skin does not license louder claims.
+
+**The caps currently fitted are the old LoomPad legends** (agent logos). The
+trading caps are modelled and exported but not yet printed, so photographs show
+the previous legends.
 
 ## Evidence on Hand
 

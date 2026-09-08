@@ -3,8 +3,7 @@
 /* ─────────────────────────────────────────────────────────────────────────
    Faces ship with the repo. A readout whose type fails to arrive on venue
    wi-fi is a readout nobody can trust.
-   Archivo      — legends and headings. Flat terminals, tight caps: the
-                  silkscreen voice printed on an instrument's face.
+   Archivo      — the voice. Heavy, flat-terminalled, shouts in caps.
    Azeret Mono  — every measured quantity. Square numerals that hold a column.
    ───────────────────────────────────────────────────────────────────────── */
 @font-face{font-family:Archivo;src:url(/fonts/archivo-var.woff2)format("woff2-variations");
@@ -13,160 +12,197 @@
   font-weight:400 700;font-display:swap;font-style:normal}
 
 :root{
-  /* The only greys in this interface. Nine enumerated steps of warm anodised
-     graphite — the dark sibling of the pad's own #AEB4BC tray. Every surface,
-     rule and text colour is a step on this ramp; nothing is mixed by hand. */
-  --s0:#0F100F; --s1:#151714; --s2:#1B1E1B; --s3:#262A27;
-  --s4:#3A403C; --s5:#868E88; --s6:#A4ACA6; --s7:#CBD1CD; --s8:#EDEFEC;
+  /* Taken off the printed object. The case is vivid glitter-blue, the caps are
+     white, charcoal, purple, pink and orange. The screen wears the same paint. */
+  --case:#2438C8;        /* the case, and the ground this app sits on   */
+  --case-deep:#18268F;   /* the case in shadow                          */
+  --live:#2B7FFF;        /* the blue cap: the market in hand            */
+  --paper:#FFFFFF;       /* the white caps: every panel                 */
+  --paper-2:#F1F3F8;     /* a panel's quieter half                      */
+  --ink:#0B0D12;         /* every border and every rule. Never grey.    */
+  --ink-2:#5A6274;       /* secondary text                              */
+  --buy:#00C853;         /* buy · yes · armed                           */
+  --sell:#FF3B30;   /* black text on it clears AA at 5.5:1 */        /* sell · no · kill · disarmed                 */
+  --grape:#7C3AED;       /* the purple cap                              */
+  --punch:#FB6A45;       /* the orange cap                              */
 
-  /* Three accents, one meaning each. Green and red are not design choices:
-     they are the filament the keycaps are printed in. */
-  --buy:#22C55E;      /* buy · yes · armed          */
-  --sell:#EF4444;     /* sell · no · kill · disarmed — the filament itself */
-  --sell-t:#F26A6A;   /* the same red, lifted to clear AA as text on panel  */
-  --hand:#D8A03A;     /* the market currently in hand */
+  /* Neo-brutalism has one shadow and it does not blur. */
+  --edge:3px;
+  --drop:5px 5px 0 var(--ink);
+  --drop-sm:3px 3px 0 var(--ink);
 
-  /* Four sizes, each a quarter larger than the last, and the body sits on the
-     browser's own root. This is read at arm's length across a desk, so the
-     floor is generous on purpose: 11px is the smallest functional label. */
-  --t0:11px; --t1:16px; --t2:20px; --t3:25px;
-  --measure:88px;     /* the column every quantity aligns to */
+  --t0:11px; --t1:16px; --t2:20px; --t3:28px;
+  --measure:88px;
 }
 
 *{box-sizing:border-box}
 html{font-size:16px;-webkit-font-smoothing:antialiased}
-body{margin:0;background:var(--s0);color:var(--s7);
-  font-family:Archivo,system-ui,sans-serif;font-size:var(--t1);font-weight:400;line-height:1.55;
-  font-variant-numeric:tabular-nums;
-  text-underline-offset:.2em}
+body{margin:0;background:var(--case);color:var(--ink);
+  font-family:Archivo,system-ui,sans-serif;font-size:var(--t1);font-weight:500;line-height:1.5;
+  font-variant-numeric:tabular-nums}
 
-/* Browser surfaces belong to the design too. */
-::selection{background:var(--hand);color:var(--s0)}
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:var(--s1)}
-::-webkit-scrollbar-thumb{background:var(--s3);border:2px solid var(--s1);border-radius:0}
-::-webkit-scrollbar-thumb:hover{background:var(--s4)}
-*{scrollbar-width:thin;scrollbar-color:var(--s3) var(--s1)}
-:focus-visible{outline:2px solid var(--hand);outline-offset:1px}
+::selection{background:var(--ink);color:#FFE600}
+::-webkit-scrollbar{width:14px;height:14px}
+::-webkit-scrollbar-track{background:var(--paper-2);border-left:var(--edge) solid var(--ink)}
+::-webkit-scrollbar-thumb{background:var(--case);border:var(--edge) solid var(--ink)}
+::-webkit-scrollbar-thumb:hover{background:var(--live)}
+*{scrollbar-width:auto;scrollbar-color:var(--case) var(--paper-2)}
+:focus-visible{outline:var(--edge) solid var(--ink);outline-offset:2px}
 
 /* ── the plate ───────────────────────────────────────────────────────────── */
-header{display:flex;gap:16px;align-items:baseline;padding:15px 18px 13px;
-  background:var(--s1);border-bottom:1px solid var(--s3)}
-h1{font-family:Archivo;font-size:var(--t3);font-weight:700;line-height:1;letter-spacing:.1em;text-transform:uppercase;
-  margin:0;color:var(--s8)}
-.stat{font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1;letter-spacing:.13em;text-transform:uppercase;color:var(--s6)}
-.stat b{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:500;line-height:1;letter-spacing:.02em;color:var(--s7)}
-.stat.on b{color:var(--buy)} .stat.off b{color:var(--sell-t)}
-.stat.clickable{cursor:pointer} .stat.clickable:hover b{color:var(--s8)}
-.addr{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:400;line-height:1;color:var(--s5)}
+header{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+  padding:14px 18px;background:var(--case);border-bottom:var(--edge) solid var(--ink)}
+h1{font-family:Archivo;font-size:var(--t3);font-weight:700;line-height:1;
+  letter-spacing:-.02em;text-transform:uppercase;margin:0;color:#fff;
+  text-shadow:3px 3px 0 var(--ink)}
+.stat{display:inline-flex;gap:7px;align-items:center;background:var(--paper);
+  border:var(--edge) solid var(--ink);box-shadow:var(--drop-sm);padding:5px 10px;
+  font-size:var(--t0);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.stat b{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:700;
+  letter-spacing:0;color:var(--ink);font-variant-numeric:tabular-nums}
+.stat.on b{color:#0B7A38} .stat.off{background:var(--sell);color:var(--ink)} .stat.off b{color:var(--ink)}
+.stat.clickable{cursor:pointer}
+.stat.clickable:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--ink)}
+.addr{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);
+  font-weight:500;color:#fff;opacity:.85}
 
-main{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr);
-  gap:1px;background:var(--s3);height:calc(100vh - 54px)}
-section{background:var(--s1);padding:13px 18px 18px;overflow:auto;min-height:0}
+main{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:minmax(260px,auto);
+  gap:14px;padding:14px;background:var(--case);min-height:calc(100vh - 62px)}
+section.wide{grid-column:1 / -1}
+section{background:var(--paper);border:var(--edge) solid var(--ink);box-shadow:var(--drop);
+  padding:0 14px 14px;min-height:0}
+section#memsec{max-height:none}
 
-/* A heading is a ruled legend, the way a panel is silkscreened. */
-h2{font-family:Archivo;font-size:var(--t0);font-weight:600;line-height:1;letter-spacing:.15em;text-transform:uppercase;
-  color:var(--s6);margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid var(--s3)}
-h2+h2,.rule-top{margin-top:18px}
+h2{font-family:Archivo;font-size:var(--t0);font-weight:700;line-height:1;
+  letter-spacing:.12em;text-transform:uppercase;color:#fff;background:var(--ink);
+  margin:0 -14px 12px;padding:9px 14px;position:sticky;top:0;z-index:3}
+h2.rule-top{margin-top:16px}
 
-/* ── the table: rules, never boxes ───────────────────────────────────────── */
+/* ── rows: rules, and they are thick ─────────────────────────────────────── */
 .row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:baseline;
-  padding:4px 0;border-bottom:1px solid var(--s2)}
+  padding:6px 0;border-bottom:2px solid var(--ink)}
 .row:last-child{border-bottom:0}
-.k{color:var(--s6)}
-.mono,.num{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.5;font-variant-numeric:tabular-nums;
-  color:var(--s7);text-align:right;min-width:var(--measure)}
-.dim{color:var(--s5)}
-.hand{color:var(--hand)}
+.k{color:var(--ink-2);font-weight:600}
+.mono,.num{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:600;
+  line-height:1.4;font-variant-numeric:tabular-nums;color:var(--ink);
+  text-align:right;min-width:var(--measure)}
+.dim{color:var(--ink-2)}
 
-/* ── markets: a tab rail, cut edges, no cards ────────────────────────────── */
-.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:0;
-  border-left:1px solid var(--s3)}
-.mkt{background:var(--s1);border:0;border-right:1px solid var(--s3);text-transform:none;letter-spacing:normal;
-  border-top:2px solid transparent;padding:7px 9px 8px;cursor:pointer;text-align:left;
-  font-family:Archivo;transition:background .12s ease-out}
-.mkt:hover{background:var(--s2)}
-.mkt[aria-pressed="true"]{background:var(--s2);border-top-color:var(--hand)}
-.mkt .s{display:block;font-family:Archivo;font-size:var(--t1);font-weight:600;line-height:1.3;letter-spacing:.02em;color:var(--s7)}
-.mkt[aria-pressed="true"] .s{color:var(--s8)}
-.mkt .c{display:block;font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1.4;letter-spacing:.13em;
-  text-transform:uppercase;color:var(--s5)}
-.mkt .p{display:block;font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.4;
-  font-variant-numeric:tabular-nums;color:var(--s6)}
-.mkt[aria-pressed="true"] .p{color:var(--hand)}
+/* ── markets: chunky blocks, the live one lifts ──────────────────────────── */
+.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px}
+.mkt{background:var(--paper-2);border:var(--edge) solid var(--ink);box-shadow:var(--drop-sm);
+  padding:7px 9px;cursor:pointer;text-align:left;font-family:Archivo;
+  text-transform:none;letter-spacing:normal;
+  transition:transform .1s cubic-bezier(.16,1,.3,1),box-shadow .1s cubic-bezier(.16,1,.3,1),background .1s}
+.mkt:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--ink);background:#fff}
+.mkt:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
+.mkt[aria-pressed="true"]{background:var(--live);box-shadow:var(--drop)}
+.mkt .s{display:block;font-size:var(--t1);font-weight:700;color:var(--ink)}
+.mkt[aria-pressed="true"] .s{color:var(--ink)}
+.mkt[aria-pressed="true"] .c,.mkt[aria-pressed="true"] .p{color:#0B2E63}
+.mkt .c{display:block;font-size:var(--t0);font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2)}
+.mkt .p{display:block;font-family:"Azeret Mono",monospace;font-size:var(--t1);
+  font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink-2)}
 
-/* ── the deck ────────────────────────────────────────────────────────────── */
-.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:9px}
-button{background:var(--s2);color:var(--s7);border:1px solid var(--s3);border-radius:2px;
-  padding:9px 3px;font-family:Archivo;font-size:var(--t0);font-weight:600;line-height:1;letter-spacing:.09em;text-transform:uppercase;
-  cursor:pointer;transition:background .1s ease-out,border-color .1s ease-out}
-button:hover{background:var(--s3);border-color:var(--s4)}
-button:active{background:var(--s4)}
-button.g{color:var(--buy);border-color:#1D4732} button.g:hover{background:#12271C}
-button.r{color:var(--sell-t);border-color:#5A2222} button.r:hover{background:#291414}
-button.b{color:var(--s8);border-color:var(--s4)}
-button.on{border-color:var(--hand);color:var(--s8);box-shadow:inset 0 -2px 0 var(--hand)}
+/* ── the deck: keycaps, and they press ───────────────────────────────────── */
+.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+button{background:var(--paper);color:var(--ink);border:var(--edge) solid var(--ink);
+  border-radius:0;box-shadow:var(--drop-sm);padding:11px 4px;
+  font-family:Archivo;font-size:var(--t0);font-weight:700;line-height:1;
+  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
+  transition:transform .09s cubic-bezier(.16,1,.3,1),box-shadow .09s cubic-bezier(.16,1,.3,1),background .09s}
+button:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--ink)}
+/* the cap bottoms out and the shadow closes — the whole point of a key */
+button:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--ink)}
+button.g{background:var(--buy);color:var(--ink)} button.r{background:var(--sell);color:var(--ink)}
+button.b{background:var(--grape);color:#fff}
+button.on{background:var(--live);color:var(--ink);box-shadow:var(--drop)}
 
-/* ── footnotes: how this product already talks, made typographic ─────────── */
-.fnote{display:grid;grid-template-columns:2ch 1fr;gap:9px;padding:5px 0;
-  font-size:var(--t1);color:var(--s6);border-bottom:1px solid var(--s2)}
+/* ── footnotes: the receipts ─────────────────────────────────────────────── */
+.fnote{display:grid;grid-template-columns:2.2ch 1fr;gap:10px;padding:6px 0;
+  font-size:var(--t1);color:var(--ink-2);border-bottom:2px solid var(--paper-2)}
 .fnote:last-child{border-bottom:0}
-.fnref{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:400;line-height:1.75;color:var(--s5)}
-.caveat{margin-top:12px;padding-top:9px;border-top:1px solid var(--s3);
-  font-size:var(--t1);line-height:1.6;color:var(--s6)}
-.caveat b{color:var(--s6);font-weight:600}
+.fnref{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:700;
+  color:#fff;background:var(--ink);text-align:center;line-height:1.7}
+.caveat{margin-top:14px;padding:10px 12px;border:2px solid var(--ink);
+  background:var(--paper-2);font-size:var(--t1);line-height:1.5;color:var(--ink-2)}
+.caveat b{color:var(--ink);font-weight:700}
 
-/* ── the book's table: five columns, ruled, quantities right-aligned ─────── */
+/* ── the book's table ────────────────────────────────────────────────────── */
 .trow{display:grid;grid-template-columns:1fr 5.5ch 7.5ch 6ch 9.5ch;gap:9px;
-  align-items:baseline;padding:5px 0;border-bottom:1px solid var(--s2);
-  font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.5;
+  align-items:baseline;padding:7px 0;border-bottom:2px solid var(--paper-2);
+  font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:600;
   font-variant-numeric:tabular-nums}
 .trow>span:not(:first-child){text-align:right}
-.trow .sym{font-family:Archivo;font-weight:600;font-size:var(--t1);color:var(--s8);
+.trow .sym{font-family:Archivo;font-weight:700;font-size:var(--t1);color:var(--ink);
   display:flex;gap:7px;align-items:baseline}
-.trow .neg{color:var(--s6)}
-.thead{border-bottom:1px solid var(--s4);padding-bottom:6px;
-  font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1.4;letter-spacing:.13em;text-transform:uppercase;color:var(--s5)}
+.trow .neg{color:var(--ink-2)}
+.thead{border-bottom:var(--edge) solid var(--ink);padding-bottom:6px;
+  font-family:Archivo;font-size:var(--t0);font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2)}
 .thead>span:first-child{font-family:Archivo}
 
 /* ── a fired strategy ────────────────────────────────────────────────────── */
-.fire{padding:9px 0 10px;border-bottom:1px solid var(--s3)}
-.fire-h{display:flex;gap:9px;align-items:baseline;margin-bottom:5px}
-.fire-h .sym{font-family:Archivo;font-size:var(--t2);font-weight:600;line-height:1.2;letter-spacing:.02em;color:var(--s8)}
-.fire-h .st{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.2;color:var(--buy)}
-.fire-h .cf{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:400;line-height:1.2;color:var(--s5)}
+.fire{padding:11px 12px;margin-bottom:10px;background:var(--buy);
+  border:var(--edge) solid var(--ink);box-shadow:var(--drop-sm);color:var(--ink)}
+.fire .fnote{color:var(--ink);border-bottom-color:rgba(11,13,18,.25)}
+.fire .fnref{background:var(--ink);color:#fff}
+.fire .k{color:rgba(11,13,18,.75)}
+.fire-h{display:flex;gap:9px;align-items:baseline;margin-bottom:6px}
+.fire-h .sym{font-family:Archivo;font-size:var(--t2);font-weight:700;color:var(--ink)}
+.fire-h .st{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:700;color:var(--ink)}
+.fire-h .cf{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);
+  font-weight:700;color:rgba(11,13,18,.75)}
+.fire .mono{color:var(--ink)}
 
-/* ── verdict ─────────────────────────────────────────────────────────────── */
-.verdict{display:flex;gap:10px;align-items:baseline;padding:6px 0 8px;
-  border-bottom:1px solid var(--s3);margin-bottom:2px}
-.verdict .act{font-family:"Azeret Mono",monospace;font-size:var(--t3);font-weight:700;line-height:1;letter-spacing:-.01em}
-.verdict .act.x{color:var(--buy)} .verdict .act.n{color:var(--sell-t)}
-.verdict .sz{font-family:"Azeret Mono",monospace;font-size:var(--t2);font-weight:400;line-height:1;color:var(--s6)}
-.order{font-family:Archivo;font-size:var(--t1);font-weight:600;line-height:1.3;color:var(--s8);letter-spacing:.02em}
-.tag{font-family:Archivo;font-size:var(--t0);font-weight:500;line-height:1.5;letter-spacing:.12em;text-transform:uppercase;color:var(--s5)}
-.confirm{display:flex;gap:5px;margin-top:11px}
-.confirm button{padding:11px 18px;font-size:var(--t0)}
+/* ── the verdict: the loudest block on the page ──────────────────────────── */
+.verdict{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;
+  padding:12px 14px;margin:0 0 12px;border:var(--edge) solid var(--ink);
+  box-shadow:var(--drop);background:var(--paper-2);
+  animation:slam .26s cubic-bezier(.16,1,.3,1)}
+.verdict .act{font-family:"Azeret Mono",monospace;font-size:var(--t3);font-weight:700;
+  line-height:1;letter-spacing:-.02em}
+.verdict .act.x{color:#0B7A38} .verdict .act.n{color:#B3120B}
+.verdict.x{background:#D9F7E4} .verdict.n{background:#FFE3E1}
+.verdict .sz{font-family:"Azeret Mono",monospace;font-size:var(--t2);font-weight:700;color:var(--ink)}
+.order{font-family:Archivo;font-size:var(--t1);font-weight:700;color:var(--ink)}
+.tag{font-family:Archivo;font-size:var(--t0);font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:#fff;background:var(--ink);padding:2px 7px}
+.confirm{display:flex;gap:8px;margin-top:12px}
+.confirm button{padding:13px 20px;font-size:var(--t1)}
 
-.warn{border-left:1px solid var(--sell);background:var(--s2);color:var(--s6);
-  padding:9px 12px;margin-bottom:10px;font-size:var(--t1);line-height:1.5}
-.wipe{width:100%;margin-bottom:4px;padding:8px 3px}
+.warn{border:var(--edge) solid var(--ink);background:#FFE600;color:var(--ink);
+  padding:10px 12px;margin-bottom:10px;font-size:var(--t1);font-weight:600;line-height:1.45;
+  box-shadow:var(--drop-sm)}
+.wipe{width:100%;margin-bottom:8px}
+#store{column-count:2;column-gap:22px}
+#store>*{break-inside:avoid}
+@media (max-width:900px){#store{column-count:1}}
+.sizes{display:inline-flex;gap:6px}
+.sizes button{padding:6px 12px;font-size:var(--t0);min-width:0}
+.sizes button.on{background:var(--live);color:var(--ink)}
 
-/* One authored moment: after a scan, rows resolve down the column the way a
-   plotter lays a table down — measured, not decorative. */
-@keyframes settle-row{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
-.resolve>*{animation:settle-row .34s cubic-bezier(.16,1,.3,1) backwards}
-.resolve>*:nth-child(1){animation-delay:0ms}   .resolve>*:nth-child(2){animation-delay:26ms}
-.resolve>*:nth-child(3){animation-delay:52ms}  .resolve>*:nth-child(4){animation-delay:78ms}
-.resolve>*:nth-child(5){animation-delay:104ms} .resolve>*:nth-child(6){animation-delay:130ms}
-.resolve>*:nth-child(7){animation-delay:156ms} .resolve>*:nth-child(8){animation-delay:182ms}
+/* ── motion: felt, not decorative ────────────────────────────────────────── */
+@keyframes slam{
+  from{opacity:0;transform:translate(-6px,-6px);box-shadow:11px 11px 0 var(--ink)}
+  to{opacity:1;transform:none;box-shadow:var(--drop)}
+}
+@keyframes settle-row{
+  from{opacity:0;transform:translateX(-10px)}
+  to{opacity:1;transform:none}
+}
+.resolve>*{animation:settle-row .3s cubic-bezier(.16,1,.3,1) backwards}
+.resolve>*:nth-child(1){animation-delay:0ms}   .resolve>*:nth-child(2){animation-delay:35ms}
+.resolve>*:nth-child(3){animation-delay:70ms}  .resolve>*:nth-child(4){animation-delay:105ms}
+.resolve>*:nth-child(5){animation-delay:140ms} .resolve>*:nth-child(6){animation-delay:175ms}
+.resolve>*:nth-child(7){animation-delay:210ms} .resolve>*:nth-child(8){animation-delay:245ms}
+
 @media (prefers-reduced-motion:reduce){
-  .resolve>*{animation:none}
+  .resolve>*,.verdict{animation:none}
   *{transition-duration:.01ms!important}
 }
 
-/* Six ruled panes at a legible 16px need vertical room. On a short screen the
-   honest move is to let the page scroll rather than clip every pane to a
-   sliver: this is read at arm's length, so legibility outranks fitting. */
 @media (max-height:900px){
   main{grid-auto-rows:auto;height:auto}
   section{max-height:none;overflow:visible}
@@ -174,7 +210,7 @@ button.on{border-color:var(--hand);color:var(--s8);box-shadow:inset 0 -2px 0 var
 @media (max-width:900px){
   main{grid-template-columns:1fr;grid-auto-rows:auto;height:auto}
   section{max-height:none}
-  header{flex-wrap:wrap;gap:9px}
+  header{gap:9px}
   .keys{grid-template-columns:repeat(4,1fr)}
 }
 @media (max-width:520px){
@@ -218,7 +254,10 @@ provenance.
 </header>
 <div id="authbar" class="warn" hidden style="margin:9px 18px 0"></div>
 <main>
-  <section><h2>Decision</h2><div id="sig"></div></section>
+  <section><h2>Decision</h2>
+    <div class="row" id="sizerow"><span class="k">trade size</span>
+      <span><span class="sizes" id="sizes"></span></span></div>
+    <div id="sig"></div></section>
   <section><h2>Holdings</h2><div id="pf"></div></section>
   <section><h2>Markets, all on Base</h2>
     <div class="mkts" id="mkts"></div>
@@ -232,11 +271,11 @@ provenance.
       published with their t&#8209;statistics. None has been shown to make money net of
       fees: the source engine&rsquo;s live book was &#43;$4.32 gross and &minus;$23.07 net
       over 30 trades, the loss entirely fees.</div></section>
-  <section><h2>Memory: what Sibyl knows</h2>
+  <section class="wide" id="memsec"><h2>Memory: everything Sibyl is holding</h2>
     <div class="warn">Wiping is the demo. The agent forgets its limits, positions and learned rules.</div>
     <button class="r wipe" onclick="wipe()">Wipe memory</button>
     <button class="g wipe" id="reteach" hidden onclick="reteach()">Re&#8209;teach its limits</button>
-    <div id="mem"></div></section>
+    <div id="store"></div></section>
   <section><h2>Activity</h2><div id="log"></div></section>
 </main>
 <script>
@@ -284,7 +323,7 @@ async function press(id){
 function settle(msg, kind, hash){
   pending = null;
   el("sig").innerHTML =
-    `<div class="verdict"><span class="act ${kind}">${esc(msg)}</span></div>` +
+    `<div class="verdict ${kind}"><span class="act ${kind}">${esc(msg)}</span></div>` +
     (hash?`<div class="row"><span class="k">transaction</span><span class="mono">${esc(hash)}</span></div>`:"");
 }
 // The reasons are numbered footnotes against the verdict, because that is what
@@ -292,7 +331,7 @@ function settle(msg, kind, hash){
 function render_signal(r){
   const v = r.verdict, ok = v.action==="EXECUTE";
   el("sig").innerHTML =
-    `<div class="verdict">
+    `<div class="verdict ${ok?'x':'n'}">
        <span class="act ${ok?'x':'n'}">${v.action}</span>
        <span class="sz">$${v.sizeUsd}</span>
        <span style="margin-left:auto" class="order">${r.signal.side} ${r.signal.symbol} $${r.signal.sizeUsd}</span>
@@ -311,6 +350,76 @@ async function reteach(){
   await fetch("/memory/seed",{method:"POST",headers:H,body:"{}"});
   await refresh();
 }
+const SIZES = [10, 25, 50, 100];
+let sizeUsd = null;
+function drawSizes(active){
+  if (sizeUsd === active) return;
+  sizeUsd = active;
+  el("sizes").innerHTML = SIZES.map(v =>
+    `<button class="${v===active?'on':''}" onclick="setSize(${v})">$${v}</button>`).join("");
+}
+async function setSize(usd){
+  const r = await fetch("/size",{method:"POST",headers:H,body:JSON.stringify({usd})}).then(r=>r.json());
+  if (r.cappedBy) el("sig").innerHTML =
+    `<div class="fnote"><span class="fnref">!</span><span>capped to $${r.sizeUsd} by the remembered $${r.cappedBy}/trade limit</span></div>`;
+  await refresh();
+}
+// The whole store, tier by tier. recall_brief is the decision-shaped summary;
+// this is what Sibyl is actually holding, which is the thing being judged.
+let storeOpen = true;
+function toggleStore(){ storeOpen = !storeOpen; drawStore(lastStore); }
+let lastStore = null;
+function drawStore(st){
+  lastStore = st;
+  if (!st) { el("store").innerHTML = ""; return; }
+  const kv = (k,v) => `<div class="row"><span class="k">${esc(k)}</span><span class="mono">${esc(v)}</span></div>`;
+  const parts = [];
+
+  for (const [cat, items] of Object.entries(st.entities || {})) {
+    parts.push(`<h2 class="rule-top">entity / ${esc(cat)} &mdash; ${items.length}</h2>`);
+    parts.push(items.map(it => {
+      const b = it.body || {};
+      const detail = cat === "position"
+        ? `${qty(b.qty)} @ ${money(b.avg_entry_usd)}`
+        : cat === "rule"
+          ? esc(b.text || b.id || "")
+          : esc(JSON.stringify(b).slice(0, 90));
+      return `<div class="row"><span class="k">${esc(it.name)}</span><span class="mono">${detail}</span></div>`;
+    }).join(""));
+  }
+
+  for (const [k, v] of Object.entries(st.references || {})) {
+    parts.push(`<h2 class="rule-top">reference / ${esc(k)}</h2>`);
+    parts.push(kv("per trade", money(v.max_trade_usd)) + kv("per day", money(v.max_day_usd)) +
+               `<div class="row"><span class="k">allowlist</span><span class="mono">${esc((v.allow||[]).join(" "))}</span></div>`);
+  }
+
+  for (const [k, v] of Object.entries(st.state || {})) {
+    parts.push(`<h2 class="rule-top">state / ${esc(k)}</h2>`);
+    parts.push(Object.entries(v).map(([kk,vv]) => kv(kk, String(vv))).join(""));
+  }
+
+  const j = st.journal || [];
+  parts.push(`<h2 class="rule-top">journal &mdash; ${j.length} event${j.length===1?"":"s"}` +
+             ` <button style="float:right;padding:2px 8px;font-size:var(--t0)" onclick="toggleStore()">${storeOpen?"hide":"show"}</button></h2>`);
+  if (storeOpen) parts.push(j.map(e => {
+    const act = e.acted?.action || "—";
+    const sig = e.evaluated?.signal;
+    const what = sig ? `${sig.side} ${sig.symbol} $${sig.sizeUsd}`
+               : e.evaluated?.heard ? `heard "${String(e.evaluated.heard).slice(0,42)}"`
+               : e.evaluated?.proposal ? `rule ${e.evaluated.proposal.id}` : "";
+    return `<div class="row"><span class="k">${esc(act)} <span class="dim">${esc(what)}</span></span>` +
+           `<span class="mono dim">${new Date(e.ts).toLocaleTimeString([], {hour12:false})}</span></div>`;
+  }).join(""));
+
+  const s2 = st.stats || {};
+  parts.push(`<h2 class="rule-top">store</h2>` +
+    kv("file", String(s2.db || "").split("/").pop() || "—") +
+    kv("size", `${Math.round((s2.size_bytes||0)/1024)} KB`) +
+    kv("tier", (s2.tier && s2.tier.tier) || "—"));
+
+  el("store").innerHTML = parts.join("");
+}
 async function arm(){
   await fetch("/arm",{method:"POST",headers:H});
   await refresh();
@@ -320,7 +429,7 @@ async function wipe(){
   // The verdict on screen was reasoned from memory that no longer exists.
   // Leaving it up would be the one dishonest frame in the whole demo.
   pending = null;
-  el("sig").innerHTML = `<div class="verdict"><span class="act n">MEMORY WIPED</span></div>`
+  el("sig").innerHTML = `<div class="verdict n"><span class="act n">MEMORY WIPED</span></div>`
     + `<div class="fnote"><span class="fnref">&mdash;</span><span>the last verdict was reasoned from limits, positions and rules that are now gone. Press a key to decide again.</span></div>`;
   await refresh();
 }
@@ -422,6 +531,7 @@ async function refresh(){
   el("armed").onclick = h.armed ? null : arm;
   el("armed").title = h.armed ? "trading enabled" : "the kill switch is engaged. Click to re-arm.";
   el("agent").innerHTML = `agent <b>${esc(h.agent)}</b>`; drawKeys(h.agent);
+  if (Number.isFinite(h.sizeUsd)) drawSizes(h.sizeUsd);
 
   const p = await get("/portfolio");
   if (!p) { el("blk").innerHTML = "block <b>&mdash;</b>"; el("addr").textContent = ""; el("pf").innerHTML = ""; }
@@ -435,14 +545,6 @@ async function refresh(){
   if (p.prices) { lastPrices = { ...lastPrices, ...p.prices }; drawMarkets(); } }
 
   const m = await get("/memory");
-  if (!m) el("mem").innerHTML = "";
-  else el("mem").innerHTML =
-    row("limits", m.limits ? `$${m.limits.max_trade_usd}/trade · $${m.limits.max_day_usd}/day` : "<span style='color:var(--sell-t)'>none &mdash; forgotten</span>")
-    + row("allowlist", m.limits?.allow?.join(", ") || "—")
-    + row("positions", Object.keys(m.positions).length ? Object.entries(m.positions).map(([s,v])=>`${s} ${qty(v.qty)} @ ${money(v.avg_entry_usd)}`).join("<br>") : "none")
-    + row("learned rules", m.rules.length ? m.rules.map(r=>r.id).join(", ") : "none")
-    + row("journal", m.journal_recent.length + " events");
-
   el("reteach").hidden = !(m && !m.limits);
 
   if (!MARKETS.__fromServer) {
@@ -464,6 +566,9 @@ async function refresh(){
     else if (!pd.pending && pending) { pending = null; }
   }
 
+  const full = await get("/memory/full");
+  if (full) drawStore(full);
+
   const ls = await get("/scan/last");
   if (ls && ls.summary && ls.at !== lastScanAt) { lastScanAt = ls.at; drawScan(ls); }
 
@@ -472,7 +577,7 @@ async function refresh(){
 
   const rf = (await get("/reflect")) || { proposals: [] };
   if (m && rf.proposals?.length) {
-    el("mem").innerHTML += `<h2 style="margin-top:14px">Learned from your yes/no</h2>` +
+    el("store").innerHTML += `<h2 class="rule-top">Learned from your yes/no</h2>` +
       rf.proposals.map((p,i)=>`<div class="row"><span>${p.text}</span>
         <span><button class="g" onclick='acceptRule(${JSON.stringify(p)})'>ACCEPT</button></span></div>`).join("");
   }
@@ -488,7 +593,7 @@ const BOOT_MARKETS = { ETH:{label:"Ethereum",class:"crypto",fee:100}, cbBTC:{lab
 MARKETS = BOOT_MARKETS;
 drawKeys(null);
 drawMarkets();
-for (const [id, msg] of [["pf","reading balances\u2026"],["mem","recalling\u2026"],["log","connecting\u2026"]])
+for (const [id, msg] of [["pf","reading balances\u2026"],["store","recalling\u2026"],["log","connecting\u2026"]])
   el(id).innerHTML = `<div class="row"><span class="dim">${msg}</span></div>`;
 // An Operate surface's empty state teaches the control that fills it.
 el("sig").innerHTML =

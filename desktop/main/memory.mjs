@@ -72,6 +72,7 @@ export class Memory {
   stats()                    { return this.call("stats"); }
   wipe()                     { return this.call("wipe"); }
   recallBrief()              { return this.call("recall_brief"); }
+  fullStore(limit = 60)      { return this.call("full_store", { limit }); }
   getState(key)              { return this.call("get_state", { key }); }
   setState(key, body)        { return this.call("set_state", { key, body }); }
   setEntity(category, name, body) { return this.call("set_entity", { category, name, body }); }

@@ -1,9 +1,13 @@
-# Orchestrator Pad — dimensional spec (v7)
+# xorr-pad — dimensional spec (v8)
 
-Open-source ESP32 macropad for orchestrating coding agents: lock a target agent
-(Grok / Codex / Claude Code / Antigravity / opencode / Kiro / Cursor),
-hold-to-talk voice capture, and a dial that sets model effort
-(`low → medium → high → xhigh → max → ultracode`).
+Open-source ESP32 macropad that trades on Base. Six strategy agents, six
+markets across four asset classes, buy/sell with a physical yes/no gate,
+hold-to-talk voice, and a kill switch.
+
+The chassis is unchanged from the v7 LoomPad build — same tray, same plate,
+same 19.05 mm grid, same hand-soldered 4x4 matrix. Only the keycaps and the
+firmware's key bindings changed when the product did, which is why the
+dimensions below still hold.
 
 All dimensions in **mm**. Axes: X right, Y back (away from user), Z up.
 Origin: center of the case footprint, Z=0 at the tray's outer bottom face.
@@ -13,20 +17,41 @@ Origin: center of the case footprint, Z=0 at the tray's outer bottom face.
 Column centers X: -28.575, -9.525, +9.525, +28.575 (cols 0..3)
 Row centers Y: +28.575, +9.525, -9.525, -28.575 (rows 0..3, row 0 = back/top)
 
-| Pos | What | Glyph (debossed) |
-|---|---|---|
-| r0c0 | EC11 rotary encoder (effort dial) | knurled knob, tick dot |
-| r0c1 | agent key: Cursor | `cursor` (cube, raised facet) |
-| r0c2 | agent key: Codex | `codex` (cloud, raised `>_`) |
-| r0c3 | preset/status key (translucent look) | `target` |
-| r1c0..c3 | agent keys: Grok, Claude Code, Antigravity, opencode | `grok` (circle-slash), `claude` (pixel-pal), `antigravity` (arch), `opencode` (frame) |
-| r2c0 | agent key: Kiro | `kiro` (ghost) |
-| r2c1..c3 | run / approve / reject | `bolt`, `check`, `cross` |
-| r3c0 | prompt/terminal key | `prompt` |
-| r3 c1–c2 | **voice bar, 2u** (hold-to-talk), centered at X=0 | `mic` |
-| r3c3 | send/dispatch key | `send` |
+The physical grid is 4x4. One cell is the knob, leaving 14 switch positions;
+the v7 2u voice bar is now a 1u MIC cap centred at X=0, so every cap is 1u.
+This table is generated from `cad/partlib.py: key_layout()` — if they disagree,
+the code is right.
 
-Total: **14 MX switches** (13 x 1u + 1 x 2u), 1 EC11 encoder.
+| Pos | What | Cap colour | Glyph (debossed) |
+|---|---|---|---|
+| r0c0 | **mock knob** — snap-fit, spins, no encoder (see below) | off-white | knurled, tick dot |
+| r0c1..c3 | strategy agents: DCA, GRID, MOMENTUM | white | `dca`, `grid`, `momentum` |
+| r1c0..c2 | strategy agents: REBALANCE, YIELD, RISK | white | `rebalance`, `yield`, `risk` |
+| r1c3 | **BASE** — runs the strategy book across every market | plain white | `base` |
+| r2c0 | BUY | green | `buy` |
+| r2c1 | SELL | red | `sell` |
+| r2c2 | YES — confirm the pending trade | green | `check` |
+| r2c3 | NO — refuse it | red | `cross` |
+| r3c0 | PORTFOLIO | white | `portfolio` |
+| r3, centred at X=0 | MIC (hold-to-talk), 1u cap on the old 2u switch | white | `mic` |
+| r3c3 | KILL — disarm everything | red | `kill` |
+
+Total: **14 MX switches** (all 1u caps) + 1 mock knob. One grid cell (r3c2) has
+no cap: the mic sits centred between c1 and c2.
+
+**The desk app's deck has 15 keys, the pad has 14.** The extra one is SCAN, and
+it has no switch — the BASE key runs the same book, so nothing is unreachable
+from the hardware, but SCAN itself is desk-only. The pad also has no market
+keys: which of the six markets is in hand is chosen in the desk app.
+
+**The knob has no encoder.** This build ships a snap-fit knob that spins freely
+in the plate hole: there is no EC11, so it sends nothing. Trade size is set in
+the desk app. `cad/part_knob.py` builds the mock part and `cad/audit_fit.py`
+asserts it clips and spins.
+
+**Cap colours are filament, not decoration.** Green (#22C55E) and red (#EF4444)
+are the two coloured spools; every other cap is white. The desk app's palette
+is taken from these values, not the other way round.
 
 ## Case (two printed shells + knob + caps)
 

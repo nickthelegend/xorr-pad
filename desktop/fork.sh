@@ -21,6 +21,12 @@ UPSTREAM="${FORK_RPC:-https://mainnet.base.org}"
 BLOCK="${FORK_BLOCK:-$(curl -s -m 20 -X POST -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' "$UPSTREAM" \
   | python3 -c 'import json,sys;print(int(json.load(sys.stdin)["result"],16))')}"
-echo "forking $UPSTREAM at block $BLOCK"
+# Persist the fetched state. Without this every restart re-fetches every
+# account and storage slot from the upstream, and a rate-limited upstream turns
+# that into balance reads that time out mid-session. With it, the second run
+# starts warm and barely touches the network.
+STATE="${FORK_STATE:-$(cd "$(dirname "$0")" && pwd)/.fork-state.json}"
+echo "forking $UPSTREAM at block $BLOCK  (state: $STATE)"
 exec anvil --fork-url "$UPSTREAM" --fork-block-number "$BLOCK" \
-  --port 8545 --silent --compute-units-per-second 330
+  --port 8545 --silent --compute-units-per-second 330 \
+  --state "$STATE" --state-interval 30

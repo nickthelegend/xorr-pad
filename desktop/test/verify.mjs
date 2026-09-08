@@ -415,14 +415,17 @@ section("C. chain behaviour on every asset class");
   }
 
   TOKENS.DEGEN = { symbol: "DEGEN", address: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", decimals: 18 };
+  // Size it to what the wallet holds, or the balance check fires first and we
+  // end up testing the wallet instead of the gate.
+  const affordable = Math.max(5, Math.min(100, Math.floor((await spendable("USDC")) * 0.5)));
   let msg = "(no throw)";
-  try { await swap("USDC", "DEGEN", 100); } catch (e) { msg = e.message; }
+  try { await swap("USDC", "DEGEN", affordable); } catch (e) { msg = e.message; }
   // Refused either because it measured the pool as too thin, or because it
   // could not measure it at all. Both are the gate holding; a submitted
   // transaction is the gate failing.
   chk("C6 the liquidity gate refuses before signing",
       (/too thin/.test(msg) || /could not be measured/.test(msg)) && !/submitted/.test(msg),
-      `"${msg.slice(0, 76)}"`);
+      `$${affordable} attempt: "${msg.slice(0, 64)}"`);
   delete TOKENS.DEGEN;
 }
 
@@ -430,15 +433,23 @@ section("G. concurrency");
 {
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
   await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
-  const u0 = (await j("/portfolio")).b.balances.USDC.amount;
+  // A stalled node must fail this check with a message, not crash the run.
+  const usdc = async () => {
+    const r = await j("/portfolio");
+    return r.b?.balances?.USDC?.amount ?? null;
+  };
+  const u0 = await usdc();
   const [a, b2] = await Promise.all([
     j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) }),
     j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) }),
   ]);
-  const u1 = (await j("/portfolio")).b.balances.USDC.amount;
+  const u1 = await usdc();
   const fills = [a, b2].filter((r) => r.b?.fill).length;
-  chk("G6 concurrent confirm fills exactly once", fills === 1 && (u0 - u1) < 60,
-      `${fills} fill, $${(u0 - u1).toFixed(2)} moved`);
+  chk("G6 concurrent confirm fills exactly once",
+      fills === 1 && u0 != null && u1 != null && (u0 - u1) < 60,
+      u0 == null || u1 == null
+        ? "the Base node stalled and /portfolio returned 503 — cannot measure the balance"
+        : `${fills} fill, $${(u0 - u1).toFixed(2)} moved`);
 
   await Promise.all(["cbBTC", "EURC", "AERO"].map((m) =>
     j("/key", { method: "POST", body: JSON.stringify({ id: m }) })));

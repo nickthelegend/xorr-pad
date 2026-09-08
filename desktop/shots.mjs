@@ -31,6 +31,13 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let win;
 
 /** Let the UI's own 4s poll catch up, then capture what the operator sees. */
+/** Scroll a region into view before capturing, for a page taller than the window. */
+async function scrollTo(sel) {
+  await win.webContents.executeJavaScript(
+    `document.querySelector(${JSON.stringify(sel)})?.scrollIntoView({block:"start"}); true`);
+  await wait(700);
+}
+
 async function shot(name, caption, settle = 5200) {
   await wait(settle);
   const img = await win.webContents.capturePage();
@@ -88,6 +95,16 @@ async function run() {
   await api("/memory/seed", { method: "POST", body: "{}" });
   await key("buy");
   await shot("08-restored", "taught its limits again: the full-size decision returns");
+
+  // The store is the judged claim, and it lives below the fold on a scrolling
+  // page — so scroll to it and photograph the whole thing.
+  for (let i = 0; i < 3; i++) { await key("sell"); await key("no"); }
+  const rf2 = await api("/reflect");
+  if (rf2?.proposals?.length)
+    await api("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: rf2.proposals[0] }) });
+  await key("buy"); await key("yes");
+  await scrollTo("#memsec");
+  await shot("09-memory", "the whole Sibyl store: every entity, reference, state key and journal event", 6500);
 
   console.log(`\nwritten to ${path.relative(path.join(HERE, ".."), OUT)}\n`);
   app.quit();

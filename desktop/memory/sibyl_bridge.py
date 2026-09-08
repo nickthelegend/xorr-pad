@@ -97,6 +97,87 @@ def wipe(_a):
     return {"removed": removed}
 
 
+def full_store(args):
+    """Everything Sibyl is holding, tier by tier.
+
+    recall_brief() is the decision-shaped view: limits, positions, rules, baton.
+    This is the *whole* store — every entity in every category, the references
+    and state keys behind them, the journal itself rather than a count, and the
+    engine's own stats. It exists so the operator can see what the agent knows,
+    not a summary of it.
+    """
+    limit = int(args.get("limit") or 60)
+    out = {"entities": {}, "references": {}, "state": {}, "journal": [], "stats": None}
+
+    for category in ("position", "rule", "watchlist"):
+        try:
+            rows = mem.list_entities(category) or []
+        except Exception:
+            rows = []
+        items = []
+        for r in rows:
+            body = r.get("body") if isinstance(r, dict) else None
+            if isinstance(body, str):
+                try:
+                    body = json.loads(body)
+                except Exception:
+                    pass
+            items.append({"name": r.get("name") or r.get("key"), "body": body,
+                          "status": r.get("status"), "ts": r.get("ts") or r.get("updated_at")})
+        if items:
+            out["entities"][category] = items
+
+    for key in ("risk/limits",):
+        try:
+            ref = mem.get_reference(key)
+        except Exception:
+            ref = None
+        if ref:
+            body = ref.get("body") if isinstance(ref, dict) else ref
+            if isinstance(body, str):
+                try:
+                    body = json.loads(body)
+                except Exception:
+                    pass
+            out["references"][key] = body
+
+    for key in ("baton",):
+        try:
+            st = mem.get_state(key)
+        except Exception:
+            st = None
+        if st:
+            body = st.get("body") if isinstance(st, dict) else st
+            if isinstance(body, str):
+                try:
+                    body = json.loads(body)
+                except Exception:
+                    pass
+            out["state"][key] = body
+
+    try:
+        for e in (mem.read_events(limit=limit) or []):
+            row = {"ts": e.get("ts")}
+            for f in ("evaluated", "acted", "forward"):
+                v = e.get(f)
+                if isinstance(v, str):
+                    try:
+                        v = json.loads(v)
+                    except Exception:
+                        pass
+                if v:
+                    row[f] = v
+            out["journal"].append(row)
+    except Exception:
+        pass
+
+    try:
+        out["stats"] = stats(None)
+    except Exception:
+        out["stats"] = None
+    return out
+
+
 OPS = {
     "get_state":      lambda a: mem.get_state(a["key"]),
     "set_state":      lambda a: mem.set_state(a["key"], a["body"]),
@@ -118,6 +199,7 @@ OPS = {
     "recall_brief":   recall_brief,
     "stats":          stats,
     "wipe":           wipe,
+    "full_store":     full_store,
     "ping":           lambda a: "pong",
 }
 
