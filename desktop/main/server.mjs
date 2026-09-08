@@ -20,8 +20,9 @@ import { runOnce, getMarket, snapshot, applyFill } from "./trader.mjs";
 import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
 import { swap, spendable } from "./dex.mjs";
-import { IS_FORK, fundOnFork } from "./chain.mjs";
+import { IS_FORK, fundOnFork, chainReachable } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
+import { prices as feedPrices } from "./scan.mjs";
 import { readFile } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
@@ -109,6 +110,19 @@ export function createServer(mem) {
         // anything else is just answered out loud.
         let reply, verdict = null;
         const sig = parseIntent(transcript, state.agent, state.market);
+        // The operator named a market and it resolved to nothing. Refusing and
+        // asking again is the only safe answer: falling back to whatever is in
+        // hand is how a spoken "ETH" becomes a VIRTUAL position.
+        if (sig?.needsMarket) {
+          const say = `I heard ${sig.side.toLowerCase()} ${sig.sizeUsd} dollars, but not which market — ` +
+                      `"${sig.heard}" is not one I trade. Say it again.`;
+          note(`heard "${transcript}" -> unresolved market "${sig.heard}"`);
+          const out2 = await tts(say);
+          res.writeHead(200, { "content-type": "application/octet-stream",
+            "x-transcript": encodeURIComponent(transcript), "x-reply": encodeURIComponent(say),
+            "x-action": "UNCLEAR" });
+          return res.end(out2);
+        }
         if (sig) {
           verdict = decide(sig, brief);
           state.pending = { sig, verdict, market };
@@ -162,6 +176,72 @@ export function createServer(mem) {
           res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" });
           return res.end(buf);
         } catch { return send(404, { error: "no such font" }); }
+      }
+
+      // ── the physical pad's one poll ──────────────────────────────────────
+      // Everything the ESP32 needs to light its LED and label its keys, in a
+      // single cheap request it can make once a second.
+      //
+      // It deliberately touches NEITHER the chain nor a swap quote: prices come
+      // from the cached candle feed. A pad whose status light goes dark every
+      // time the Base node hiccups is worse than no light at all, so this route
+      // must not be able to 503.
+      if (url.pathname === "/pad" && req.method === "GET") {
+        const brief = await mem.recallBrief().catch(() => null);
+        const px = await feedPrices().catch(() => ({}));
+        const chainOk = await chainReachable().catch(() => false);
+
+        // Unrealised P&L against the entry prices the store remembers. With no
+        // remembered entry there is no cost basis, and the field is null rather
+        // than a zero the pad would render as "flat".
+        let unrealised = null, basis = 0, open = 0;
+        for (const [sym, pos] of Object.entries(brief?.positions || {})) {
+          const p = sym === "USDC" ? 1 : px[sym] ?? (sym === "WETH" ? px.ETH : null);
+          if (p == null || !(pos.qty > 0)) continue;
+          open  += pos.qty * p;
+          basis += pos.qty * Number(pos.avg_entry_usd || 0);
+        }
+        if (basis > 0) unrealised = Math.round((open - basis) * 100) / 100;
+
+        return send(200, {
+          ok: true,
+          mode: IS_FORK ? "fork" : "mainnet",
+          armed: state.armed,
+          agent: state.agent,
+          market: state.market,
+          sizeUsd: state.sizeUsd,
+          pending: !!state.pending,
+          verdict: state.pending?.verdict?.action || null,
+          chainOk,
+          remembers: !!brief?.limits,
+          positions: Object.keys(brief?.positions || {}).length,
+          rules: (brief?.rules || []).length,
+          spentToday: Number.isFinite(brief?.spent_today) ? brief.spent_today : null,
+          dayLimit: brief?.limits?.max_day_usd ?? null,
+          unrealised,
+          price: px[state.market] ?? null,
+        });
+      }
+
+      // ── speech, for the pad's amp ────────────────────────────────────────
+      // The pad has no TTS of its own. It asks for a sentence and streams the
+      // raw PCM straight to the amp, which is why this answers octet-stream at
+      // the same 16 kHz the mic records at rather than a container format the
+      // firmware would have to parse.
+      if (url.pathname === "/speak" && req.method === "GET") {
+        const text = (url.searchParams.get("text") || "").trim();
+        // An empty body would reach the amp as a click. Say what was wrong.
+        if (!text) return send(400, { error: "pass ?text= — there is nothing to say" });
+        if (text.length > 400) return send(400, { error: "text too long: 400 characters is the ceiling" });
+        try {
+          const pcm = await tts(text);
+          res.writeHead(200, { "content-type": "application/octet-stream",
+                               "content-length": pcm.length,
+                               "x-sample-rate": "16000" });
+          return res.end(pcm);
+        } catch (e) {
+          return send(502, { error: `speech failed: ${String(e.message || e).slice(0, 120)}` });
+        }
       }
 
       if (url.pathname === "/health")

@@ -139,7 +139,9 @@ const glue = (s) => s.replace(/\b(?:[a-z][\s.]+)+[a-z]\b/g, (m) => m.replace(/[\
 
 // One alias set per tradeable market, spelled the way people actually say them.
 const ALIASES = {
-  ETH:     /\b(eth|ether|ethereum|eeth|aeth)\b/,
+  // "ETA" is what Deepgram returns for a spoken "ETH" often enough to have
+  // bought the wrong asset once. "E T A" and "eath" are the same slip.
+  ETH:     /\b(eth|eta|eath|ether|ethereum|eeth|aeth|e\s?t\s?a)\b/,
   USDC:    /\b(usdc|usd\s?c|you\s?s\s?d\s?c|dollars?coin)\b/,
   cbBTC:   /\b(cbbtc|bitcoin|btc|cb\s?btc|bit\s?coin)\b/,
   EURC:    /\b(eurc|euro|euros|eur|yuroc)\b/,
@@ -242,11 +244,25 @@ export function parseIntent(text, fallbackAgent = "momentum", market = "ETH") {
   if (!side) return null;
   const usd = parseAmount(t);
   if (usd == null) return null;
-  // A clear "buy forty dollars" with a garbled ticker is still an order: the
-  // pad always has an active market, so use it rather than dropping the trade
-  // into chit-chat. The verdict still has to be shown and confirmed.
-  const sym = Object.keys(ALIASES).find((s) => ALIASES[s].test(t)) || market;
+  const matched = Object.keys(ALIASES).find((s) => ALIASES[s].test(t));
+
+  // "buy forty dollars" with NO market named is still an order — the pad always
+  // has one in hand, so use it. But if the operator clearly named something and
+  // it resolved to nothing, substituting the market in hand is how you buy the
+  // wrong asset: "Buy $50 of ETH" came back from the transcriber as "ETA" and
+  // bought VIRTUAL, because VIRTUAL happened to be in hand. Say so instead.
+  if (!matched) {
+    // Tolerate the punctuation the transcriber adds — "of Zorblax." ends with a
+    // full stop, and anchoring hard to end-of-string let exactly that through.
+    const slot = t.match(/\b(?:of|in|into|worth\s+of)\s+([a-z][a-z0-9\s]{0,14}?)[\s.,!?]*$/);
+    const named = slot && slot[1].trim();
+    if (named && !/^(it|that|this|them|the\s+market|dollars?|bucks?)$/.test(named))
+      return { needsMarket: true, side, sizeUsd: usd, heard: named.trim(),
+               reason: `spoken: "${text}"` };
+  }
+
+  const sym = matched || market;
   return { agent: fallbackAgent, side, symbol: sym,
            sizeUsd: usd, reason: `spoken: "${text}"`, confidence: 1,
-           assumedMarket: Object.keys(ALIASES).some((s) => ALIASES[s].test(t)) ? undefined : market };
+           assumedMarket: matched ? undefined : market };
 }

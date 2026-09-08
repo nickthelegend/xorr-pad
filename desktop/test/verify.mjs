@@ -838,6 +838,52 @@ try {
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
 } catch (e) { chk("O crashed", false, String(e.message || e).slice(0, 92)); }
 
+// ── P. the physical pad's contract ──────────────────────────────────────────
+section("P. the pad on the desk");
+try {
+  // One cheap poll carries everything the pad's LED and keycaps need.
+  const t0 = Date.now();
+  const pad = await j("/pad");
+  const ms = Date.now() - t0;
+  const need = ["armed","agent","market","sizeUsd","pending","mode","chainOk",
+                "remembers","spentToday","dayLimit","unrealised","price"];
+  chk("P1 GET /pad carries the whole pad state", pad.s === 200 && need.every((k) => k in pad.b),
+      `${Object.keys(pad.b || {}).length} fields in ${ms}ms`);
+  chk("P2 /pad is cheap enough to poll", ms < 150, `${ms}ms (budget 150)`);
+
+  // Speech for the amp: raw PCM at the rate the mic records at.
+  const sp = await fetch(B + "/speak?text=" + encodeURIComponent("xorr pad connected"), { headers: H });
+  const spb = Buffer.from(await sp.arrayBuffer());
+  let peak = 0;
+  for (let i = 0; i + 1 < spb.length; i += 2) peak = Math.max(peak, Math.abs(spb.readInt16LE(i)));
+  chk("P3 GET /speak returns playable PCM",
+      sp.status === 200 && sp.headers.get("content-type") === "application/octet-stream" &&
+      sp.headers.get("x-sample-rate") === "16000" && spb.length > 8000 && peak > 2000,
+      `${(spb.length / 2 / 16000).toFixed(2)}s at 16kHz, peak ${peak}`);
+  const spEmpty = await j("/speak");
+  chk("P4 /speak refuses an empty line", spEmpty.s === 400 && /nothing to say/.test(spEmpty.b.error || ""),
+      `${spEmpty.s} "${spEmpty.b?.error}"`);
+  chk("P5 the pad's routes are auth-gated",
+      (await j("/pad", { noauth: true })).s === 401 && (await j("/speak?text=hi", { noauth: true })).s === 401,
+      "both 401 without the pad token");
+
+  // A spoken ticker that resolves to nothing must NEVER become the market in
+  // hand. "Buy $50 of ETH" came back from Deepgram as "ETA" and bought VIRTUAL.
+  {
+    const sym = (t) => { const g = parseIntent(t, "momentum", "VIRTUAL");
+                         return g?.needsMarket ? "REFUSE" : (g?.symbol ?? null); };
+    const cases = [
+      ["Buy $50 of ETA.", "ETH"], ["Buy $50 of E T A", "ETH"], ["buy fifty dollars of eath", "ETH"],
+      ["buy 40 dollars", "VIRTUAL"], ["buy 30 of it.", "VIRTUAL"],
+      ["Buy $40 of Zorblax.", "REFUSE"], ["Sell $25 of Doge!", "REFUSE"],
+    ];
+    const bad = cases.filter(([t, want]) => sym(t) !== want);
+    chk("P6 a mis-heard ticker never becomes the market in hand", bad.length === 0,
+        bad.length ? bad.map(([t]) => `"${t}"->${sym(t)}`).join(", ")
+                   : `${cases.length}/${cases.length} — ETA resolves to ETH, unknown names are refused`);
+  }
+} catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
+
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             "   (2 skipped: credentials unavailable)\n");
 process.exit(fail ? 1 : 0);
