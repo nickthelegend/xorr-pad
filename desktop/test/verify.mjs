@@ -888,6 +888,8 @@ try {
                          return g?.needsMarket ? "REFUSE" : (g?.symbol ?? null); };
     const cases = [
       ["Buy $50 of ETA.", "ETH"], ["Buy $50 of E T A", "ETH"], ["buy fifty dollars of eath", "ETH"],
+      // Deepgram really returned this one, spelling E-T-H and hearing "eight".
+      ["Buy $50 of e t eight.", "ETH"], ["buy 50 of e t ate", "ETH"],
       ["buy 40 dollars", "VIRTUAL"], ["buy 30 of it.", "VIRTUAL"],
       ["Buy $40 of Zorblax.", "REFUSE"], ["Sell $25 of Doge!", "REFUSE"],
     ];
@@ -1115,6 +1117,21 @@ try {
   const empty = await post({});
   chk("T4 an empty submission is refused rather than written",
       empty.status === 400, `${empty.status} "${(await empty.json().catch(() => ({}))).error}"`);
+
+  // Re-opening setup to change one field must not delete the others. Writing
+  // the whole file did exactly that: a token-only save wiped the Deepgram key
+  // and the mic went dead with nothing on screen to explain it.
+  if (process.env.XORR_USER_DATA) {
+    const file = path.join(process.env.XORR_USER_DATA, ".env");
+    const keys = () => new Set(fs.readFileSync(file, "utf8").split("\n")
+      .map((l) => l.split("=")[0]).filter(Boolean));
+    const before = keys();
+    await post({ token: "xorrpad-dev" });
+    const after = keys();
+    const lost = [...before].filter((k) => !after.has(k));
+    chk("T5 saving one field keeps the others", lost.length === 0,
+        lost.length ? `lost ${lost.join(", ")}` : `kept ${[...after].join(", ")}`);
+  }
   void dir;
 } catch (e) { chk("T crashed", false, String(e.message || e).slice(0, 92)); }
 

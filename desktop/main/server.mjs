@@ -209,7 +209,21 @@ export function createServer(mem) {
 
           await mkdir(dir, { recursive: true });
           const file = path.join(dir, ".env");
-          await writeFile(file, lines.join("\n") + "\n", { mode: 0o600 });
+
+          // MERGE, never replace. Re-opening setup to change the pad token and
+          // submitting without re-typing the Deepgram key must not delete the
+          // Deepgram key — which is exactly what writing the whole file did.
+          const existing = new Map();
+          try {
+            for (const line of (await readFile(file, "utf8")).split("\n")) {
+              const at = line.indexOf("=");
+              if (at > 0 && !line.startsWith("#")) existing.set(line.slice(0, at), line.slice(at + 1));
+            }
+          } catch { /* first run — nothing to keep */ }
+          for (const [k, v] of Object.entries(fields))
+            if (typeof v === "string" && v.trim()) existing.set(k, v.trim());
+          const body_ = [...existing].map(([k, v]) => `${k}=${v}`).join("\n");
+          await writeFile(file, body_ + "\n", { mode: 0o600 });
           // Live, without a restart — every credential in this app is read at
           // call time precisely so this works.
           for (const [k, v] of Object.entries(fields)) if (v && String(v).trim()) process.env[k] = String(v).trim();

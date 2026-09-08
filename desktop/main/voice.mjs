@@ -190,7 +190,9 @@ const glue = (s) => s.replace(/\b(?:[a-z][\s.]+)+[a-z]\b/g, (m) => m.replace(/[\
 const ALIASES = {
   // "ETA" is what Deepgram returns for a spoken "ETH" often enough to have
   // bought the wrong asset once. "E T A" and "eath" are the same slip.
-  ETH:     /\b(eth|eta|eath|ether|ethereum|eeth|aeth|e\s?t\s?a)\b/,
+  // "e t eight" is Deepgram spelling E-T-H aloud and hearing the H as "eight".
+  // Same slip as "eta", same consequence if it goes unmatched.
+  ETH:     /\b(eth|eta|eath|ether|ethereum|eeth|aeth|e\s?t\s?a|e\s?t\s?(?:eight|ate|h))\b/,
   USDC:    /\b(usdc|usd\s?c|you\s?s\s?d\s?c|dollars?coin)\b/,
   cbBTC:   /\b(cbbtc|bitcoin|btc|cb\s?btc|bit\s?coin)\b/,
   EURC:    /\b(eurc|euro|euros|eur|yuroc)\b/,
