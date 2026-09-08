@@ -320,6 +320,12 @@ OPS = {
     "search_entities": search_entities_op,
     "set_entity_status": set_entity_status,
     "ping":           lambda a: "pong",
+    # Which store did this bridge actually open? The server resolves it from
+    # SIBYL_DB and silently falls back to the home directory, so anything that
+    # wants to read or write the same memory has to be able to ask rather than
+    # guess. A test that guessed wrong manipulated an empty database for weeks
+    # and reported the product as broken.
+    "where":          lambda a: {"db": str(DB)},
 }
 
 

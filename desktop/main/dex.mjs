@@ -1,21 +1,41 @@
 /**
  * dex.mjs — turning a decision into a real fill on Base.
  *
- * Two routes:
- *   1inch  — used when ONEINCH_API_KEY is set. Their aggregator is mainnet-only
- *            (there is no Base Sepolia 1inch), which is exactly why the default
- *            environment here is a Base mainnet fork.
- *   uniswap— a direct SwapRouter02 call. Needs no API key, so a real fill is
- *            always possible. This is the default route.
+ * One route, and it is the one every fill reports:
+ *   uniswap — a direct SwapRouter02 `exactInputSingle`. Needs no API key, so a
+ *             real fill is always possible with nothing but an RPC.
  *
- * Either way the transaction is signed and mined; nothing here is simulated.
+ * An aggregator (0x, then 1inch) is Phase 2 of PLAN.md and is not here yet.
+ * Until it is, `ONEINCH_API_KEY` changes nothing about how a swap executes and
+ * must not change what a fill claims — the route on a fill is read back off the
+ * mined receipt's `to`, so it cannot drift from what actually happened.
+ *
+ * The transaction is signed and mined; nothing here is simulated.
  */
 import { parseAbi, formatUnits, parseUnits, erc20Abi, maxUint256 } from "viem";
 import { pub, wallet, account, IS_FORK } from "./chain.mjs";
 import { TOKENS, UNISWAP_V3 } from "./tokens.mjs";
 
-const ONEINCH_KEY = process.env.ONEINCH_API_KEY || "";
-export const ROUTE = ONEINCH_KEY ? "1inch" : "uniswap";
+/**
+ * The route a fill reports is derived from the router the transaction actually
+ * went to, never from which API key happens to be set.
+ *
+ * This used to read `ONEINCH_KEY ? "1inch" : "uniswap"` while `swap()` only ever
+ * called Uniswap V3 — so setting ONEINCH_API_KEY made every fill *claim* a 1inch
+ * route it had not taken. There is no 1inch call in this codebase yet. A label
+ * that can disagree with the receipt is worse than no label.
+ */
+const ROUTERS = new Map([
+  [UNISWAP_V3.router.toLowerCase(), "uniswap"],
+]);
+
+/** What the chain says executed this. `to` comes off the mined receipt. */
+export function routeOf(to) {
+  return ROUTERS.get(String(to || "").toLowerCase()) || `unknown router ${to}`;
+}
+
+/** The router this build will use. One, until Phase 2 adds an aggregator. */
+export const ROUTE = "uniswap";
 
 const routerAbi = parseAbi([
   "function exactInputSingle((address tokenIn,address tokenOut,uint24 fee,address recipient,uint256 amountIn,uint256 amountOutMinimum,uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)",
@@ -269,7 +289,7 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
   if (delta <= 0n) throw new Error(`swap mined but ${buy} balance did not move`);
 
   return {
-    route: ROUTE, hash, status: receipt.status, block: Number(receipt.blockNumber),
+    route: routeOf(receipt.to), hash, status: receipt.status, block: Number(receipt.blockNumber),
     gasUsed: Number(receipt.gasUsed), fee: q.fee, steps,
     sold: `${formatUnits(amountInRaw, TOKENS[sell].decimals)} ${sell}`,
     received: Number(formatUnits(delta, tOut.decimals)),

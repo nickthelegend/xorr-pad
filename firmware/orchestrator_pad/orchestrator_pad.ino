@@ -1,16 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Orchestrator Pad — an ESP32-S3 voice + control surface for Loom.
+// xorr-pad — an ESP32-S3 trading surface for the xorr-pad backend.
+//
+// A pad on the desk for taking real trades on Base. Every key here is a real
+// control on the backend, and the backend is the only thing that decides: this
+// firmware holds no opinion about what is armed, what is in hand, or what a
+// trade is worth. It presses keys, shows what came back, and speaks.
+//
+// NOTHING ON THIS PAD CAN MOVE MONEY ON ITS OWN. BUY and SELL raise a decision;
+// only ✓ can execute it, only while the backend says it is armed, and the same
+// gate answers whether the key was pressed here or on screen.
 //
 // Boot flow:
-//   1. If no WiFi is saved (or K1 held at power-on), raise the "LoomPad-Setup"
-//      captive portal: pick your WiFi + enter the Loom backend IP, save.
-//   2. Join WiFi, remember everything in flash, start the telnet debug server.
-//   3. Ask the backend to speak "connected" through the amp.
-//   4. Run: an agent key locks that agent in Loom (a handoff, visible in the
-//      thread); hold K1 to talk → the recording is sent to that agent → its
-//      spoken reply plays back.
+//   1. No WiFi saved (or the reset key held at power-on) → raise the
+//      "xorr-pad-setup" captive portal: pick a network, enter the backend URL
+//      and pad token, save.
+//   2. Join, remember it in flash, start the telnet debug console.
+//   3. Poll GET /pad and say "connected" through the amp.
+//   4. Run: agent and market keys take the baton and bring a market in hand;
+//      BUY/SELL raise a decision; ✓ executes it; hold MIC to speak an order.
 //
-// Config & wiring: config.h.  Key→agent map: agents.h.  Backend: ../backend.
+// Config & wiring: config.h.  Key map: agents.h.  Backend: xorr-pad/desktop.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "config.h"
@@ -35,26 +44,42 @@ size_t     recLen = 0;
 bool       recording = false;
 uint32_t   recAutoStopAt = 0;          // 0 = manual (hold); else a ms deadline
 
-String     selAgent = "";              // currently selected agent
-uint8_t    selR = 0, selG = 20, selB = 0;
+// The backend's state, refreshed by the poll. The pad renders this and nothing
+// of its own — if the two ever disagree, the backend is right.
+PadState   pad;
+uint32_t   nextPoll = 0;
+uint8_t    keyR = 0, keyG = 20, keyB = 0;   // colour of the last key that owned the light
+uint32_t   killHeldSince = 0;               // 0 = not held
 
 inline void led(uint8_t r, uint8_t g, uint8_t b) { rgbLedWrite(STATUS_LED, r, g, b); }
-inline void ledReady() { led(selAgent.length() ? selR : 0, selAgent.length() ? selG : 20, selAgent.length() ? selB : 0); }
+
+// The status light, from real backend state. In order of what matters most:
+//   disarmed        → hard red, steady. Nothing can trade.
+//   decision waiting → amber, breathing. A ✓ is owed.
+//   forgotten        → white, breathing. The store was wiped; it trades timid.
+//   armed            → the agent's own colour, dim and steady.
+//   no backend       → dark blue pulse. The pad is alone.
+void ledFromState() {
+  uint32_t t = millis();
+  if (!pad.ok)            { uint8_t b = 8 + (t / 8 % 40); led(0, 0, b); return; }
+  if (!pad.armed)         { led(90, 0, 0); return; }
+  if (pad.pending)        { uint8_t b = 30 + (t / 6 % 70); led(b, (uint8_t)(b * 0.6f), 0); return; }
+  if (!pad.remembers)     { uint8_t b = 20 + (t / 10 % 50); led(b, b, b); return; }
+  led(keyR / 3, keyG / 3, keyB / 3);
+}
 
 // ── recording ────────────────────────────────────────────────────────────────
 void startRecording(uint32_t autoStopMs = 0) {
   if (recording) return;
-  if (!selAgent.length()) {
-    telnet.logf("  select an agent first (press an agent key)\n");
-    audio.beep(300, 120);
-    return;
-  }
+  // No "select an agent first" gate: the backend always has one holding the
+  // baton, so a spoken order is never homeless. Refusing here would invent a
+  // rule the backend does not have.
   recLen = 0;
   recording = true;
   recAutoStopAt = autoStopMs ? millis() + autoStopMs : 0;
   led(70, 0, 0);                        // red = recording
   audio.beep(1200, 70);
-  telnet.logf("  ● recording for %s…\n", selAgent.c_str());
+  telnet.logf("  ● recording…\n");
 }
 
 void stopAndSend() {
@@ -65,75 +90,96 @@ void stopAndSend() {
   float secs = (float)recLen / AUDIO_SAMPLE_RATE;
   if (recLen < AUDIO_SAMPLE_RATE / 4) { // < 0.25 s
     telnet.logf("  … too short (%.2fs), ignored\n", secs);
-    ledReady();
     return;
   }
-  telnet.logf("  … captured %.1fs, sending to %s\n", secs, selAgent.c_str());
-  String heard, said;
-  bool ok = net.talk(recBuf, recLen, selAgent, audio, heard, said);
+  telnet.logf("  … captured %.1fs, sending\n", secs);
+  String heard, said, action;
+  bool ok = net.talk(recBuf, recLen, audio, heard, said, action);
   if (ok) {
-    telnet.logf("  heard: %s\n  said:  %s\n", heard.c_str(), said.c_str());
-    ledReady();
+    telnet.logf("  heard : %s\n  action: %s\n  said  : %s\n",
+                heard.c_str(), action.c_str(), said.c_str());
+    // A spoken order leaves a decision waiting on a ✓ — the poll will pick it
+    // up and the light will start breathing amber on its own.
+    nextPoll = 0;
   } else {
     telnet.logf("  ✗ voice request failed (backend at %s?)\n", settings.backendUrl);
     audio.beep(300, 220);
-    led(80, 0, 0);
   }
 }
 
 // ── keys ─────────────────────────────────────────────────────────────────────
-// Friendly spoken form of an agent id (the caps read better out loud).
-String spokenName(const String &id) {
-  if (id == "claude-code") return "Claude";
-  if (id == "grok-code")   return "Grok";
-  if (id == "opencode")    return "Open Code";
-  if (id == "antigravity") return "Antigravity";
-  if (id == "codex")       return "Codex";
-  if (id == "kiro")        return "Kiro";
-  return id;
-}
-
+// Send one key id and report what came back. A refusal is not a failure: the
+// backend says "disarmed" or "not in the allowlist" and the pad says it too,
+// out loud, rather than blinking something the operator has to interpret.
 void sendKey(const KeyBind &kb) {
-  led(kb.r, kb.g, kb.b);
-  telnet.logf("  > key %s\n", kb.id);
-  if (!net.key(kb.id))
-    telnet.logf("    (didn't reach the desk app)\n");
-  if (kb.role == ROLE_AGENT) { selAgent = kb.id; selR = kb.r; selG = kb.g; selB = kb.b; }
+  keyR = kb.r; keyG = kb.g; keyB = kb.b;
+  String err;
+  if (net.key(kb.id, err)) {
+    telnet.logf("  ▸ %s\n", kb.label);
+    audio.beep(1200, 45);
+  } else {
+    telnet.logf("  ✗ %s refused: %s\n", kb.label, err.c_str());
+    audio.beep(300, 160);
+    if (err.length()) net.speak(err, audio);
+  }
+  nextPoll = 0;                       // reflect the new state immediately
 }
 
 void onKey(uint8_t r, uint8_t c, bool pressed) {
   const KeyBind &kb = keyAt(r, c);
-  if (pressed)   // raw position + duty, so a re-map is one keytest away
-    telnet.logf("  [KEY] row=%u col=%u  duty=%s\n", r, c, kb.id ? kb.id : "unbound");
+  if (pressed)   // diagnostic: raw position + current mapping, for remapping
+    telnet.logf("  [KEY] row=%u col=%u  = %s\n", r, c, kb.label ? kb.label : "unbound");
 
-  if (kb.role == ROLE_MIC) {           // hold to talk
-    if (pressed) startRecording();
-    else         stopAndSend();
-    return;
+  switch (kb.role) {
+    case ROLE_MIC:
+      if (pressed) startRecording(); else stopAndSend();
+      return;
+
+    // The kill switch is the one key a brush against must not fire. Hold it.
+    case ROLE_KILL:
+      if (pressed) { killHeldSince = millis(); telnet.logf("  (hold to stop trading…)\n"); }
+      else {
+        uint32_t held = killHeldSince ? millis() - killHeldSince : 0;
+        killHeldSince = 0;
+        if (held >= HOLD_TO_KILL_MS) { sendKey(kb); net.speak("Trading stopped.", audio); }
+        else telnet.logf("  … released after %ums — hold %ums to stop trading\n",
+                         held, (unsigned)HOLD_TO_KILL_MS);
+      }
+      return;
+
+    case ROLE_AGENT: case ROLE_MARKET: case ROLE_ACTION:
+    case ROLE_CONFIRM: case ROLE_REFUSE:
+      if (pressed) sendKey(kb);
+      return;
+
+    default:
+      if (pressed) telnet.logf("  %s (unbound)\n", matrix.name[r][c]);
   }
-  if (!pressed || kb.role == ROLE_NONE) return;
-  sendKey(kb);
 }
 
 // ── telnet commands ──────────────────────────────────────────────────────────
 void onTelnetCommand(const String &line) {
   String cmd = line; cmd.toLowerCase();
   if (cmd == "help") {
-    telnet.println("help · status · ip · heap · agent · select <a> · say <t> · talk · url <u> · token <t> · reset-wifi · reboot");
+    telnet.println("help · status · pad · map · ip · heap · key <id> · say <t> · talk · url <u> · token <t> · reset-wifi · reboot");
   } else if (cmd == "status") {
     telnet.logf("wifi %s  ip %s  rssi %ddBm  heap %u  psram %u\n",
                 WiFi.isConnected() ? "up" : "down", WiFi.localIP().toString().c_str(),
                 WiFi.RSSI(), ESP.getFreeHeap(), ESP.getFreePsram());
-    telnet.logf("backend %s  (%s, token %s)  · selected: %s\n",
+    telnet.logf("backend %s  (%s, token %s)\n",
                 settings.backendUrl, settings.secure() ? "https" : "http",
-                settings.padToken[0] ? "set" : "none",
-                selAgent.length() ? selAgent.c_str() : "(none)");
+                settings.padToken[0] ? "set" : "none");
+    telnet.logf("pad: %s · %s in hand · agent %s · %s%s\n",
+                pad.ok ? (pad.armed ? "ARMED" : "STOPPED") : "no backend",
+                pad.market.c_str(), pad.agent.c_str(),
+                pad.pending ? "a decision is waiting on a ✓" : "nothing in hand",
+                pad.remembers ? "" : " · MEMORY WIPED");
   } else if (cmd == "map") {
     for (uint8_t r = 0; r < MATRIX_ROWS; r++) {
       char line[128] = "";
       for (uint8_t c = 0; c < MATRIX_COLS; c++) {
         const KeyBind &k = keyAt(r, c);
-        const char *nm = k.id ? k.id : "-";
+        const char *nm = k.label ? k.label : "-";
         strncat(line, nm, sizeof(line) - strlen(line) - 4);
         strncat(line, " | ", sizeof(line) - strlen(line) - 1);
       }
@@ -143,12 +189,18 @@ void onTelnetCommand(const String &line) {
     telnet.println(WiFi.localIP().toString());
   } else if (cmd == "heap") {
     telnet.logf("heap %u  psram %u\n", ESP.getFreeHeap(), ESP.getFreePsram());
-  } else if (cmd == "agent") {
-    telnet.println(selAgent.length() ? selAgent : String("(none)"));
-  } else if (cmd.startsWith("select ")) {
-    selAgent = line.substring(7); selAgent.trim();
-    telnet.logf("selected %s\n", selAgent.c_str());
-    net.select(selAgent);
+  } else if (cmd == "pad") {
+    PadState st;
+    if (!net.pad(st)) { telnet.println("backend did not answer"); }
+    else telnet.logf("armed=%d pending=%d chain=%d remembers=%d agent=%s market=%s price=%.4f spent=%d/%d\n",
+                     st.armed, st.pending, st.chainOk, st.remembers,
+                     st.agent.c_str(), st.market.c_str(), st.price, st.spentToday, st.dayLimit);
+  } else if (cmd.startsWith("key ")) {
+    String id = line.substring(4); id.trim();
+    String err;
+    telnet.logf(net.key(id, err) ? "  ▸ %s ok\n" : "  ✗ %s refused: ", id.c_str());
+    if (err.length()) telnet.logf("%s\n", err.c_str());
+    nextPoll = 0;
   } else if (cmd.startsWith("say ")) {
     String t = line.substring(4);
     telnet.logf("speaking: %s\n", t.c_str());
@@ -160,9 +212,9 @@ void onTelnetCommand(const String &line) {
     String u = line.substring(4); u.trim();          // original case — URLs matter
     settings.set(u.c_str(), settings.padToken);      // repoint backend, keep token + WiFi
     telnet.logf("backend URL → %s\n", settings.backendUrl);
-    String brain;
-    if (net.health(brain)) {
-      telnet.logf("  ✓ reachable (brain=%s)\n", brain.c_str());
+    PadState st;
+    if (net.pad(st)) {
+      telnet.logf("  ✓ reachable (%s, %s)\n", st.mode.c_str(), st.armed ? "armed" : "stopped");
       net.speak("Backend connected.", audio);
     } else {
       telnet.logf("  ✗ not reachable yet — check the IP/port and that the backend is running\n");
@@ -229,23 +281,47 @@ void setup() {
   Serial.printf("telnet:  telnet %s %u\n", WiFi.localIP().toString().c_str(), TELNET_PORT);
   Serial.printf("backend: %s  (token %s)\n", settings.backendUrl, settings.padToken[0] ? "set" : "none");
 
-  // Announce we're up — through the amp, from the backend's TTS.
-  led(0, 40, 0);                        // green = ready
-  String brain;
-  if (net.health(brain)) {
-    Serial.printf("backend ok (brain=%s)\n", brain.c_str());
-    if (!net.speak("Loom pad connected.", audio)) audio.beep(1320, 120);
+  // Announce we're up — through the amp, from the backend's own TTS, and say
+  // something true rather than a generic chime: whether it is armed, and what
+  // it still remembers. A pad that says "connected" while the store is wiped
+  // has told the operator nothing they needed.
+  if (net.pad(pad)) {
+    Serial.printf("backend ok (%s, %s)\n", pad.mode.c_str(), pad.armed ? "armed" : "stopped");
+    String hello = String("xorr pad connected. ") +
+                   (pad.armed ? "Armed, " : "Trading is stopped, ") +
+                   pad.market + " in hand." +
+                   (pad.remembers ? "" : " Memory is wiped — it will refuse anything but the smallest trade.");
+    if (!net.speak(hello, audio)) audio.beep(1320, 120);
   } else {
-    Serial.println("!! backend not reachable — check the IP in the portal (reset-wifi to change)");
+    Serial.println("!! backend not reachable — check the URL in the portal (reset-wifi to change)");
     audio.beep(880, 60); audio.beep(660, 120);   // fell-back chime
   }
-  ledReady();
-  Serial.println("Ready. Press an agent key, then hold K1 to talk.");
+  ledFromState();
+  Serial.println("Ready. An agent or market key sets the hand; BUY/SELL propose; ✓ executes.");
 }
 
 void loop() {
   matrix.scan(onKey);
   telnet.poll();
+
+  // One cheap poll a second keeps the light honest — armed, waiting on a ✓,
+  // or forgotten. Skipped while recording so the mic never stutters.
+  if (!recording && millis() >= nextPoll) {
+    nextPoll = millis() + PAD_POLL_MS;
+    PadState fresh;
+    if (net.pad(fresh)) pad = fresh; else pad.ok = false;
+  }
+  ledFromState();
+
+  // Held long enough? Fire the kill switch without waiting for the release, so
+  // the operator sees it stop under their finger.
+  if (killHeldSince && millis() - killHeldSince >= HOLD_TO_KILL_MS) {
+    killHeldSince = 0;
+    String err;
+    if (net.key("kill", err)) { telnet.logf("  ▸ TRADING STOPPED\n"); net.speak("Trading stopped.", audio); }
+    else telnet.logf("  ✗ kill refused: %s\n", err.c_str());
+    nextPoll = 0;
+  }
 
   if (recording && recBuf) {
     int16_t block[256];

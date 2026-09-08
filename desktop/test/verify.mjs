@@ -12,7 +12,7 @@
  * Exits non-zero on the first section that fails.
  */
 import { chainInfo, balances, pub, erc20Abi, fundOnFork } from "../main/chain.mjs";
-import { quote, swap, spendable } from "../main/dex.mjs";
+import { quote, swap, spendable, routeOf } from "../main/dex.mjs";
 import { TOKENS, UNISWAP_V3 } from "../main/tokens.mjs";
 import { Memory, DEFAULT_LIMITS, NO_MEMORY_LIMITS } from "../main/memory.mjs";
 import { tts, stt, pcmToWav, think, parseIntent, parseAmount } from "../main/voice.mjs";
@@ -28,6 +28,12 @@ import { fileURLToPath } from "node:url";
 // "Extreme SSD" has a space in it — URL.pathname would percent-encode it and
 // every spawned child would fail with ENOENT on its own cwd.
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+// The credentials live in the repo's own .env, one level above desktop/. Load it
+// here rather than making the caller remember to: a suite that reports "E crashed
+// — DEEPGRAM_API_KEY missing" reads as a broken product, when the only thing
+// missing is a shell export. Anything already in the environment wins.
+try { process.loadEnvFile(fileURLToPath(new URL("../../.env", import.meta.url))); } catch { /* no .env — the checks that need one say so */ }
 
 const B = process.env.PAD_URL || "http://localhost:8080";
 const TOKEN = process.env.PAD_TOKEN || "xorrpad-dev";
@@ -701,7 +707,12 @@ try {
     if (!up.ok) throw new Error(`the Base node never came back (${up.why}) — this section measures nothing without it`);
   }
   const k = (id) => j("/key", { method: "POST", body: JSON.stringify({ id }) });
-  const DB = process.env.SIBYL_DB || "/tmp/xorrpad-server.db";
+  // Ask the server which store it opened rather than assuming one. This guessed
+  // "/tmp/xorrpad-server.db" while the server had fallen back to
+  // ~/.sibyl-memory/memory.db, so every direct-Memory write in this section
+  // landed in a different database than the one under test — O7 then reported a
+  // working product as broken.
+  const DB = (await j("/health")).b?.memoryDb || process.env.SIBYL_DB || "/tmp/xorrpad-server.db";
   await j("/memory/wipe", { method: "POST" });
   await j("/memory/seed", { method: "POST", body: "{}" });
   await j("/arm", { method: "POST" });
@@ -886,6 +897,48 @@ try {
                    : `${cases.length}/${cases.length} — ETA resolves to ETH, unknown names are refused`);
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
+
+// ── Q. the route a fill claims is the route it took ─────────────────────────
+section("Q. the route is what the chain says");
+try {
+  {
+    const up = await waitForNode();
+    if (!up.ok) throw new Error(`the Base node never came back (${up.why}) — a fill cannot be measured`);
+  }
+  // `ROUTE` used to be `ONEINCH_API_KEY ? "1inch" : "uniswap"` while swap() only
+  // ever called Uniswap V3, so a key that was never read made every fill claim a
+  // route it had not taken. The label is now read back off the mined receipt.
+  await j("/memory/seed", { method: "POST", body: "{}" });
+  await j("/arm", { method: "POST" });
+  const k = (id) => j("/key", { method: "POST", body: JSON.stringify({ id }) });
+  await k("AERO");
+  await j("/size", { method: "POST", body: JSON.stringify({ usd: 25 }) });
+  await k("buy");
+  const done = await k("yes");
+  const fill = done.b?.fill;
+
+  chk("Q1 a real fill came back with a route and a hash",
+      Boolean(fill?.hash && fill?.route), fill ? `${fill.route} ${String(fill.hash).slice(0, 12)}…` : "no fill");
+
+  if (fill?.hash) {
+    // The receipt is the only source of truth about who executed this.
+    const rc = await pub.getTransactionReceipt({ hash: fill.hash });
+    chk("Q2 the claimed route is the contract the chain actually called",
+        routeOf(rc.to) === fill.route,
+        `receipt.to=${rc.to} -> ${routeOf(rc.to)}, fill said ${fill.route}`);
+    chk("Q3 that contract is Uniswap's SwapRouter02, the only router built",
+        String(rc.to).toLowerCase() === UNISWAP_V3.router.toLowerCase(),
+        `${rc.to}`);
+  }
+
+  // The specific regression: a key nothing reads must not change what is claimed.
+  const withKey = execFileSync(process.execPath,
+    ["-e", 'import("./main/dex.mjs").then(m => console.log(m.ROUTE))'],
+    { env: { ...process.env, ONEINCH_API_KEY: "set-but-unimplemented" },
+      cwd: ROOT, encoding: "utf8" }).trim();
+  chk("Q4 setting ONEINCH_API_KEY does not make the app claim 1inch",
+      withKey === "uniswap", `ROUTE with the key set = "${withKey}"`);
+} catch (e) { chk("Q crashed", false, String(e.message || e).slice(0, 92)); }
 
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             "   (2 skipped: credentials unavailable)\n");

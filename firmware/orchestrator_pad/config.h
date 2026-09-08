@@ -32,7 +32,7 @@ static const uint8_t COL_PINS[MATRIX_COLS] = {18, 17, 8, 14};  // columns revers
 #define TALK_COL 2                  // mic key's RAW matrix position (K13, mirrored → row0/col2)
 
 // ---- Backend URL default (editable in the captive portal, saved to NVS) ----
-// LAN:    http://<your-mac-ip>:8080
+// LAN:    http://<your-mac-ip>:8080            (the xorr-pad desk backend)
 // Remote: https://<machine>.<tailnet>.ts.net   (Tailscale Funnel — needs a token)
 #define DEFAULT_BACKEND_URL "http://192.168.1.100:8080"
 
@@ -41,7 +41,7 @@ static const uint8_t COL_PINS[MATRIX_COLS] = {18, 17, 8, 14};  // columns revers
 #define TELNET_PORT 23
 
 // ---- Captive-portal access point shown during provisioning ----
-#define PORTAL_AP_NAME "LoomPad-Setup"
+#define PORTAL_AP_NAME "xorr-pad-setup"
 #define PORTAL_AP_PASS ""           // "" = open AP; set 8+ chars for a locked one
 
 // ---- Onboard status LED: WS2812 addressable RGB on GPIO 48 ----
@@ -49,3 +49,10 @@ static const uint8_t COL_PINS[MATRIX_COLS] = {18, 17, 8, 14};  // columns revers
 
 // ---- Hands-free telnet `talk` test: record this many ms then send ----
 #define TELNET_TALK_MS 4000
+
+// ---- How often the pad asks the backend what is true (ms). One cheap GET.
+#define PAD_POLL_MS 1000
+
+// ---- The kill key is HELD, not tapped. A brush against a key that stops all
+//      trading is not acceptable, so it needs a deliberate hold. ----
+#define HOLD_TO_KILL_MS 600

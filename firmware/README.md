@@ -1,36 +1,73 @@
-# Orchestrator Pad — firmware
+# xorr-pad — firmware
 
-ESP32-S3 firmware for the hold-to-talk build. Select an agent with a key, hold
-the mic key and talk, hear the agent answer — all over Wi-Fi to the
-[backend](../backend) on your Mac. Wi-Fi and the backend address are set once
-through a captive portal and remembered in flash; **no recompile to change
-networks**, and **no potentiometer on this build** (the effort dial is omitted).
+ESP32-S3 firmware for the trading pad. Take a market in hand, propose a trade,
+confirm it with a physical ✓ — or hold the mic key and say it out loud. Wi-Fi
+and the backend address are set once through a captive portal and remembered in
+flash; **no recompile to change networks**.
 
 Sketch: [`orchestrator_pad/orchestrator_pad.ino`](orchestrator_pad/orchestrator_pad.ino).
 
+> **Nothing on this pad can move money on its own.** BUY and SELL raise a
+> decision; only ✓ executes it, only while the backend says it is armed, and the
+> same gate answers whether the key was pressed here or on screen. The firmware
+> holds no opinion about limits, positions or what is armed — it asks.
+
 ## What it does
 
-1. **Provision** — first boot (or hold **K1** at power-on) raises a Wi-Fi
-   access point, **`LoomPad-Setup`**. Join it from a phone/laptop; a captive
-   page lists nearby networks and asks for the **backend URL** and a **pad
-   token**. Save → the pad joins your Wi-Fi and stores everything in NVS.
-2. **Connect** — it starts a telnet debug server, checks the backend's
-   `/health`, and asks the backend to **speak "connected"** through the amp.
-3. **Run** — an agent key locks that agent in Loom (a handoff, visible in the
-   thread) and lights the LED its colour. Hold **K1** to record; release to send
-   the audio to that agent and play its spoken reply.
+1. **Provision** — first boot (or hold the reset key at power-on) raises an
+   access point, **`xorr-pad-setup`**. Join it; a captive page lists nearby
+   networks and asks for the **backend URL** and a **pad token**. The URL is
+   validated before it is saved — a pad that cheerfully stores `192.168.1.5`
+   with no scheme boots into a state where nothing works and the portal has
+   already closed.
+2. **Connect** — it starts a telnet console, polls `GET /pad`, and speaks
+   something true through the amp: whether it is armed, what is in hand, and
+   whether the store has been wiped.
+3. **Run** — keys drive the same backend the desk app drives. The status light
+   is the backend's state, not the firmware's guess.
+
+## The deck
+
+```
+  MOMENTUM   RISK       YIELD      DCA          ← who holds the baton
+  ETH        cbBTC      AERO       VIRTUAL      ← what is in hand
+  BUY        SELL       SCAN       PORTFOLIO    ← propose / run the book
+  ✓ CONFIRM  ✗ REFUSE   MIC        KILL         ← answer / speak / stop
+```
+
+Every id is exactly what `POST /key` accepts. There is no translation table: if
+an id is not real, the backend says so and the pad speaks the refusal.
+
+**KILL is held, not tapped** — 600 ms. A brush against the key that stops all
+trading is not acceptable.
+
+**MIC is hold-to-talk.** The recording goes to `POST /voice` as raw 16 kHz mono
+PCM; the spoken reply streams straight back to the amp. A spoken order lands as
+a decision waiting on a ✓, exactly like a key press.
+
+## The status light
+
+| State | Light |
+|---|---|
+| Backend unreachable | dark blue, pulsing — the pad is alone |
+| Trading stopped | hard red, steady |
+| A decision waits on a ✓ | amber, breathing |
+| Memory wiped | white, breathing — it will refuse anything but the smallest trade |
+| Armed | the agent's own colour, dim and steady |
+
+The order matters: the most dangerous state wins the light.
 
 ## Hardware & wiring
 
-ESP32-S3-DevKitC-1 (N16R8 — 16 MB flash / 8 MB PSRAM). No pot, no diodes.
+ESP32-S3-DevKitC-1 (**N16R8** — 16 MB flash / 8 MB PSRAM). No pot, no diodes.
 
 <div align="center">
-<img src="../docs/images/circuit.png" alt="Orchestrator Pad wiring diagram — 4×4 key matrix, INMP441 mic, MAX98357A amp + speaker, on an ESP32-S3-WROOM-1" width="920">
+<img src="../docs/images/circuit.png" alt="xorr-pad wiring diagram — 4×4 key matrix, INMP441 mic, MAX98357A amp + speaker, on an ESP32-S3-WROOM-1" width="920">
 </div>
 
 The full wiring at a glance: the 4×4 matrix (rows `G10–G13`, columns
-`G14/G8/G17/G18`), the INMP441 mic and MAX98357A amp on I2S, and the (optional)
-pot. The tables below are the same thing, cell by cell — all grounds are common.
+`G14/G8/G17/G18`) and the INMP441 mic and MAX98357A amp on I2S. The tables below
+are the same thing, cell by cell — all grounds are common.
 
 **Mic — INMP441 (I2S RX):** `VDD→3V3`, `GND→GND`, `L/R→GND`
 
@@ -60,67 +97,58 @@ no diodes needed):
 All pins live in [`orchestrator_pad/config.h`](orchestrator_pad/config.h) — change
 them there if your wiring differs.
 
-## Key map
+The 12-second record buffer is 384 KB and **lives in PSRAM**, so PSRAM must be
+enabled at build time. It is off in the default board config.
 
-Edit [`orchestrator_pad/agents.h`](orchestrator_pad/agents.h) to match your
-keycaps. As shipped:
+## Building
 
-| Key | Role | Agent | LED |
-|---|---|---|---|
-| **K1** | 🎤 hold to talk | — | red while recording |
-| K2 | agent | `claude-code` | amber |
-| K3 | agent | `opencode` | teal |
-| K4 | agent | `codex` | green |
-| K5 | agent | `grok-code` | white |
-| K6 | agent | `antigravity` | blue |
-| K7 | agent | `kiro` | purple |
+### From the command line
 
-K8–K14 are spare. K1 doubles as the **re-provision** key: hold it at power-on to
-wipe saved Wi-Fi and re-open the portal.
+```bash
+arduino-cli core install esp32:esp32
+arduino-cli lib install WiFiManager
 
-### Status-LED colours
+arduino-cli compile \
+  --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi \
+  firmware/orchestrator_pad
+```
 
-| Colour | Meaning |
-|---|---|
-| blue | booting |
-| cyan / magenta | connecting / setup portal open |
-| green | connected & ready |
-| agent colour | that agent is selected (idle) |
-| red | recording (or an error) |
-| amber | thinking (waiting on the reply) |
+**Those board options are not optional.** With the bare `esp32:esp32:esp32s3`
+default you get a 4 MB partition scheme — the binary lands at 90% of the
+available app space — and **PSRAM disabled**, which means the record buffer
+never allocates. With the options above it is 38% and the mic works.
 
-## Flashing
+To flash, add `--port /dev/cu.usbmodem*` and `upload` in place of `compile`.
 
-**Libraries** (Arduino IDE → Library Manager):
+### From the Arduino IDE
+
+**Libraries** (Library Manager):
 
 - **WiFiManager** by *tzapu* — the captive portal.
 - `ESP_I2S`, `WiFi`, `HTTPClient`, `Preferences` ship with the **arduino-esp32
   core 3.x** — nothing to install, but you do need core 3.x (Boards Manager →
   "esp32" by Espressif, ≥ 3.0).
 
-**Board settings** (Tools menu) — the three starred ones matter:
+**Board settings** (Tools menu) — the three starred ones are the same
+constraints as the FQBN above:
 
 - Board: **ESP32S3 Dev Module**
 - ⭐ **PSRAM: `OPI PSRAM`** — the record buffer is `ps_malloc`'d; without this it
   fails to allocate and the mic won't record.
 - ⭐ **USB CDC On Boot: `Enabled`** — so the Serial monitor works over USB-C.
 - ⭐ **Partition Scheme: `Huge APP (3MB No OTA/1MB SPIFFS)`** — the TLS stack
-  pushes the build to ~90 % of the *default* 1.3 MB app partition (it fits, but
-  barely). Huge APP drops it to ~37 %. Flash Size: `16MB`.
-
-> Verified: this compiles clean against **esp32 core 3.3.10 + WiFiManager 2.0.17**
-> for `esp32s3` (OPI PSRAM, USB-CDC) — 1.18 MB flash, 48 KB RAM, no warnings in
-> the sketch.
+  pushes the build to ~90 % of the *default* app partition (it fits, but
+  barely). Huge APP drops it to ~38 %. Flash Size: `16MB`.
 
 **Steps:**
 
 1. Open [`orchestrator_pad/orchestrator_pad.ino`](orchestrator_pad/orchestrator_pad.ino).
 2. Install WiFiManager, set the board options above, pick the port, **Upload**.
-3. First boot: join the **`LoomPad-Setup`** Wi-Fi from your phone. If the portal
+3. First boot: join the **`xorr-pad-setup`** Wi-Fi from your phone. If the portal
    doesn't pop up, browse to `http://192.168.4.1`.
 4. Pick your Wi-Fi, enter the **backend URL** and **pad token** (below), save.
-5. It joins, says "connected," and you're ready: **press an agent key, then hold
-   K1 to talk.**
+5. It joins, says what state the desk is in, and you're ready: **take a market,
+   press BUY, confirm with ✓** — or hold **K1** and say it.
 
 ### Backend URL & token
 
@@ -136,45 +164,70 @@ picks the transport**:
   `tailscale ip` (`100.x`) — a bare ESP32 can't route to a tailnet address.
 - **`https://…ts.net`** → TLS, with the Let's Encrypt root pinned (the pad
   verifies the cert, so the token can't be MITM'd). Set the same `PAD_TOKEN` on
-  the backend. See the [backend README](../backend/README.md#pointing-the-pad-at-it)
-  for the one-time `tailscale funnel 8080` setup.
+  the backend, which lives in [`desktop/`](../desktop).
 
-Change either later without reflashing: `reset-wifi` over telnet (or hold **K1**
-at power-on) re-opens the portal.
+A URL that cannot work is refused at the portal rather than saved — see
+`Provision::validUrl`. Change either later without reflashing: `reset-wifi` over
+telnet (or hold **K1** at power-on) re-opens the portal.
 
-## Telnet debug
+## Telnet console
 
 The S3's USB-CDC serial can be flaky, so the pad mirrors its logs to a telnet
 server and takes commands back — no cable needed:
 
 ```
-telnet <pad-ip> 23
+telnet <pad-ip>
 ```
 
-| Command | Does |
+| Command | What it does |
 |---|---|
-| `help` | list commands |
-| `status` | Wi-Fi / IP / RSSI / heap / PSRAM / backend / selected agent |
-| `ip` · `heap` · `agent` | quick reads |
-| `select <agent>` | lock an agent (same as pressing its key) |
-| `say <text>` | speak text through the amp (tests the backend + amp) |
-| `talk` | hands-free: record ~4 s and send (tests the mic without a key) |
-| `reset-wifi` | wipe Wi-Fi + settings and reboot into the portal |
-| `reboot` | restart |
+| `status` | Wi-Fi, heap, backend, and the pad's view of the backend |
+| `pad` | one raw `GET /pad` poll, printed |
+| `map` | the key map as currently compiled |
+| `key <id>` | press any key id by hand — the same route the caps use |
+| `say <text>` | speak a line through the amp |
+| `talk` | hands-free record for 4 s and send |
+| `url <u>` / `token <t>` | repoint the backend without re-provisioning Wi-Fi |
+| `reset-wifi` | forget the network and reopen the portal |
 
 `say hello` and `talk` are the fastest way to prove the audio path end to end.
+
+## Mapping a scrambled matrix
+
+[`keytest/`](keytest) is a standalone sketch — flash it *instead of* the main
+firmware. It has two modes over the serial monitor at 115200 baud:
+
+- **MAP** names a key, you press it, and it records which matrix cell actually
+  fired (`s` skips a dead one). At the end it prints a ready-to-paste `KEYMAP`,
+  so a scrambled or half-broken wiring job is fixed in software rather than
+  re-soldered.
+- **DIAG** is free-press: every press prints its cell, and a grid shows which
+  cells have ever fired (`*`) versus never (`.`). This is how you find a dead
+  switch.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | No serial output | Set **USB CDC On Boot: Enabled**, re-upload |
-| "PSRAM alloc failed" in the log | Set **PSRAM: OPI PSRAM** |
-| "backend not reachable" | Backend running? Right URL? On `http://`, use the Mac's **LAN IP** not `100.x`. Fix with `reset-wifi` |
+| "PSRAM alloc failed" in the log | Set **PSRAM: OPI PSRAM** (or `PSRAM=opi` in the FQBN) |
+| "backend not reachable" | Backend running? Right URL? On `http://`, use the Mac's **LAN IP** not `100.x`. Fix with `url <u>` or `reset-wifi` |
 | Works on LAN, fails on the `ts.net` URL | Is `tailscale funnel` running? Does `PAD_TOKEN` match on both sides? (a 401 means the token's wrong/blank) |
-| Portal never opens | Forget/rejoin `LoomPad-Setup`, or browse to `192.168.4.1` |
+| Portal never opens | Forget/rejoin `xorr-pad-setup`, or browse to `192.168.4.1` |
+| Portal won't take my URL | It needs a scheme: `http://192.168.1.20:8080`, not `192.168.1.20` |
 | Amp silent | Check `DIN/BCLK/LRC` wiring and that the amp's **SD pin is tied to 3V3** |
 | Mic captures nothing | Check `SCK/WS/SD`, and tie the INMP441 **L/R pin to GND** |
-| Keys wrong / swapped | Fix the pin arrays in `config.h` and the grid in `agents.h` |
+| Keys wrong / swapped | Flash `keytest`, run MAP mode, paste the map it prints |
 
-See the [backend README](../backend) for the server it talks to.
+## What is verified, and what needs the board
+
+Compiled and tested against the real backend on every run of
+[`desktop/test/verify.mjs`](../desktop/test/verify.mjs) section P: the `/pad`
+poll, `/speak`, the key ids, and the voice round trip.
+
+The URL validator is unit-tested. The captive-portal markup is checked in a
+browser.
+
+**Not verifiable without hardware:** Wi-Fi provisioning on the device, I2S mic
+capture, amp playback, matrix scanning, and NVS persistence across a power
+cycle. Those are marked untested rather than assumed.

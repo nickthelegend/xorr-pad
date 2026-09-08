@@ -251,7 +251,10 @@ export function createServer(mem) {
       if (url.pathname === "/health")
         return send(200, { ok: true, mode: IS_FORK ? "fork" : "mainnet", agent: state.agent,
                            armed: state.armed, pending: !!state.pending,
-                           market: state.market, sizeUsd: state.sizeUsd });
+                           market: state.market, sizeUsd: state.sizeUsd,
+                           // The store this process actually opened. Anything that
+                           // reads the same memory should ask rather than assume.
+                           memoryDb: state.memoryDb || null });
 
       if (url.pathname === "/memory" && req.method === "GET")
         return send(200, await mem.recallBrief());
@@ -702,6 +705,9 @@ async function warmFork() {
 export async function start() {
   const mem = new Memory();
   await mem.ping();
+  // Resolved once, at boot: Memory falls back to ~/.sibyl-memory/memory.db when
+  // SIBYL_DB is unset, and nothing downstream could tell which store it got.
+  try { state.memoryDb = (await mem.where())?.db || null; } catch { state.memoryDb = null; }
   const brief = await mem.recallBrief();
   // The baton remembers the size, so a restart does not silently reset it.
   if (Number.isFinite(brief.baton?.sizeUsd)) state.sizeUsd = brief.baton.sizeUsd;

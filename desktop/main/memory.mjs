@@ -50,6 +50,9 @@ export class Memory {
     });
   }
 
+  /** The store this bridge actually opened — resolved, never guessed. */
+  where() { return this.call("where"); }
+
   call(op, args = {}) {
     this.start();
     const id = ++this.seq;

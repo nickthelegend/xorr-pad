@@ -8,440 +8,475 @@ without reading anything else first. Every task names the file it touches and
 how you know it is done. Status tags: **DONE** · **IN PROGRESS** ·
 **NOT STARTED** · **BLOCKED**.
 
-Audited against the running code and live credentials on **2026-09-09**, not
-against the README. Where this plan contradicts an earlier one, this is right.
+Audited against the running code, the pushed repo and live credentials on
+**2026-09-09**. Every status here was verified, not remembered. Where this
+contradicts an earlier plan, this is right.
 
 ---
 
 ## 1. What "done" and "winning" actually mean
 
-This is not a generic trading bot. Three things make it the thing it is, and
-they are what it has to be judged on.
+This is a **Sibyl hackathon** entry (`SUBMISSION.md`). Memory being load-bearing
+is the headline criterion, so the goals are not generic.
 
 **G1 — Memory is load-bearing, provably.** Delete the store and the same
 keypress produces a different, worse decision. Not "we use a database" — the
-verdict visibly changes and the app says what it forgot. *Currently true and
-asserted by `desktop/test/loadbearing.test.mjs`.*
+verdict visibly changes and the app says what it forgot.
+*True. Asserted by `desktop/test/loadbearing.test.mjs` and by CI on every push;
+the last three runs are green.*
 
 **G2 — Every fill is real.** Real contracts, real signed transactions, real
-mined receipts, real balance movement. A fork is acceptable for a demo; a
-simulation is not. *Currently true on a Base mainnet fork; **not yet proven on
-mainnet**, which is the largest open item in this plan.*
+mined receipts, real balance movement. A fork is acceptable; a simulation is
+not. *True on a Base mainnet fork. **Never attempted on mainnet** — the largest
+open item here.*
 
-**G3 — It refuses, out loud, with its working shown.** A verdict arrives with
+**G3 — It refuses, out loud, with its working shown.** Verdicts arrive with
 numbered reasons drawn from memory. Refusals — thin liquidity, day budget spent,
-a learned rule, an unrecognised spoken ticker — are the product's voice, not
-error handling. *Currently true.*
-
-**Winning** additionally needs:
+a learned rule, an unrecognised spoken ticker, a stock that cannot exist on a
+fork — are the product's voice, not error handling. *True.*
 
 **G4 — The physical pad works in front of a judge.** Provisioned over its own
-captive portal, joined to the venue's Wi-Fi, driving the backend, speaking. A
-pad that only works in a screenshot loses to one on the table.
+captive portal, on venue Wi-Fi, driving the backend, speaking. A pad that only
+works in a screenshot loses to one on the table. *Firmware written and
+compiling; **never flashed**, and the copy in this repo is the wrong one — see
+Phase 6.*
 
 **G5 — One command starts it.** A judge should not need `anvil` in one terminal
-and `node` in another. There is a deliverable app.
+and `node` in another. *Not true today.*
 
 **G6 — Nothing about it is fake.** No mocks, no stubs, no fallback data, no
-route label that lies about how a fill happened.
+route label that lies about how a fill happened. *True except for the route
+label — see Phase 1.*
 
 ---
 
-## Phase 0 — Where it actually is today
-
-Verified 2026-09-09 by running it, not by reading it.
+## Phase 0 — Where it actually is, 2026-09-09
 
 | | Status |
 |---|---|
 | `desktop/test/verify.mjs` | **103 pass, 0 fail**, 2 skipped |
 | `loadbearing.test.mjs` | PASS — 3 of 4 verdicts change on a wipe |
-| Mocks / stubs / TODOs in `desktop/` | **1 grep hit, and it is a comment about a physical knob** — no code stubs |
-| Real fills on a Base fork | yes — crypto, forex, defi and AI assets, all mined |
+| CI (`.github/workflows/memory.yml`) | exists, pushed, **last 3 runs green** |
+| Code mocks / stubs / TODOs | **zero.** Every grep hit is the physical knob (a real snap-fit part with no encoder) or a CAD rendering term |
+| Real fills on a Base fork | yes — crypto, forex, defi, AI, all mined |
 | Real fills on **mainnet** | **never attempted** |
-| Deepgram STT + TTS | working, key valid |
-| Claude brain (`claude -p`, CLI subscription — no API cost) | **working** — E3 and B18b pass |
-| Groq brain | **BLOCKED — the key in `.env` returns `Invalid API Key`** |
-| 1inch | **not implemented.** `ROUTE` is a label only |
+| Deepgram STT + TTS | working |
+| Claude brain (`claude -p`, subscription — no API cost) | working, and now hardened |
+| Groq brain | **BLOCKED — key returns `Invalid API Key`** |
+| Tokenized equities | listed and verified on-chain; **not tradeable** |
+| 1inch / any aggregator | **not implemented.** `ROUTE` is a label only |
 | Desktop packaging | none — `npm start` runs Electron from source |
-| ESP32 pad firmware | rewritten for xorr-pad, compiles, **never flashed** |
+| Pad firmware **in this repo** | **stale, half-migrated** — see Phase 6 |
 
 ---
 
 ## Phase 1 — Make the route honest *(blocks G6)*
 
-The single worst thing in the codebase right now. `desktop/main/dex.mjs:18` sets
-`ROUTE = ONEINCH_KEY ? "1inch" : "uniswap"` and every fill is returned with
-`route: ROUTE` — but `swap()` only ever calls Uniswap V3 `exactInputSingle`.
-**Set `ONEINCH_API_KEY` and the app reports 1inch fills it did not make.**
+`desktop/main/dex.mjs:18` sets `ROUTE = ONEINCH_KEY ? "1inch" : "uniswap"` and
+every fill returns `route: ROUTE` — but `swap()` only ever calls Uniswap V3
+`exactInputSingle`. **Set `ONEINCH_API_KEY` and the app reports 1inch fills it
+did not make.** There is no 1inch call anywhere in `main/`.
 
-- **T1.1 — Stop the label lying.** *NOT STARTED*
-  In `desktop/main/dex.mjs`, make `ROUTE` reflect the code path actually taken.
-  Until T2.x lands, that means `ROUTE = "uniswap"` unconditionally, and
-  `ONEINCH_API_KEY` being set must not change any reported value.
-  **Done when:** with `ONEINCH_API_KEY` set, a fill returns `route: "uniswap"`,
-  and a new check in `verify.mjs` asserts the reported route matches the router
-  address the transaction was actually sent to.
+- **T1.1 — Stop the label lying.** *DONE — 2026-09-09*
+  Make `ROUTE` reflect the path actually taken. Until Phase 2 lands that is
+  `"uniswap"` unconditionally, and setting `ONEINCH_API_KEY` must not change any
+  reported value.
+  **Done when:** with the key set, a fill returns `route: "uniswap"`.
+  **Done.** `ROUTE` no longer branches on a key nothing reads. A fill's route is
+  now `routeOf(receipt.to)` — read back off the mined receipt, so it cannot
+  disagree with what executed. The file header, which described "two routes",
+  was rewritten to describe the one that exists.
 
-- **T1.2 — Assert route honesty in the suite.** *NOT STARTED*
-  Add to `verify.mjs`: read the mined receipt's `to` address and assert it maps
-  to the router named in `fill.route`.
+- **T1.2 — Assert route honesty in the suite.** *DONE — 2026-09-09*
+  In `verify.mjs`, read the mined receipt's `to` and assert it maps to the
+  router named in `fill.route`.
   **Done when:** deliberately mislabelling the route fails the check.
+  **Done — section Q, 4 checks, and mutation-tested both ways.** Q1 takes a real
+  fill; Q2 compares its claimed route against the mined receipt's `to`; Q3 pins
+  that address to Uniswap's SwapRouter02; Q4 spawns a fresh process with
+  `ONEINCH_API_KEY` set and asserts `ROUTE` is still `uniswap`.
+
+  Mutating `swap()` to claim `"1inch"` makes Q2 fail — *once the server is
+  restarted*. The first mutation run passed everything, because the suite drives
+  a long-lived process that had imported the pre-edit module: **the checks were
+  measuring a stale daemon.** Worth remembering as a property of this suite, not
+  a one-off.
 
 ---
 
-## Phase 2 — Aggregator routing: 1inch and the alternatives *(G2, G6)*
+## Phase 2 — Aggregator routing *(G2, G6 — and the only path to stocks)*
 
-> **Updated 2026-09-09 — this phase is now also what unlocks stocks.** Tokenized
-> equities are listed and priced (Phase 8) but their depth sits on a custom
-> concentrated-liquidity factory plus Uniswap v4, which this build cannot reach.
-> An aggregator is no longer a nice-to-have comparison exercise; it is the only
-> path to trading equities at all.
+Not a comparison exercise any more. Equity depth sits on a custom
+concentrated-liquidity factory plus Uniswap v4, neither of which this build can
+reach, so **an aggregator is the only way stocks ever trade** (Phase 8).
 
-### How 1inch actually works, and whether it can work here
-
-Researched 2026-09-09:
+### How 1inch works, researched 2026-09-09
 
 - **Endpoint:** `https://api.1inch.com/swap/v6.1/8453` for Base.
-- **Auth:** `Authorization: Bearer <API_KEY>`.
-- **Getting a key:** sign up at business.1inch.com, **complete KYC/KYB**, create
-  a project. Free "Dev" plan = 100k calls/month, 60 req/min.
-- **Mainnet only.** There is no Base testnet deployment.
+- **Auth:** `Authorization: Bearer <key>`.
+- **Getting a key:** business.1inch.com, **KYC/KYB required**, then a project.
+  Free Dev plan: 100k calls/month, 60 req/min.
+- **Mainnet only** — no Base testnet deployment.
 
-**It can still be used against a fork.** The technique: call the 1inch API,
-which quotes against *real* mainnet state and returns `tx.to`, `tx.data`,
-`tx.value`; then submit that calldata to the local anvil fork. It works as long
-as the fork block is near head, because the routes and pools the calldata
-references must exist in the forked state. This is the only honest way to
-exercise 1inch without spending money, and it is worth doing.
+It can still be exercised against a fork: the API quotes real mainnet state and
+returns `tx.to` / `tx.data` / `tx.value`, and that calldata can be submitted to
+anvil, provided the fork block is near head. That works for the six crypto
+markets. **It does not work for equities** — see Phase 8.
 
-**Alternatives, for comparison:**
-
-| Aggregator | Base | Auth | Key friction |
+| Aggregator | Base | Auth | Friction |
 |---|---|---|---|
-| **1inch v6.1** | yes | `Authorization: Bearer` | **KYC/KYB required** |
-| **0x Swap v2** | yes (`chainId=8453`) | `0x-api-key` + `0x-version: v2` headers | dashboard signup, no KYC found |
-| **Uniswap V3 direct** | yes | none | **already implemented and working** |
+| 1inch v6.1 | yes | `Authorization: Bearer` | **KYC/KYB** |
+| 0x Swap v2 | yes (`chainId=8453`) | `0x-api-key` + `0x-version: v2` | dashboard signup, no KYC found |
+| Uniswap V3 direct | yes | none | **already working** |
 
-**Recommendation to plan against:** 0x is the lower-friction aggregator and
-should be built first as the proof that the routing abstraction is real; 1inch
-slots into the same interface once the KYC'd key exists. Uniswap stays the
-no-key fallback and must remain the default.
+**Build 0x first** — lowest friction, proves the abstraction. 1inch slots into
+the same interface when the KYC'd key exists. Uniswap stays the no-key default.
 
-- **T2.1 — A router interface with more than one implementation.** *NOT STARTED*
-  New `desktop/main/routers/` with `uniswap.mjs` (move the existing code
-  unchanged) and a common shape: `quote(sell, buy, amountIn)` and
+- **T2.1 — Router interface with more than one implementation.** *NOT STARTED*
+  `desktop/main/routers/` with `uniswap.mjs` (existing code moved unchanged) and
+  a shared shape: `quote(sell, buy, amountIn)` and
   `buildTx(sell, buy, amountIn, slippage) -> {to, data, value}`.
-  **Done when:** `swap()` in `dex.mjs` picks a router by name and the Uniswap
-  path is byte-for-byte the behaviour it has today (suite still 103/103).
+  **Done when:** `swap()` picks a router by name and the Uniswap path behaves
+  exactly as today — suite still 103/103.
 
-- **T2.2 — 0x router.** *BLOCKED — needs `ZEROX_API_KEY`, absent from `.env`*
-  `routers/zerox.mjs` hitting `https://api.0x.org/swap/allowance-holder/quote`
-  with `chainId=8453`, headers `0x-api-key` and `0x-version: v2`.
-  **Done when:** a 0x-built transaction mines **on the fork** and moves the
-  expected balance, and `fill.route === "0x"` matches the receipt's `to`.
+- **T2.2 — 0x router.** *BLOCKED — needs `ZEROX_API_KEY`*
+  `routers/zerox.mjs` → `https://api.0x.org/swap/allowance-holder/quote`,
+  `chainId=8453`, headers `0x-api-key` and `0x-version: v2`.
+  **Done when:** a 0x-built tx mines on the fork, moves the expected balance,
+  and `fill.route === "0x"` matches the receipt's `to`.
 
 - **T2.3 — 1inch router.** *BLOCKED — needs `ONEINCH_API_KEY` (KYC/KYB)*
-  `routers/oneinch.mjs` against `/swap/v6.1/8453/swap`, plus its
-  `/approve/transaction` flow for allowances.
-  **Done when:** same bar as T2.2, with `fill.route === "1inch"`.
+  `routers/oneinch.mjs` → `/swap/v6.1/8453/swap` plus `/approve/transaction`.
+  **Done when:** same bar as T2.2 with `fill.route === "1inch"`.
 
-- **T2.4 — Best-execution comparison.** *NOT STARTED* (depends on T2.2 or T2.3)
-  Quote every configured router for the same size and route through the best,
-  recording the losers' quotes in the journal so the choice is auditable.
+- **T2.4 — Best-execution comparison.** *NOT STARTED* (needs T2.2 or T2.3)
+  Quote every configured router, route through the best, journal the losers'
+  quotes so the choice is auditable.
   **Done when:** a fill's journal entry names every router quoted and the margin
-  it won by. This is a genuinely strong demo of "measured, not asserted".
+  it won by.
 
-- **T2.5 — The wallet question, answered.** *NOT STARTED*
-  Document what "1inch wallet" means here: 1inch is an **aggregator API plus a
-  self-custody wallet app**; this project does not integrate a wallet app, it
-  holds a key and signs directly with viem. Write that distinction into
-  `README.md` so nobody expects WalletConnect.
-  **Done when:** the README says which of {aggregator API, wallet app, WalletConnect}
-  is and is not used, and why.
+- **T2.5 — Say what "1inch wallet" means here.** *NOT STARTED*
+  1inch is an aggregator API *and* a self-custody wallet app. This project holds
+  a key and signs with viem — no wallet app, no WalletConnect.
+  **Done when:** `README.md` states which of the three is and is not used.
 
 ---
 
-## Phase 3 — Mainnet, for real *(G2 — the biggest open item)*
+## Phase 3 — Mainnet *(G2 — the biggest open item)*
 
-**Everything in this phase spends real money and must not be started without an
-explicit go-ahead per step.** The plan is a ladder: each rung costs a few cents
-and proves one thing.
+**Everything here spends real money. Do not start a rung without an explicit
+go-ahead for that rung.**
 
-**Key handling — read before doing anything.** `AGENT_PRIVATE_KEY` is absent
-from `.env`. The owner puts it there **themselves**, in `.env` only, which is
-already gitignored. It must never be pasted into a chat, a commit, a log line
-or a terminal argument. Verified already: zero tracked files and zero commits in
-history contain a key. A dedicated hot wallet funded with **≤ $30** is the right
-vehicle — not a wallet holding anything that matters.
+**Key handling.** `AGENT_PRIVATE_KEY` is absent from `.env`. The owner puts it
+there themselves. Never in chat, a commit, a log line or a command argument.
+Verified 2026-09-09: zero tracked files and zero commits in history contain a
+key. Use a dedicated hot wallet funded with **≤ $30**.
 
-- **T3.1 — Pre-flight guards, re-read and confirmed.** *DONE*
-  `chain.mjs:24` requires `AGENT_PRIVATE_KEY` on mainnet; `chain.mjs:25` refuses
-  the anvil key on mainnet; `server.mjs:406` gates auto-execute on
-  `state.armed && IS_FORK`, so **automation can never fire on mainnet** — only a
-  human ✓. Verified by `C5` in the suite.
+- **T3.1 — Pre-flight guards.** *DONE*
+  `chain.mjs:24` requires the key on mainnet; `:25` refuses the anvil key on
+  mainnet; `server.mjs` gates auto-execute on `state.armed && IS_FORK`, so
+  **automation can never fire on mainnet** — only a human ✓.
 
-- **T3.2 — Mainnet read-only bring-up.** *NOT STARTED — needs a funded key*
-  `CHAIN_MODE=mainnet` with a real `RPC_URL`. No transaction. Confirm
-  `/portfolio` reads the real balance, `/pad` reports `mode: "mainnet"`, and the
-  header reads **Base MAINNET**.
-  **Done when:** the desk shows the real wallet's balances and nothing has been
-  signed.
+- **T3.2 — Read-only bring-up.** *NOT STARTED — needs a funded key*
+  `CHAIN_MODE=mainnet` + a real `RPC_URL`, no transaction. Confirm `/portfolio`
+  reads real balances, `/pad` reports `mode: "mainnet"`, header says **Base
+  MAINNET**.
 
-- **T3.3 — Rung 1: the smallest possible signed transaction.** *NOT STARTED*
-  One ~$1 USDC→ETH swap, confirmed by a human ✓.
-  **Done when:** a real Basescan link, `status: success`, and the balance delta
-  matches the quote within slippage.
+- **T3.3 — Rung 1: smallest signed transaction.** *NOT STARTED*
+  One ~$1 USDC→ETH swap behind a human ✓. **Done when:** a Basescan link,
+  `status: success`, balance delta matching the quote within slippage.
 
-- **T3.4 — Rung 2: the round trip.** *NOT STARTED* Sell it back. Records the
-  true cost of a round trip in fees — the number the book's "measured, not
-  profitable" claim rests on.
+- **T3.4 — Rung 2: round trip.** *NOT STARTED* — records the true fee cost the
+  book's "measured, not profitable" claim rests on.
 
-- **T3.5 — Rung 3: one fill per asset class.** *NOT STARTED*
-  ~$1 each into cbBTC, EURC, AERO, MORPHO, VIRTUAL. Proves the multi-asset claim
-  on the real chain, not just the fork.
+- **T3.5 — Rung 3: one fill per asset class.** *NOT STARTED* — ~$1 each into
+  cbBTC, EURC, AERO, MORPHO, VIRTUAL.
 
-- **T3.6 — Rung 4: the refusals, on mainnet.** *NOT STARTED*
-  Confirm on the real chain that the liquidity gate refuses a too-thin market,
-  the day budget refuses when spent, and a ✓ while disarmed is refused.
-  **Done when:** each refusal is observed on mainnet, costing nothing.
+- **T3.6 — Rung 4: the refusals, on mainnet.** *NOT STARTED* — thin liquidity,
+  day budget, ✓ while disarmed. Costs nothing.
 
-- **T3.7 — Gas and slippage sanity for mainnet.** *NOT STARTED*
-  The 30% gas margin and 1% slippage were tuned on a fork with no competition.
-  Re-check both against real Base conditions and record what was chosen.
+- **T3.7 — Gas and slippage for real conditions.** *NOT STARTED* — the 30% gas
+  margin and 1% slippage were tuned on an uncontested fork.
 
-- **T3.8 — A mainnet run log.** *NOT STARTED*
-  `MAINNET.md`: every transaction hash, what it proved, what it cost. This is
-  the artifact that answers "is any of this real?".
+- **T3.8 — `MAINNET.md` run log.** *NOT STARTED* — every hash, what it proved,
+  what it cost. The artifact that answers "is any of this real?".
 
 ---
 
 ## Phase 4 — LLM providers *(G3)*
 
 - **T4.1 — Claude via the CLI subscription.** *DONE*
-  `desktop/main/voice.mjs:101` runs `claude -p <prompt> --output-format text`
-  through `execFile`. **This is the subscription, not the API — it costs
-  nothing per call.** `BRAIN=claude` is already the default (`voice.mjs:30`).
-  Verified working: suite checks `E3` and `B18b` both pass.
+  `voice.mjs` runs `claude -p` through `execFile`. The subscription, not the
+  API — no per-call cost. Default brain. Verified by `E3` and `B18b`.
 
 - **T4.2 — Groq.** *BLOCKED — the key is invalid*
-  `GROQ_API_KEY` is present in `.env` but Groq answers
-  `{"error":{"code":"invalid_api_key"}}`. This is a **change from the earlier
-  diagnosis** of a project-level model block — the key is now simply not valid.
-  **Unblock:** mint a fresh key at console.groq.com and replace it in `.env`.
-  Nothing in the code needs changing; `brainGroq` is written and the model list
-  is configurable via `GROQ_MODEL`.
-  **Done when:** `BRAIN=groq node test/verify.mjs` passes `E4` instead of skipping.
+  `GROQ_API_KEY` is present but Groq returns
+  `{"error":{"code":"invalid_api_key"}}`. **This is not the project-level model
+  block recorded earlier — the key itself is now invalid.** Mint a new one at
+  console.groq.com. No code change needed; `brainGroq` and `GROQ_MODEL` exist.
+  **Done when:** `BRAIN=groq node test/verify.mjs` passes `E4` instead of
+  skipping.
 
-- **T4.3 — Make the brain robust to a partial brief.** *NOT STARTED*
-  `think()` throws `Cannot read properties of undefined` when handed a brief
-  missing fields — found by calling it directly during this audit. The real path
-  always passes a complete brief, so this is latent, but it is one refactor away
-  from being live.
-  **Done when:** `think()` with `{}` returns an honest answer instead of throwing.
+- **T4.3 — `think()` survives a partial brief.** *DONE* — it dereferenced
+  `brief.limits.allow.join()` unguarded and threw.
 
 - **T4.4 — Say which brain answered.** *NOT STARTED*
-  `/voice` should return an `x-brain` header and the desk should show it.
-  **Done when:** the UI names the brain that produced the answer.
+  `/voice` should return `x-brain` and the desk should show it.
+
+- **T4.5 — Fail open when the CLI is missing.** *NOT STARTED*
+  `/Volumes/Extreme SSD/Projects/xorr` (`claude/claude_brain.py`) degrades to a
+  deterministic fallback when `claude` is unavailable. Here, a missing binary
+  makes the spoken answer fail outright.
+  **Done when:** with `claude` off `PATH`, a spoken question still gets a
+  memory-grounded answer that says the brain is unavailable.
 
 ---
 
-## Phase 5 — The xorr-desktop deliverable *(G5)*
+## Phase 5 — The desktop deliverable *(G5)*
 
 There is no separate `xorr-desktop` project — the Electron app **is**
-`xorr-pad/desktop`, and it is not packaged. `npm start` runs it from source and
-`package.json` has no build tooling (`devDependencies` is empty).
+`xorr-pad/desktop`. `package.json` has `"start": "electron ."`, two
+dependencies and **empty `devDependencies`**: no build tooling at all.
 
-- **T5.1 — One command that starts everything.** *NOT STARTED*
-  Electron's `boot()` already starts the backend in-process, but **anvil is not
-  managed** — the fork must be started by hand first. Supervise `fork.sh` from
-  `main/electron.mjs`, wait for the RPC to answer, then bind.
-  **Done when:** with nothing running, `npm start` brings up fork, backend and
-  window, and shows a real readout.
+- **T5.1 — One command starts everything.** *NOT STARTED*
+  Electron's `boot()` starts the backend in-process but **does not manage
+  anvil** — the fork must be up first. Supervise `fork.sh` from
+  `main/electron.mjs`, wait for the RPC, then bind.
+  **Done when:** from nothing, `npm start` brings up fork, backend and window.
 
 - **T5.2 — Package it.** *NOT STARTED*
-  Add `electron-builder`, a macOS arm64 target, an icon from the printed pad's
-  blue, and a `dist` script.
+  `electron-builder`, macOS arm64 target, an icon in the printed pad's blue, a
+  `dist` script.
   **Done when:** `npm run dist` produces a `.app` that launches on a machine
   that has never run `npm install`.
 
-- **T5.3 — First-run experience.** *NOT STARTED*
-  Packaged, there is no `.env`. The app needs a first-run screen for the
-  Deepgram key, chain mode and pad token, written to `app.getPath("userData")`.
-  **Done when:** a fresh machine can go from download to a working desk without
-  a terminal.
+- **T5.3 — First-run setup.** *NOT STARTED*
+  Packaged, there is no `.env`. Needs a first-run screen for the Deepgram key,
+  chain mode and pad token, written to `app.getPath("userData")`.
 
-- **T5.4 — Ship the pad token to the pad.** *NOT STARTED*
-  The desk should show its LAN URL and token as a QR the pad's portal can be
-  pointed at, instead of typing an IP on a phone keyboard.
+- **T5.4 — Hand the pad its token.** *NOT STARTED*
+  Show the desk's LAN URL and token as a QR the pad's portal can consume,
+  instead of typing an IP on a phone keyboard.
 
 ---
 
-## Phase 6 — The pad on the desk *(G4)*
+## Phase 6 — The pad *(G4)* — **starts with a repo problem**
 
-Firmware is rewritten, compiles, and its backend contract is covered by suite
-section P. **It has never been flashed** — no ESP32 is connected to this
-machine (`/dev/cu.*` is empty).
+### T6.0 — The firmware in this repo is the wrong one. *DONE — 2026-09-09*
 
-- **T6.1 — Flash it.** *BLOCKED — needs the board plugged in*
-  `arduino-cli upload --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi --port /dev/cu.usbmodem*`
-  **Those board options are not optional** — the default FQBN gives a 4 MB
-  partition scheme (90% full) and **PSRAM disabled**, and the 12-second record
-  buffer is 384 KB of PSRAM.
+Half-migrated, and that is the literal status: the keymap already carries the
+trading ids (`buy sell yes no kill momentum risk yield dca`), while the network
+layer underneath it is still Loom's. Someone started this and stopped.
+
+`xorr-pad/firmware/` and `orchestrator-pad/firmware/` have **diverged**, and the
+one a judge clones is the worse one:
+
+| | `xorr-pad/firmware` (submitted) | `orchestrator-pad/firmware` |
+|---|---|---|
+| `agents.h` | 58 lines | 65 lines |
+| `net.h` | 201 lines | 253 lines |
+| `.ino` | 257 lines | 333 lines |
+| `GET /pad` poll | **missing** | yes |
+| LED driven by backend state | **missing** | yes |
+| Hold-to-kill | **missing** | yes |
+| Portal URL validation | **missing** | yes |
+| `x-action` handling | **missing** | yes |
+| `POST /select` (Loom) | **called at `.ino:151`** | removed |
+
+Verified against the running backend: **`POST /select` → 404.** The submitted
+firmware makes a live call to a route that does not exist, and `health()` parses
+a `brain` field the backend never returns.
+
+And the divergence has a second half: `orchestrator-pad/backend/` — tracked and
+pushed — is still **Loom's** backend (`server.mjs` serving `/select`, plus
+`loom.mjs` and `config.mjs`, 47 Loom references, zero xorr). That is the server
+the stale firmware was written against, sitting one directory from the firmware
+that no longer talks to it.
+
+**Done when:** `xorr-pad/firmware/` is the rewritten firmware, it compiles with
+the FQBN below, `grep -ri "select\|brain" firmware/` finds no live Loom call,
+one repo is the source of truth and the other references it, and the Loom
+backend is gone or plainly marked as the previous product.
+
+**Done, and it was a merge rather than the copy this plan first called for.**
+Copying the rewrite wholesale would have destroyed real work: the submitted copy
+held the *newer* `keytest` (258 lines — a guided MAP mode that names each key,
+records which cell actually fired and prints a pasteable KEYMAP; the rewrite had
+the older 96-line wiring tester) and the *only* wiring tables and troubleshooting
+in either repo. The rewrite's README promised tables "further down" that were not
+there. So: the six sketch files came from the rewrite, `keytest` stayed, and the
+README is a merge of both — 233 lines, zero Loom references, every link
+resolving.
+
+Verified: `POST /select` is gone, the roles that called it now just `sendKey`;
+`net.pad()`, `ledFromState`, `HOLD_TO_KILL_MS`, `validUrl`, `PadState` and
+`X-Action` are all present; both sketches compile for the S3 at the mandatory
+FQBN — **1,198,327 bytes, 38% of program storage**, matching what the README
+claims; and the suite is **103/103**. The two remaining "Loom" strings are a
+comment describing the STT→brain→TTS pipeline and the NVS-namespace migration
+note, both accurate.
+
+- **T6.1 — Flash it.** *BLOCKED — no board connected* (`/dev/cu.*` empty)
+  ```
+  arduino-cli upload --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi --port /dev/cu.usbmodem*
+  ```
+  **Those options are not optional.** The bare default gives a 4 MB partition
+  scheme (binary at 90% of app space) and **PSRAM disabled**, and the 12-second
+  record buffer is 384 KB of PSRAM.
 
 - **T6.2 — Provision over the captive portal.** *BLOCKED — needs hardware*
-  Join `xorr-pad-setup`, enter the desk's URL and token, save, confirm it joins
-  and persists across a power cycle.
+  Join `xorr-pad-setup`, enter URL and token, confirm it joins and survives a
+  power cycle.
 
 - **T6.3 — Walk every key on hardware.** *BLOCKED — needs hardware*
-  All 16 positions register with no ghosting; the status light matches the
-  desk's state in all five conditions; KILL needs its 600 ms hold.
+  16 positions, no ghosting; the light matches the desk in all five states;
+  KILL needs its 600 ms hold.
 
 - **T6.4 — Hold-to-talk on hardware.** *BLOCKED — needs hardware*
-  Speak an order, confirm the transcript, hear the reply through the amp, and
-  confirm it lands as a decision awaiting a ✓.
 
 - **T6.5 — Print the trading keycaps.** *BLOCKED — needs the printer*
-  The caps currently on the board are from the previous build. The legends are
-  in `cad/part_caps.py`.
+  Legends are in `cad/part_caps.py`; the caps on the board are the old build's.
 
-- **T6.6 — Fix the dead switch.** *BLOCKED — needs the bench*
-  A known-dead switch at r2c1; row 3 unverified.
+- **T6.6 — Fix the dead switch.** *BLOCKED — needs the bench* (r2c1; row 3
+  unverified).
 
 ---
 
 ## Phase 7 — Security *(G6)*
 
 - **T7.1 — Repo is clean.** *DONE*
-  Verified 2026-09-09: zero tracked files and **zero commits in history**
-  contain a live key or the leaked PAT; only an empty-placeholder `.env.example`
-  is tracked; `.gitignore` covers `.env` and `*.bak`.
+  Verified 2026-09-09: zero tracked files and zero commits in history contain a
+  live key or the leaked PAT; only an empty-placeholder `.env.example` is
+  tracked; `.gitignore` covers `.env` and `*.bak`.
 
 - **T7.2 — Rotate the exposed credentials.** *BLOCKED — owner action only*
-  The Deepgram key and the GitHub PAT were pasted into a chat transcript. They
-  never reached git, but a transcript is an exposure. Rotate at
-  console.deepgram.com and github.com/settings/tokens. **No agent can do this —
-  it needs the owner signed in.** Groq is moot: that key is already invalid.
+  The Deepgram key and a GitHub PAT were pasted into a chat transcript. They
+  never reached git, but a transcript is an exposure. **No agent can do this.**
+  Groq is moot — that key is already invalid.
 
-- **T7.3 — Mainnet key hygiene.** *NOT STARTED* (gates Phase 3)
-  A dedicated hot wallet, ≤ $30, `AGENT_PRIVATE_KEY` in `.env` only, entered by
-  the owner. Never in chat, a commit, a log or a command argument.
+- **T7.3 — Mainnet key hygiene.** *NOT STARTED* — gates Phase 3.
 
----
-
-## The honest gap list
-
-Every gap, tied to the task it blocks. Ordered by how much it costs to leave.
-
-| # | Gap | Evidence | Blocks |
-|---|---|---|---|
-| **1** | **The route label lies.** `ROUTE` reports `"1inch"` whenever `ONEINCH_API_KEY` is set, but `swap()` only ever calls Uniswap V3. No 1inch API call exists anywhere in `main/`. | `dex.mjs:18` vs `dex.mjs:198–272`; `grep -rn "api.1inch" main/` → nothing | T1.1, G6 |
-| **2** | **Not one mainnet transaction has ever been signed.** Every fill in this project is on a fork. G2's strongest claim is untested where it counts. | `CHAIN_MODE` defaults to `fork`; no `MAINNET.md`; `AGENT_PRIVATE_KEY` absent | Phase 3, G2 |
-| **3** | **No aggregator is implemented at all** — Uniswap direct is the only router. No best-execution comparison exists. | `main/` contains one router | Phase 2 |
-| **4** | **The Groq key is invalid**, not permission-blocked as previously recorded. | live probe → `{"code":"invalid_api_key"}` | T4.2 |
-| **5** | **The Electron app is not packaged and does not manage anvil.** No `electron-builder`, empty `devDependencies`, `npm start` assumes a fork is already up. | `desktop/package.json` | T5.1, T5.2, G5 |
-| **6** | **The firmware has never run.** Compiles clean, contract covered by suite section P, but provisioning, I2S, matrix and NVS are all unverified. | no `/dev/cu.*`; PADPLAN section D | Phase 6, G4 |
-| **7** | **`think()` throws on a partial brief.** Latent — the real path always passes a full one. | direct call during this audit | T4.3 |
-| **8** | **Exposed credentials are not rotated.** Not in git, but in a transcript. | T7.1 verification | T7.2 |
-| **9** | **The fork stalls under sustained load.** ~20 real swaps plus a concurrent burst can wedge the free public RPC. Mitigated (pinned block, boot warming, one fewer quote per swap, anvil retries) but not removed. | suite history | Phase 3 robustness |
-| **10** | **No `ZEROX_API_KEY` or `ONEINCH_API_KEY`.** 1inch additionally needs KYC/KYB, which is days, not minutes. | `.env` | T2.2, T2.3 |
-
-**Not gaps, recorded so nobody re-opens them:** there are **no mocks, stubs,
-fake data or TODOs** in `desktop/` — the single grep hit is a comment about the
-pad's physical knob being a non-functional part. The suite is 103/103. Memory is
-load-bearing and asserted. The Claude brain runs on the CLI subscription and
-costs nothing per call.
+- **T7.4 — The brain has no tools.** *DONE*
+  The prompt embeds a Deepgram transcript and the pad's own journal, and the CLI
+  was invoked with **default tool access** on a machine holding a funded wallet.
+  Now `--disallowed-tools Bash Read Edit Write Glob Grep WebSearch WebFetch Task
+  NotebookEdit`; `--dangerously-skip-permissions` is safe only because of that.
 
 ---
 
-## Suggested order
+## Phase 8 — Tokenized equities
 
-1. **T1.1 + T1.2** — an hour, and it removes the only dishonest thing in the code.
-2. **T4.2** — a new Groq key is five minutes and unskips a suite check.
-3. **T5.1 + T5.2** — the deliverable a judge actually opens.
-4. **Phase 3, rungs 1–2** — the claim that separates this from every simulated
-   trading demo. Needs the owner's go-ahead and a funded hot wallet.
-5. **T2.1 + T2.2** — real routing, once a 0x key exists.
-6. **Phase 6** — the moment the board is on the desk.
+Coinbase tokenized stocks went live natively on Base on 24 August 2026, each
+backed 1:1 by a share at Alpaca and carrying dividends and voting rights. They
+are the strongest answer to "so it trades memecoins?".
 
+- **T8.1 — List them, verified on-chain.** *DONE*
+  `desktop/main/stocks.mjs` — ten tickers with addresses, `decimals = 8` and
+  measured depth, each verified against real Base mainnet by reading `symbol()`
+  and `decimals()` back. Three announced tickers (COINc, INTCc, CRCLc) have no
+  Base pool and are listed as unlisted with that reason.
 
----
+- **T8.2 — Show them with marks.** *DONE* — brand-coloured monograms drawn
+  locally; no logo files and no CDN, because the fonts are self-hosted for venue
+  wi-fi and the wordmarks are not ours to ship.
 
-## Phase 8 — Tokenized equities *(added 2026-09-09)*
+- **T8.3 — Refuse precisely.** *DONE* — two refusals, never conflated.
 
-Coinbase tokenized stocks went live natively on Base on 24 August 2026. Each
-token is backed 1:1 by a share held at Alpaca, a regulated broker, and carries
-dividends and voting rights. They are the strongest possible answer to "so it
-trades memecoins?" — the same pad, the same gate, buying Nvidia.
-
-- **T8.1 — List the equities, verified on-chain.** *DONE*
-  `desktop/main/stocks.mjs`. Ten tickers with addresses, `decimals = 8` and
-  measured pool depth, **each verified against real Base mainnet** — `symbol()`
-  and `decimals()` read back and compared, not copied from a blog. Three more
-  (COINc, INTCc, CRCLc) were announced but have no Base pool as of 2026-09-09
-  and are listed as unlisted with that reason.
-
-- **T8.2 — Show them, with marks.** *DONE*
-  A Stocks section on the Markets screen: brand-coloured monogram marks drawn
-  locally (no logo files, no CDN — the fonts are self-hosted for venue wi-fi and
-  a logo CDN would undo that, and the wordmarks are not ours to ship), company
-  name, real depth, and a "not yet" tag.
-
-- **T8.3 — Refuse precisely.** *DONE*
-  Two different refusals, never conflated: on a fork, "B20 token implemented by
-  the Base node, a fork returns OpcodeNotFound"; on mainnet without a router,
-  "depth is on a CL pool this build cannot route to — needs an aggregator key".
-
-- **T8.4 — Route to them.** *BLOCKED — needs an aggregator key (T2.2 / T2.3)*
+- **T8.4 — Route to them.** *BLOCKED — needs Phase 2 **and** Phase 3*
   **Done when:** a real equity fill mines on mainnet and the balance moves.
 
 - **T8.5 — Price them on the strip.** *NOT STARTED*
-  The equity rows show "—" because `feedPrices()` is Binance-backed and these
-  are not Binance symbols. Read the price from the pool, or from the aggregator
-  quote once T8.4 lands.
+  Equity rows show "—" because `feedPrices()` is Binance-backed and these are
+  not Binance symbols. Read from the pool, or from the aggregator quote.
 
-### The finding that makes Phase 8 hard, and it is not obvious
+### The finding that makes this phase hard
 
-`eth_getCode` on a tokenized stock returns **a single byte, `0xef`**. There is
-no program there. These are **B20 tokens implemented by the Base node itself**,
-and the same call to the same address on 2026-09-09 gives:
+`eth_getCode` on a tokenized stock returns **one byte, `0xef`** — there is no
+program there. These are **B20 tokens implemented by the Base node itself**.
+The same call to the same address, 2026-09-09:
 
 ```
 real Base mainnet    symbol() -> "NVDAc"
 local anvil fork     symbol() -> EVM error: OpcodeNotFound
 ```
 
-anvil is vanilla revm. It forks *state*, and the behaviour here lives in the
-node, not in state. **Tokenized equities cannot be traded on a fork at any
-block.** Every stock trade this project ever makes will be a real mainnet
-transaction with real money. That moves Phase 3 from "the strongest claim" to
-"a hard prerequisite for the stocks demo".
+anvil forks *state*; this behaviour is not in state. **Equities cannot be traded
+on a fork at any block.** Every stock trade will be a real mainnet transaction,
+which makes Phase 3 a hard prerequisite rather than a stretch goal.
 
 ---
 
-## Phase 9 — The Claude connector, hardened *(added 2026-09-09)*
+## Phase 9 — Submission *(G1 — the thing actually being judged)*
 
-- **T9.1 — Lock the brain out of every tool.** *DONE*
-  `desktop/main/voice.mjs`. The prompt embeds a Deepgram transcript and the
-  pad's own journal — text the operator spoke and text other code wrote — and
-  the CLI was being invoked with **default tool access** on a machine that holds
-  a funded wallet. It now runs `--disallowed-tools Bash Read Edit Write Glob
-  Grep WebSearch WebFetch Task NotebookEdit`, and
-  `--dangerously-skip-permissions` is safe *only because* of that: headless with
-  no tty, a permission prompt would hang until the timeout and read as a dead
-  brain.
+- **T9.1 — `SUBMISSION.md` is stale.** *NOT STARTED*
+  It describes an earlier project. Word counts in the current file: **stocks 0,
+  equities 0, ESP32 0, firmware 0.** It does not mention the physical pad, the
+  tokenized equities, the desk rebuild or the 103-check suite — the four most
+  impressive things in the repo.
+  **Done when:** it covers the pad, the equities and the honest mainnet status,
+  without weakening the memory walkthrough that is the actual judging criterion.
 
-- **T9.2 — Parse the envelope, not the last stdout line.** *DONE*
-  `--output-format json` with `is_error` honoured. The old code took the last
-  non-empty stdout line, which would have turned a CLI error message into the
-  pad's spoken answer.
+- **T9.2 — The README states something this project disproved.** *NOT STARTED*
+  `README.md:42` — *"there is no tokenized equity on Base with real AMM
+  liquidity … so the pad will not pretend to quote them."* True when written,
+  **false now**: Phase 8 verified ten tickers on real Base mainnet carrying
+  $599k–$2.23M of depth each. The front-door document denies the feature the
+  app ships, and offers to add "one row in `markets.mjs`" for a case
+  `stocks.mjs` already handles in full.
+  Two more: `:163` checks off `firmware` as done when the firmware in this repo
+  is the stale one, and `:149` sends the reader into that same firmware for the
+  wiring.
+  **Done when:** the stocks paragraph says what `stocks.mjs` measured — including
+  the B20/fork constraint — and no checkbox claims something untested.
 
-- **T9.3 — Pin the model.** *DONE* — `CLAUDE_MODEL`, default `claude-opus-5`.
+- **T9.3 — Demo script.** *NOT STARTED*
+  A written order of operations for a 3-minute demo: propose → verdict with
+  numbered reasons → ✓ → mined fill → wipe → same key, different verdict →
+  re-teach. This is the run of show, and it should be rehearsed against a
+  stopwatch rather than improvised.
 
-- **T9.4 — `think()` no longer throws on a partial brief.** *DONE*
-  It dereferenced `brief.limits.allow.join()` unguarded. Closes gap 7.
+---
 
-Ported from `/Volumes/Extreme SSD/Projects/xorr` (`claude/claude_brain.py`,
-`tui/brain.py`), which had solved this properly already. That project also
-fails open to a deterministic fallback when the CLI is unavailable — worth
-taking next (**T9.5, NOT STARTED**): right now a missing `claude` binary makes
-the spoken answer fail rather than degrade.
+## The honest gap list
+
+Ordered by what it costs to leave. Every gap tied to the task it blocks.
+
+| # | Gap | Evidence | Blocks |
+|---|---|---|---|
+| ~~**1**~~ | **CLOSED 2026-09-09.** The submitted firmware called `POST /select` (404) and lacked `/pad`, LED-from-state, hold-to-kill and URL validation. Merged from the rewrite — keeping the submitted copy's newer `keytest` and its wiring tables, which the rewrite had lost. Compiles at 38% of app space; suite 103/103. | `arduino-cli compile`; route probe | ~~T6.0~~ |
+| **2** | **Not one mainnet transaction has ever been signed.** Every fill is on a fork. G2's strongest claim is untested where it counts, and Phase 8 cannot start without it. | `CHAIN_MODE` defaults to fork; no `MAINNET.md`; `AGENT_PRIVATE_KEY` absent | Phase 3, G2 |
+| ~~**3**~~ | **CLOSED 2026-09-09.** `ROUTE` branched on `ONEINCH_API_KEY` while only Uniswap was ever called. Route is now derived from the mined receipt; suite section Q asserts it, mutation-tested. | `dex.mjs`; verify.mjs section Q | ~~T1.1, T1.2~~ |
+| **4** | **No aggregator implemented**, so equities are listed but untradeable and there is no best-execution story. | one router in `main/` | Phase 2, T8.4 |
+| **5** | **Both documents a judge reads are wrong, in opposite directions.** `SUBMISSION.md` omits the work — zero mentions of stocks, equities, ESP32 or firmware. `README.md:42` goes further and *denies* it: "there is no tokenized equity on Base with real AMM liquidity", against ten tickers this project verified on mainnet. | word counts; `stocks.mjs` vs `README.md:42` | T9.1, T9.2, G1, G6 |
+| **6** | **The Electron app is not packaged and does not manage anvil.** Empty `devDependencies`; `npm start` assumes a fork is already up. | `desktop/package.json` | T5.1, T5.2, G5 |
+| **7** | **The firmware has never run.** Compiles and its backend contract is covered, but provisioning, I2S, matrix and NVS are unverified. | no `/dev/cu.*` | Phase 6, G4 |
+| **8** | **The Groq key is invalid**, not permission-blocked as previously recorded. | live probe | T4.2 |
+| **9** | **Equity prices show "—".** `feedPrices()` is Binance-backed; these are not Binance symbols. | `stocks.mjs` + the Markets screen | T8.5 |
+| **10** | **The brain does not fail open.** A missing `claude` binary makes the spoken answer fail rather than degrade. | `voice.mjs` | T4.5 |
+| **11** | **Exposed credentials not rotated.** Not in git, but in a transcript. | T7.1 verification | T7.2 |
+| **13** | **A whole Loom backend still ships in `orchestrator-pad`**, tracked and pushed: `server.mjs` serves `/select`, and `loom.mjs`/`config.mjs` carry 47 Loom references between them. Zero mentions of xorr. It is what the stale firmware was written against, and it makes the repo look like two products. | route + grep of `orchestrator-pad/backend` | T6.0 |
+| **12** | **The fork stalls under sustained load.** ~20 real swaps plus a concurrent burst can wedge the free public RPC. Mitigated (pinned block, boot warming, one fewer quote per swap, anvil retries) but not removed. | suite history | Phase 3 robustness |
+
+**Not gaps, recorded so nobody re-opens them.** There are **no code mocks, stubs,
+fake data or TODOs** anywhere in the project: every grep hit is the physical
+knob — a real snap-fit part deliberately built without an encoder — or a CAD
+rendering term. The suite is 103/103 and CI is green on the last three pushes.
+Memory is load-bearing and asserted on every push. The Claude brain runs on the
+CLI subscription at no per-call cost, with every tool disallowed.
+
+---
+
+## Suggested order
+
+1. **T6.0** — the submitted repo currently ships firmware that cannot talk to
+   its own backend. Nothing else is worth doing while that is true.
+2. **T1.1 + T1.2** — an hour, and it removes the only dishonest line of code.
+3. **T9.1 + T9.2** — one document omits two thirds of the work; the other
+   denies a feature that ships. The second is a correctness bug in prose and is
+   cheaper to fix than any code here.
+4. **T4.2** — a new Groq key is five minutes and unskips a check.
+5. **T5.1 + T5.2** — the thing a judge actually opens.
+6. **Phase 3, rungs 1–2** — needs a go-ahead and a funded hot wallet. This is
+   what separates the project from every simulated trading demo.
+7. **T2.1 + T2.2**, then **T8.4** — real routing, then stocks actually trade.
+8. **Phase 6** — the moment the board is on the desk.

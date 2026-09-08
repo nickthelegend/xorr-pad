@@ -8,9 +8,26 @@
 #include "audio.h"
 #include "certs.h"
 
-// Talks to the backend — the Mac's LAN IP over plain HTTP, or a Tailscale Funnel
-// URL over HTTPS. The backend does STT → Loom/LLM → TTS and hands back raw 16 kHz
-// PCM with a Content-Length, which we stream straight to the amp as it downloads.
+// Everything the pad reads back from the xorr-pad backend in one poll. This is
+// the whole model the firmware holds: it keeps no opinion of its own about what
+// is armed or what is in hand, because the backend is the only thing that knows.
+struct PadState {
+  bool   ok        = false;   // did the poll succeed at all
+  bool   armed     = false;
+  bool   pending   = false;   // a decision is waiting on a ✓
+  bool   chainOk   = false;
+  bool   remembers = false;   // the store still has limits — false after a wipe
+  String agent, market, mode, verdict;
+  float  price      = 0;
+  float  unrealised = 0;      // NaN-free: `hasPnl` says whether it means anything
+  bool   hasPnl     = false;
+  int    spentToday = -1, dayLimit = -1;
+};
+
+// Talks to the xorr-pad backend — the Mac's LAN IP over plain HTTP, or a
+// Tailscale Funnel URL over HTTPS. The backend runs the gate, signs the swaps
+// and does STT → brain → TTS, handing back raw 16 kHz PCM with a Content-Length
+// that we stream straight to the amp as it downloads.
 //
 // Transport is chosen per request from the saved URL's scheme (settings.secure()):
 // https → WiFiClientSecure pinned to ISRG Root X1 (certs.h); http → WiFiClient.
@@ -20,64 +37,72 @@ public:
   void begin(Settings *s) { _s = s; }
   bool wifiUp() { return WiFi.status() == WL_CONNECTED; }
 
-  // GET /health — true if the backend answers. Fills `brain` ("loom"/"llm").
-  bool health(String &brain) {
+  // GET /pad — one cheap poll carrying everything the LED and the caps need.
+  // Deliberately does not touch the chain on the server side, so a Base hiccup
+  // dims nothing here.
+  bool pad(PadState &st) {
     HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
-    if (!beginReq(http, plain, tls, url("/health"))) return false;
+    if (!beginReq(http, plain, tls, url("/pad"))) return false;
     auth(http);
-    http.setTimeout(10000);
+    http.setTimeout(8000);
     int code = http.GET();
     if (code != 200) { http.end(); return false; }
-    String body = http.getString();
+    String b = http.getString();
     http.end();
-    brain = jsonStr(body, "brain");
+
+    st.ok        = true;
+    st.armed     = jsonBool(b, "armed");
+    st.pending   = jsonBool(b, "pending");
+    st.chainOk   = jsonBool(b, "chainOk");
+    st.remembers = jsonBool(b, "remembers");
+    st.agent     = jsonStr(b, "agent");
+    st.market    = jsonStr(b, "market");
+    st.mode      = jsonStr(b, "mode");
+    st.verdict   = jsonStr(b, "verdict");
+    st.price      = jsonNum(b, "price", 0);
+    st.spentToday = (int)jsonNum(b, "spentToday", -1);
+    st.dayLimit   = (int)jsonNum(b, "dayLimit", -1);
+    st.hasPnl     = hasField(b, "unrealised") && !jsonNull(b, "unrealised");
+    st.unrealised = st.hasPnl ? jsonNum(b, "unrealised", 0) : 0;
     return true;
   }
 
-  // POST /select {agent} — lock the agent in Loom.
-  // POST /key {"id": "..."} — every press on the deck goes here. The desk app
-  // decides what it means (select an agent, propose a trade, answer yes/no,
-  // panic), so the pad stays dumb and the mapping can change without a reflash.
-  bool key(const String &id) {
+  // POST /key {id} — the whole deck goes through one route. `err` carries the
+  // backend's own refusal so the pad can show it rather than inventing one.
+  bool key(const String &id, String &err) {
     HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
-    if (!beginReq(http, plain, tls, url("/key"))) return false;
+    if (!beginReq(http, plain, tls, url("/key"))) { err = "no route to the backend"; return false; }
     auth(http);
     http.addHeader("Content-Type", "application/json");
-    http.setTimeout(20000);
+    http.setTimeout(45000);          // a ✓ signs and waits for a mine
     int code = http.POST(String("{\"id\":\"") + id + "\"}");
+    String body = (code > 0) ? http.getString() : String();
     http.end();
-    return code == 200;
+    if (code != 200) { err = code > 0 ? ("backend said " + String(code)) : "no answer"; return false; }
+    // 200 with ok:false is a refusal, not a failure — "disarmed", "nothing
+    // pending", "not in the allowlist". Hand the words straight through.
+    if (body.indexOf("\"ok\":false") >= 0) { err = jsonStr(body, "error"); return false; }
+    return true;
   }
 
-  bool select(const String &agent) {
+  // POST /voice (raw PCM) → stream the spoken reply to the amp. There is no
+  // agent query: the backend already knows who holds the baton, and a pad that
+  // second-guessed it could trade through the wrong one.
+  bool talk(const int16_t *pcm, size_t samples,
+            Audio &audio, String &transcript, String &reply, String &action) {
     HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
-    if (!beginReq(http, plain, tls, url("/select"))) return false;
-    auth(http);
-    http.addHeader("Content-Type", "application/json");
-    http.setTimeout(12000);
-    int code = http.POST(String("{\"agent\":\"") + agent + "\"}");
-    http.end();
-    return code == 200;
-  }
-
-  // POST /voice (raw PCM) → stream the spoken reply to the amp.
-  // Fills transcript/reply from response headers. Returns true on 200.
-  bool talk(const int16_t *pcm, size_t samples, const String &agent,
-            Audio &audio, String &transcript, String &reply) {
-    HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
-    String u = url("/voice");
-    if (agent.length()) u += "?agent=" + urlEnc(agent);
-    if (!beginReq(http, plain, tls, u)) return false;
+    if (!beginReq(http, plain, tls, url("/voice"))) return false;
     auth(http);
     http.addHeader("Content-Type", "application/octet-stream");
-    const char *keys[] = {"X-Transcript", "X-Reply"};
-    http.collectHeaders(keys, 2);
+    const char *keys[] = {"X-Transcript", "X-Reply", "X-Action"};
+    http.collectHeaders(keys, 3);
     http.setTimeout(60000);
 
     int code = http.POST((uint8_t *)pcm, samples * sizeof(int16_t));
     if (code != 200) { http.end(); return false; }
     transcript = urlDec(http.header("X-Transcript"));
     reply      = urlDec(http.header("X-Reply"));
+    action     = http.header("X-Action");
     streamToSpeaker(http, audio);
     http.end();
     return true;
@@ -189,7 +214,34 @@ private:
     return o;
   }
 
-  // Minimal "key":"value" scrape — enough for /health without a JSON lib.
+  static bool hasField(const String &json, const char *key) {
+    return json.indexOf(String("\"") + key + "\":") >= 0;
+  }
+  static bool jsonNull(const String &json, const char *key) {
+    int a = json.indexOf(String("\"") + key + "\":");
+    return a >= 0 && json.substring(a).indexOf("null") == String(String("\"") + key + "\":").length();
+  }
+  static bool jsonBool(const String &json, const char *key) {
+    int a = json.indexOf(String("\"") + key + "\":");
+    if (a < 0) return false;
+    return json.substring(a + String(String("\"") + key + "\":").length(), a + 40).startsWith("true");
+  }
+  // Numbers, including negatives — unrealised P&L is signed and the sign is the
+  // whole point of the light.
+  static float jsonNum(const String &json, const char *key, float dflt) {
+    String needle = String("\"") + key + "\":";
+    int a = json.indexOf(needle);
+    if (a < 0) return dflt;
+    a += needle.length();
+    while (a < (int)json.length() && json[a] == ' ') a++;
+    int b = a;
+    if (b < (int)json.length() && (json[b] == '-' || json[b] == '+')) b++;
+    while (b < (int)json.length() && (isdigit(json[b]) || json[b] == '.')) b++;
+    if (b == a) return dflt;                       // null, or not a number
+    return json.substring(a, b).toFloat();
+  }
+
+  // Minimal "key":"value" scrape — enough without dragging in a JSON lib.
   static String jsonStr(const String &json, const char *key) {
     String needle = String("\"") + key + "\":\"";
     int a = json.indexOf(needle);
