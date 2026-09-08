@@ -149,6 +149,20 @@ recall     real        propose        the gate      real signed tx     writeback
 vetoes anything matching a rule you accepted, refuses to sell a position it
 cannot see, and subtracts today's spend from the journal.
 
+**On how it holds keys, and on 1inch.** "1inch" names three different things
+and only one of them is relevant here: a **DEX aggregator API**, a
+**self-custody wallet app**, and a governance token. This project uses **none of
+them**. There is no 1inch call in the codebase, no wallet app, and no
+WalletConnect: the agent holds a private key from the environment and signs
+with viem directly, because a pad that needs a human to approve a wallet popup
+for every fill is not an agent. An aggregator — 0x first, then 1inch — is the
+next phase and the only route to the equities above; `main/routers/` is the seam
+it plugs into.
+
+The route a fill reports is read back off the mined receipt's `to`, so it can
+never claim a venue it did not use. Setting `ONEINCH_API_KEY` today changes
+nothing, and the suite asserts that.
+
 ## What's in here
 
 | Path | What it is |

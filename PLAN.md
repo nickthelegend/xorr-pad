@@ -175,10 +175,13 @@ the same interface when the KYC'd key exists. Uniswap stays the no-key default.
   **Done when:** a fill's journal entry names every router quoted and the margin
   it won by.
 
-- **T2.5 — Say what "1inch wallet" means here.** *NOT STARTED*
+- **T2.5 — Say what "1inch wallet" means here.** *DONE — 2026-09-09*
   1inch is an aggregator API *and* a self-custody wallet app. This project holds
   a key and signs with viem — no wallet app, no WalletConnect.
   **Done when:** `README.md` states which of the three is and is not used.
+  **Done.** The README now says none of the three is used — no aggregator call,
+  no wallet app, no WalletConnect — and says why the agent holds a key directly:
+  a pad that needs a human to approve a wallet popup per fill is not an agent.
 
 ---
 
@@ -518,11 +521,18 @@ which makes Phase 3 a hard prerequisite rather than a stretch goal.
   flashed), and the "1inch route" line now says an aggregator is the only path
   to the equities.
 
-- **T9.3 — Demo script.** *NOT STARTED*
+- **T9.3 — Demo script.** *DONE — 2026-09-09*
   A written order of operations for a 3-minute demo: propose → verdict with
   numbered reasons → ✓ → mined fill → wipe → same key, different verdict →
   re-teach. This is the run of show, and it should be rehearsed against a
   stopwatch rather than improvised.
+  **Done — `DEMO.md`, rehearsed rather than imagined.** Every timing in it was
+  measured against the running app: briefing 2 ms, verdict 4 ms, **mined fill
+  521 ms**. The turn was run end to end and is quoted verbatim — before the
+  wipe, `EXECUTE`; after it, the same key gives
+  `REJECT — AERO is not in the allowlist [ETH, USDC]`. It also carries what to
+  say when something breaks, and a standing instruction not to improvise a
+  mainnet trade.
 
 ---
 
