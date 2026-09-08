@@ -50,7 +50,22 @@ label — see Phase 1.*
 
 ---
 
-## Phase 0 — Where it actually is, 2026-09-09
+## Status after the build pass, 2026-09-09
+
+**23 of 43 tasks done. Nothing is in progress, and nothing remaining can be
+started without the owner** — every open item needs real money, a credential
+that cannot be created here, or the physical board.
+
+| | |
+|---|---|
+| Suite | **129 passed, 0 failed**, run against the packaged `.app` |
+| Load-bearing proof | PASS — 3 of 4 verdicts change on a wipe, control unchanged |
+| CI | green |
+| Blocked on real money + a funded key | Phase 3 (8 tasks), T7.3 |
+| Blocked on a credential that cannot be created here | T2.2, T2.3, T2.4, T4.2, T8.4 |
+| Blocked on hardware or the owner | Phase 6 (6 tasks), T7.2 |
+
+## Phase 0 — Where it was before this pass, 2026-09-09
 
 | | Status |
 |---|---|
@@ -169,7 +184,7 @@ the same interface when the KYC'd key exists. Uniswap stays the no-key default.
   `routers/oneinch.mjs` → `/swap/v6.1/8453/swap` plus `/approve/transaction`.
   **Done when:** same bar as T2.2 with `fill.route === "1inch"`.
 
-- **T2.4 — Best-execution comparison.** *NOT STARTED* (needs T2.2 or T2.3)
+- **T2.4 — Best-execution comparison.** *BLOCKED — needs a second router, and neither key exists (T2.2/T2.3)* (needs T2.2 or T2.3)
   Quote every configured router, route through the best, journal the losers'
   quotes so the choice is auditable.
   **Done when:** a fill's journal entry names every router quoted and the margin
@@ -200,28 +215,28 @@ key. Use a dedicated hot wallet funded with **≤ $30**.
   mainnet; `server.mjs` gates auto-execute on `state.armed && IS_FORK`, so
   **automation can never fire on mainnet** — only a human ✓.
 
-- **T3.2 — Read-only bring-up.** *NOT STARTED — needs a funded key*
+- **T3.2 — Read-only bring-up.** *BLOCKED — needs a funded key the owner must place in `.env`*
   `CHAIN_MODE=mainnet` + a real `RPC_URL`, no transaction. Confirm `/portfolio`
   reads real balances, `/pad` reports `mode: "mainnet"`, header says **Base
   MAINNET**.
 
-- **T3.3 — Rung 1: smallest signed transaction.** *NOT STARTED*
+- **T3.3 — Rung 1: smallest signed transaction.** *BLOCKED — spends real money; needs an explicit go-ahead*
   One ~$1 USDC→ETH swap behind a human ✓. **Done when:** a Basescan link,
   `status: success`, balance delta matching the quote within slippage.
 
-- **T3.4 — Rung 2: round trip.** *NOT STARTED* — records the true fee cost the
+- **T3.4 — Rung 2: round trip.** *BLOCKED — spends real money; needs an explicit go-ahead* — records the true fee cost the
   book's "measured, not profitable" claim rests on.
 
-- **T3.5 — Rung 3: one fill per asset class.** *NOT STARTED* — ~$1 each into
+- **T3.5 — Rung 3: one fill per asset class.** *BLOCKED — spends real money; needs an explicit go-ahead* — ~$1 each into
   cbBTC, EURC, AERO, MORPHO, VIRTUAL.
 
-- **T3.6 — Rung 4: the refusals, on mainnet.** *NOT STARTED* — thin liquidity,
+- **T3.6 — Rung 4: the refusals, on mainnet.** *BLOCKED — costs nothing to run, but still needs a funded key to boot* — thin liquidity,
   day budget, ✓ while disarmed. Costs nothing.
 
-- **T3.7 — Gas and slippage for real conditions.** *NOT STARTED* — the 30% gas
+- **T3.7 — Gas and slippage for real conditions.** *BLOCKED — can only be measured against mainnet* — the 30% gas
   margin and 1% slippage were tuned on an uncontested fork.
 
-- **T3.8 — `MAINNET.md` run log.** *NOT STARTED* — every hash, what it proved,
+- **T3.8 — `MAINNET.md` run log.** *BLOCKED — there is nothing to log until a rung runs* — every hash, what it proved,
   what it cost. The artifact that answers "is any of this real?".
 
 ---
@@ -439,7 +454,7 @@ note, both accurate.
   never reached git, but a transcript is an exposure. **No agent can do this.**
   Groq is moot — that key is already invalid.
 
-- **T7.3 — Mainnet key hygiene.** *NOT STARTED* — gates Phase 3.
+- **T7.3 — Mainnet key hygiene.** *BLOCKED — the owner creates and funds the wallet; no agent should* — gates Phase 3.
 
 - **T7.4 — The brain has no tools.** *DONE*
   The prompt embeds a Deepgram transcript and the pad's own journal, and the CLI
