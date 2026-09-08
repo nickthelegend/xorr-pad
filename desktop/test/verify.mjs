@@ -574,8 +574,8 @@ try {
 
   const mk = (lim) => ({ limits: { max_trade_usd: lim, max_day_usd: 300, allow: ["ETH", "USDC"] },
                          positions: { ETH: { qty: 0.03, avg_entry_usd: 2479 } }, rules: [], watchlist: [] });
-  const a1 = await think("what is my per-trade limit?", mk(100), { prices: { ETH: 2479 } });
-  const a2 = await think("what is my per-trade limit?", mk(250), { prices: { ETH: 2479 } });
+  const a1 = (await think("what is my per-trade limit?", mk(100), { prices: { ETH: 2479 } })).text;
+  const a2 = (await think("what is my per-trade limit?", mk(250), { prices: { ETH: 2479 } })).text;
   // The reply is spoken, so numbers come back as words and the phrasing varies
   // run to run ("two hundred fifty" / "two hundred and fifty"). Normalise to
   // digits and test the CLAIM — that the answer tracks memory — not the wording.
@@ -897,6 +897,47 @@ try {
                    : `${cases.length}/${cases.length} — ETA resolves to ETH, unknown names are refused`);
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
+
+// ── B. the brain, when there is no brain ────────────────────────────────────
+section("S. the answer when no model is reachable");
+try {
+  // A spoken question must not die because a binary moved. The pad is holding
+  // the answer; it should say it, and say that it is saying it without a model.
+  const brief = { limits: { max_trade_usd: 100, max_day_usd: 300, allow: ["ETH"] },
+                  positions: { ETH: { qty: 0.0202, avg_entry_usd: 2479 } },
+                  rules: [{ id: "r1" }, { id: "r2" }], spent_today: 75 };
+  const noBrain = (q) => {
+    const out = execFileSync(process.execPath, ["-e", `
+      process.env.PATH = "/usr/bin:/bin";
+      const { think } = await import("./main/voice.mjs");
+      const a = await think(process.argv[1], JSON.parse(process.argv[2]), { prices: { ETH: 2479 } });
+      console.log(JSON.stringify(a));`, q, JSON.stringify(brief)],
+      { cwd: ROOT, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+    return JSON.parse(out.trim().split("\n").pop());
+  };
+
+  const lim = noBrain("what is my per trade limit");
+  chk("S1 with no model reachable, the answer still comes — from memory",
+      lim.brain === "memory" && /100/.test(lim.text), `[${lim.brain}] ${lim.text.slice(0, 72)}`);
+  chk("S2 and it says it has no model, rather than passing memory off as one",
+      /unreachable/i.test(lim.text), `"${lim.text.slice(0, 52)}…"`);
+
+  const cases = [["what am I holding", /0\.0202 ETH/], ["how much have I spent today", /75/],
+                 ["what rules have you learned", /2 rules/], ["what is ETH price", /2479/]];
+  const missed = cases.filter(([q, re]) => !re.test(noBrain(q).text));
+  chk("S3 it answers the questions memory can actually answer", missed.length === 0,
+      missed.length ? `no answer for: ${missed.map(([q]) => q).join("; ")}`
+                    : `${cases.length}/${cases.length} — positions, spend, rules and price`);
+
+  // And the live brain must still be named, so a degraded answer is visible.
+  const sp = await fetch(B + "/speak?text=" + encodeURIComponent("what is my per trade limit"), { headers: H });
+  const pcm = Buffer.from(await sp.arrayBuffer());
+  const vr = await fetch(B + "/voice", { method: "POST",
+    headers: { ...H, "content-type": "application/octet-stream" }, body: pcm });
+  chk("S4 /voice names the brain that answered",
+      vr.headers.get("x-brain") === "claude",
+      `x-brain: ${vr.headers.get("x-brain")} — "${decodeURIComponent(vr.headers.get("x-reply") || "").slice(0, 46)}…"`);
+} catch (e) { chk("S crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── Q. the route a fill claims is the route it took ─────────────────────────
 section("Q. the route is what the chain says");

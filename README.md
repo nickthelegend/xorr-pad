@@ -39,11 +39,31 @@ DEGEN was in the pad's allowlist until this check existed — memory says what y
 are *allowed* to trade; only the pool says what you can trade without destroying
 yourself on the way in. `swap()` refuses before signing when the two disagree.
 
-**On stocks:** there is no tokenized equity on Base with real AMM liquidity. The
-issuers that exist are KYC-gated and do not trade in permissionless pools, so the
-pad will not pretend to quote them. EURC is the genuine non-crypto market. If a
-tokenized equity ever gets a liquid pool it is one row in
-[`markets.mjs`](desktop/main/markets.mjs) and every strategy trades it unchanged.
+**On stocks:** this changed under the project. Coinbase put tokenized equities
+live natively on Base on **24 August 2026** — each backed 1:1 by a share held at
+Alpaca, carrying dividends and voting rights. Ten of them are listed in
+[`stocks.mjs`](desktop/main/stocks.mjs), every one verified against real mainnet
+by reading `symbol()` and `decimals()` back off the chain, with $599k–$2.23M of
+measured depth apiece: NVDAc, GOOGLc, AAPLc, METAc, AMZNc, MSFTc, SNDKc, SPCXc,
+TSLAc, MSTRc.
+
+**The pad cannot trade them yet, and says so precisely rather than failing
+vaguely.** Two separate reasons, never conflated:
+
+1. They are **B20 tokens — implemented by the Base node, not as EVM bytecode**.
+   `eth_getCode` returns a single byte, `0xef`. anvil forks *state*, and there is
+   no state here to fork, so on a fork every call to one of these reverts with
+   `OpcodeNotFound`. Measured the same day, same address: real mainnet answers
+   `symbol() -> "NVDAc"`, the fork throws. **Equities cannot be demonstrated on a
+   fork at any block** — they need `CHAIN_MODE=mainnet` and real money.
+2. Their depth is on a concentrated-liquidity pool this build cannot route to
+   (a custom factory, `0xf8f2…61Ef`, plus Uniswap v4). The Uniswap V3 pair this
+   codebase *can* reach holds $11k — too thin to use. That needs an aggregator,
+   which is Phase 2 of [`PLAN.md`](PLAN.md).
+
+So EURC remains the non-crypto market that actually fills today. The equities are
+listed, priced by the chain, and refused with the reason — which is the honest
+state of a market that went live three weeks ago.
 
 ## The book — six measured strategies
 
@@ -160,9 +180,12 @@ can hear a dead switch.
 - [x] Sibyl memory + the load-bearing proof
 - [x] Base fork, real Uniswap fills
 - [x] six agents, `decide()`, kill switch
-- [x] desk app, voice, firmware
+- [x] desk app, voice
+- [x] firmware rewritten for xorr-pad — compiles for the S3, backend contract
+      covered by the suite; **not yet flashed** (no board on this machine)
 - [ ] finish the key sweep (one dead switch, row 3 unswept)
-- [ ] 1inch route (needs an API key)
+- [ ] an aggregator route (0x, then 1inch) — the only path to trading the
+      equities above; needs a key
 - [ ] Virtuals
 
 MIT. See [`PLAN.md`](PLAN.md) for the full build plan and

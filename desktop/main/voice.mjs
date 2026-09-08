@@ -249,14 +249,68 @@ async function recallHistory(mem, question) {
   } catch { return ""; }
 }
 
+/**
+ * The answer when no language model can be reached at all.
+ *
+ * Not a mock and not an invention: every number below is read straight out of
+ * the pad's own memory, and the reply says plainly that it is answering without
+ * a brain. The alternative — throwing — means a spoken question gets silence
+ * from a pad that is holding the answer, which is the worse failure. It is the
+ * same posture as the rest of the product: refuse out loud, with the reason.
+ */
+function brainFallback(question, brief, market) {
+  const q = String(question || "").toLowerCase();
+  const lim = brief?.limits;
+  const say = [];
+
+  if (/\b(limits?|caps?|per.?trade|how much can i)\b/.test(q))
+    say.push(lim ? `Your limits are ${lim.max_trade_usd} dollars a trade and ${lim.max_day_usd} a day`
+                 : "I have no limits remembered");
+  if (/\b(hold|holding|positions?|own|bags?)\b/.test(q)) {
+    const pos = Object.entries(brief?.positions || {});
+    say.push(pos.length
+      ? `You are holding ${pos.map(([sym, p]) => `${Number(p.qty).toFixed(4)} ${sym}`).join(", ")}`
+      : "You are holding nothing");
+  }
+  if (/\b(spent|spend|today|budget|left)\b/.test(q) && Number.isFinite(brief?.spent_today))
+    say.push(`You have spent ${Math.round(brief.spent_today)} dollars today`);
+  if (/\b(rules?|learn(ed|t)?|remember(ed)?|taught)\b/.test(q)) {
+    const rules = brief?.rules || [];
+    say.push(rules.length ? `${rules.length} rule${rules.length > 1 ? "s" : ""} learned from your answers`
+                          : "no rules learned yet");
+  }
+  if (/\b(prices?|worth|trading at)\b/.test(q)) {
+    const px = Object.entries(market?.prices || {});
+    if (px.length) say.push(px.map(([sym, v]) => `${sym} at ${Math.round(v)} dollars`).join(", "));
+  }
+
+  const head = "My language model is unreachable, so this is straight from memory.";
+  return say.length ? `${head} ${say.join(". ")}.`
+                    : `${head} Ask me about your limits, your positions, or what you have spent today.`;
+}
+
+/**
+ * Answer a spoken question. Returns the text and which brain produced it, so the
+ * desk and the pad can show whether they are hearing Claude, Groq, or memory
+ * alone — a degraded answer that looks identical to a real one is a trap.
+ */
 export async function think(question, brief, market, mem = null) {
   const context = groundIn(brief, market) + (await recallHistory(mem, question));
-  if (BRAIN === "groq" && groqKey()) return brainGroq(question, context);
-  try { return await brainClaude(question, context); }
-  catch (e) {
-    if (groqKey()) return brainGroq(question, context);
-    throw e;
+  const order = BRAIN === "groq" && groqKey()
+    ? [["groq", () => brainGroq(question, context)], ["claude", () => brainClaude(question, context)]]
+    : [["claude", () => brainClaude(question, context)], ["groq", () => groqKey() ? brainGroq(question, context) : Promise.reject(new Error("no groq key"))]];
+
+  const tried = [];
+  for (const [name, run] of order) {
+    try {
+      const text = await run();
+      if (text) return { text, brain: name };
+      tried.push(`${name}: empty answer`);
+    } catch (e) { tried.push(`${name}: ${String(e.message || e).slice(0, 80)}`); }
   }
+  // Both brains are gone. Answer from memory rather than saying nothing.
+  console.error("[voice] no brain reachable —", tried.join(" | "));
+  return { text: brainFallback(question, brief, market), brain: "memory" };
 }
 
 const WORDS = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10,

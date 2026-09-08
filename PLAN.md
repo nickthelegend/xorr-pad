@@ -209,26 +209,39 @@ key. Use a dedicated hot wallet funded with **≤ $30**.
   `voice.mjs` runs `claude -p` through `execFile`. The subscription, not the
   API — no per-call cost. Default brain. Verified by `E3` and `B18b`.
 
-- **T4.2 — Groq.** *BLOCKED — the key is invalid*
-  `GROQ_API_KEY` is present but Groq returns
-  `{"error":{"code":"invalid_api_key"}}`. **This is not the project-level model
-  block recorded earlier — the key itself is now invalid.** Mint a new one at
-  console.groq.com. No code change needed; `brainGroq` and `GROQ_MODEL` exist.
+- **T4.2 — Groq.** *BLOCKED — model access, not the key. Owner action.*
+  Re-measured 2026-09-09, and the earlier entry in this plan was wrong. The key
+  is **valid**: `GET https://api.groq.com/openai/v1/models` returns **200** and
+  lists the models. Every chat completion, on all nine text models tried —
+  including the four `GROQ_MODELS` targets — returns **403
+  `model_permission_blocked_project`** (`allam-2-7b` and `qwen/qwen3.8-27b` say
+  `…_org`). Minting a new key will not help; model access has to be granted for
+  the project in the Groq console. No agent can do this.
   **Done when:** `BRAIN=groq node test/verify.mjs` passes `E4` instead of
   skipping.
 
 - **T4.3 — `think()` survives a partial brief.** *DONE* — it dereferenced
   `brief.limits.allow.join()` unguarded and threw.
 
-- **T4.4 — Say which brain answered.** *NOT STARTED*
+- **T4.4 — Say which brain answered.** *DONE — 2026-09-09*
   `/voice` should return `x-brain` and the desk should show it.
+  **Done.** `think()` now returns `{ text, brain }` and `/voice` sets `x-brain`.
+  Verified on a real round trip — TTS to PCM to Deepgram to Claude — answering
+  "what is my per trade limit" with the right number and `x-brain: claude`.
 
-- **T4.5 — Fail open when the CLI is missing.** *NOT STARTED*
+- **T4.5 — Fail open when the CLI is missing.** *DONE — 2026-09-09*
   `/Volumes/Extreme SSD/Projects/xorr` (`claude/claude_brain.py`) degrades to a
   deterministic fallback when `claude` is unavailable. Here, a missing binary
   makes the spoken answer fail outright.
   **Done when:** with `claude` off `PATH`, a spoken question still gets a
   memory-grounded answer that says the brain is unavailable.
+  **Done.** `think()` tries both brains in order and, when neither answers,
+  falls back to `brainFallback` — which reads limits, positions, spend today,
+  rule count and price straight out of the brief and opens with "My language
+  model is unreachable, so this is straight from memory." Nothing is invented
+  and a degraded answer never looks like a normal one. Locked in as section S
+  (4 checks); the first version missed "what **rules** have you learned" because
+  `\brule\b` does not match the plural.
 
 ---
 
@@ -408,15 +421,21 @@ which makes Phase 3 a hard prerequisite rather than a stretch goal.
 
 ## Phase 9 — Submission *(G1 — the thing actually being judged)*
 
-- **T9.1 — `SUBMISSION.md` is stale.** *NOT STARTED*
+- **T9.1 — `SUBMISSION.md` is stale.** *DONE — 2026-09-09*
   It describes an earlier project. Word counts in the current file: **stocks 0,
   equities 0, ESP32 0, firmware 0.** It does not mention the physical pad, the
   tokenized equities, the desk rebuild or the 103-check suite — the four most
   impressive things in the repo.
   **Done when:** it covers the pad, the equities and the honest mainnet status,
   without weakening the memory walkthrough that is the actual judging criterion.
+  **Done — 97 to 158 lines, memory walkthrough untouched.** Added a section on
+  the physical pad and one on the tokenized equities including the B20/fork
+  finding. Corrected two false claims it was making: that 1inch was "wired
+  behind `ONEINCH_API_KEY`" (there is no 1inch call), and the Groq blocker. Added
+  the two limits it never admitted — no mainnet transaction has ever been signed,
+  and the firmware has never been flashed.
 
-- **T9.2 — The README states something this project disproved.** *NOT STARTED*
+- **T9.2 — The README states something this project disproved.** *DONE — 2026-09-09*
   `README.md:42` — *"there is no tokenized equity on Base with real AMM
   liquidity … so the pad will not pretend to quote them."* True when written,
   **false now**: Phase 8 verified ten tickers on real Base mainnet carrying
@@ -428,6 +447,11 @@ which makes Phase 3 a hard prerequisite rather than a stretch goal.
   wiring.
   **Done when:** the stocks paragraph says what `stocks.mjs` measured — including
   the B20/fork constraint — and no checkbox claims something untested.
+  **Done.** The paragraph now names all ten tickers, their measured depth and
+  both reasons they cannot be traded yet. The `firmware` checkbox is split into
+  what is true (rewritten, compiles, contract covered) and what is not (never
+  flashed), and the "1inch route" line now says an aggregator is the only path
+  to the equities.
 
 - **T9.3 — Demo script.** *NOT STARTED*
   A written order of operations for a 3-minute demo: propose → verdict with
@@ -447,12 +471,12 @@ Ordered by what it costs to leave. Every gap tied to the task it blocks.
 | **2** | **Not one mainnet transaction has ever been signed.** Every fill is on a fork. G2's strongest claim is untested where it counts, and Phase 8 cannot start without it. | `CHAIN_MODE` defaults to fork; no `MAINNET.md`; `AGENT_PRIVATE_KEY` absent | Phase 3, G2 |
 | ~~**3**~~ | **CLOSED 2026-09-09.** `ROUTE` branched on `ONEINCH_API_KEY` while only Uniswap was ever called. Route is now derived from the mined receipt; suite section Q asserts it, mutation-tested. | `dex.mjs`; verify.mjs section Q | ~~T1.1, T1.2~~ |
 | **4** | **No aggregator implemented**, so equities are listed but untradeable and there is no best-execution story. | one router in `main/` | Phase 2, T8.4 |
-| **5** | **Both documents a judge reads are wrong, in opposite directions.** `SUBMISSION.md` omits the work — zero mentions of stocks, equities, ESP32 or firmware. `README.md:42` goes further and *denies* it: "there is no tokenized equity on Base with real AMM liquidity", against ten tickers this project verified on mainnet. | word counts; `stocks.mjs` vs `README.md:42` | T9.1, T9.2, G1, G6 |
+| ~~**5**~~ | **CLOSED 2026-09-09.** `SUBMISSION.md` now covers the pad and the equities (97 → 158 lines) and admits the two real limits; `README.md` no longer denies that tokenized equities exist on Base. Two further false claims about 1inch removed from both. | word counts; live API probes | ~~T9.1, T9.2~~ |
 | **6** | **The Electron app is not packaged and does not manage anvil.** Empty `devDependencies`; `npm start` assumes a fork is already up. | `desktop/package.json` | T5.1, T5.2, G5 |
 | **7** | **The firmware has never run.** Compiles and its backend contract is covered, but provisioning, I2S, matrix and NVS are unverified. | no `/dev/cu.*` | Phase 6, G4 |
-| **8** | **The Groq key is invalid**, not permission-blocked as previously recorded. | live probe | T4.2 |
+| **8** | **No Groq model can be called.** Corrected: the key is **valid** (models list returns 200); every chat model returns `403 model_permission_blocked_project` / `…_org`. Needs the account owner to grant model access — not a code change, and a new key will not help. The app already names the cause and the console page to fix it. | live probe of 9 models | T4.2 |
 | **9** | **Equity prices show "—".** `feedPrices()` is Binance-backed; these are not Binance symbols. | `stocks.mjs` + the Markets screen | T8.5 |
-| **10** | **The brain does not fail open.** A missing `claude` binary makes the spoken answer fail rather than degrade. | `voice.mjs` | T4.5 |
+| ~~**10**~~ | **CLOSED 2026-09-09.** With no model reachable, a spoken question is answered from the store — real numbers, and it says it has no model. Section S. | verify.mjs section S | ~~T4.5~~ |
 | **11** | **Exposed credentials not rotated.** Not in git, but in a transcript. | T7.1 verification | T7.2 |
 | **13** | **A whole Loom backend still ships in `orchestrator-pad`**, tracked and pushed: `server.mjs` serves `/select`, and `loom.mjs`/`config.mjs` carry 47 Loom references between them. Zero mentions of xorr. It is what the stale firmware was written against, and it makes the repo look like two products. | route + grep of `orchestrator-pad/backend` | T6.0 |
 | **12** | **The fork stalls under sustained load.** ~20 real swaps plus a concurrent burst can wedge the free public RPC. Mitigated (pinned block, boot warming, one fewer quote per swap, anvil retries) but not removed. | suite history | Phase 3 robustness |

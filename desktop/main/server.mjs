@@ -113,6 +113,9 @@ export function createServer(mem) {
         // An order goes through the same decide() gate as an automated signal;
         // anything else is just answered out loud.
         let reply, verdict = null;
+        // Which brain answered. "memory" means both language models were
+        // unreachable and the reply came from the store alone.
+        let brain = null;
         const sig = parseIntent(transcript, state.agent, state.market);
         // The operator named a market and it resolved to nothing. Refusing and
         // asking again is the only safe answer: falling back to whatever is in
@@ -134,7 +137,9 @@ export function createServer(mem) {
             ? `${sig.side} ${sig.sizeUsd} dollars of ${sig.symbol}. ${verdict.why.slice(-1)[0]}. Press yes to confirm.`
             : `I can't. ${verdict.why.slice(-1)[0]}.`;
         } else {
-          reply = await think(transcript, brief, market, mem);
+          const answer = await think(transcript, brief, market, mem);
+          reply = answer.text;
+          brain = answer.brain;
         }
         await mem.journal({ evaluated: { heard: transcript },
                             acted: { action: sig ? "PROPOSED" : "ANSWERED", executed: false },
@@ -143,7 +148,11 @@ export function createServer(mem) {
         const out = await tts(reply);
         res.writeHead(200, { "content-type": "application/octet-stream",
           "x-transcript": encodeURIComponent(transcript), "x-reply": encodeURIComponent(reply),
-          "x-action": verdict ? verdict.action : "ANSWER" });
+          "x-action": verdict ? verdict.action : "ANSWER",
+          // "memory" means both language models were unreachable and this came
+          // from the store alone. The pad and the desk say so rather than
+          // presenting a degraded answer as a normal one.
+          ...(brain ? { "x-brain": brain } : {}) });
         return res.end(out);
       } catch (e) {
         console.error("[voice]", e.message);
