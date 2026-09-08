@@ -162,10 +162,9 @@ through a real browser.
 **94 of 96 items PASS. 2 are untestable for want of a credential and are marked
 as such, not passed.**
 
-- `node desktop/test/verify.mjs` — **95 of 96 checks pass**, 2 skipped. The one
-  that does not is `G6`, and not because the product is wrong: two confirms fire
-  at once, exactly one fill lands as it should, and then the balance
-  *measurement* cannot complete because the fork has stalled. See below.
+- `node desktop/test/verify.mjs` — **97 pass, 0 fail**, 2 skipped, three
+  consecutive runs. See "The suite finally went green" below for what had been
+  keeping it red.
 - `node desktop/test/loadbearing.test.mjs` — exits 0; 3 of 4 verdicts change on
   a wipe, control unchanged.
 - Impeccable detector across the repository — **0 findings**.
@@ -379,3 +378,97 @@ composite a gradient, so it reported eight contrast failures that were not real
 — and missed the ramp problem that was. Both the false positives and the real
 failures were settled by measuring the live DOM. The detector's *type* findings
 were all real and were fixed.
+
+## Systematic coverage — the methodical pass
+
+The audits above found defects by working through flows. This pass enumerates
+the surface first and then exercises **every item on the list**, so coverage is
+demonstrable rather than incidental.
+
+**Enumerated from the running app, not the source:** 27 HTTP routes plus
+`/fonts/*`; 44 interactive controls — 7 on Portfolio, 7 on Markets, 8 on Agents,
+10 on Trade, 6 on Memory, and 6 in the chrome (five nav items and the rail's
+kill switch); plus the four controls that exist only conditionally (Confirm,
+Refuse, Re-teach, and a rule's Accept).
+
+**Every non-destructive control clicked, with `fetch` wrapped to record any
+non-2xx and listeners on `error` and `unhandledrejection`:** all six market
+rows, all six trade pills, both stepper arrows, all six agent cards, the day
+card's "and N more", Replay, Now, Retire, the journal show/hide, and Run the
+book. **24 of 24 produced their effect; zero non-2xx responses; zero JS
+errors.**
+
+**Spam and double-submission, on every surface that takes input:**
+
+| Surface | Abuse | Result |
+|---|---|---|
+| Confirm | triple-clicked | exactly **one** fill |
+| Size stepper | 16 rapid presses | UI and server agree at $100 |
+| Market pills | 10 rapid presses | exactly one `aria-pressed`, server agrees |
+| Agent cards | 10 rapid presses | exactly one active, server agrees |
+| Run the book | triple-clicked | disabled while running, re-enabled after, one scan |
+| Wipe memory | double-clicked | one wipe, no errors |
+| ✓ with nothing pending | pressed twice | "nothing pending" both times |
+
+**Navigation.** Back and forward now move between screens rather than throwing
+the operator out of the app — see defect 47. Deep links work (`#/agents` opens
+Agents) and a junk hash falls back to Portfolio. Exactly one pane is ever
+visible and exactly one nav item ever selected, including after twelve rapid
+switches.
+
+**Failure and empty states, each driven for real:** bad token (banner, panes
+empty, the keypress error surfaced), the Base node stopped **cold** and stopped
+**mid-session** (different, correct banners — see defects 43 and 44), recovery
+without a reload, a wiped store (`Execute $100` becomes `Reject $0` citing "NO
+remembered limits", the cost card names what was lost, the budget bar disappears
+because it has nothing left to measure), an empty replay form ("Pick a time
+first"), zero rules to retire, and no microphone present.
+
+| # | Defect | Fix |
+|---|---|---|
+| 47 | **The URL never changed, so the browser's Back left the app entirely.** Five screens, one address: pressing Back mid-flow dropped the operator out and returning meant re-finding their place. | The screen rides in the hash and each change pushes a history entry; `popstate` restores it. Back and forward step through screens, `#/agents` deep-links, junk falls back to Portfolio, and the token stays in the query string where it was. |
+
+### Security, verified rather than asserted
+
+| Check | Result |
+|---|---|
+| Secrets tracked by git | only `.env.example`, all placeholders empty |
+| `.gitignore` covers `.env` and `*.bak` | yes |
+| Tracked files containing a live key | **0** |
+| Commits in history introducing a live key | **0** |
+| Commits containing the leaked PAT | **0** |
+| `backend/.env.bak` still on disk | gone |
+| Dev token baked into a shipped file | no — `run-dev.sh` only |
+
+The repository is clean and always has been. Rotation is still worth doing
+because the values were pasted into a chat transcript, and that is the one part
+of this no agent can perform: it needs the owner signed in to Deepgram, Groq and
+GitHub.
+
+
+## The suite finally went green
+
+For most of this work the suite reported 74 pass and 3 fail, and I attributed
+all three to the free public RPC stalling under the burst. **Two of them were
+mine.** Once the systematic pass gave the node an easy run, the real causes
+showed:
+
+| Was reported as | Actually was |
+|---|---|
+| `G6` fails — "the node stalled, cannot measure the balance" | The guard hard-coded `(u0-u1) < 60`, so a correct single **$100** fill failed it the moment the trade size had been left at $100. It was measuring the fixture, not the behaviour. Now it compares against the size that actually ran. |
+| `N`/`O` crash — "the Base node never came back" | **The fork wallet had run dry.** `fundOnFork` only tops up at boot, so a long session drains the quote asset and the next buy returns "insufficient USDC: need 25, have 0.000034". Every check after it then failed for want of money, not want of a node. |
+| `N2` — "nothing archived" | Downstream of both: with no USDC there was no position to close, and with a leftover position the round trip only partly closed one. It now starts from a known size and a flat book. |
+
+| # | Defect | Fix |
+|---|---|---|
+| 48 | **The fork wallet drained mid-session and never refilled.** Boot-time funding is the only top-up, so an app left running through a long demo eventually answers every buy with "insufficient USDC" — which reads as a broken product and is really a sandbox out of pretend money. | The execute path tops the quote asset up when it is short, on a fork only. `fundOnFork` is a no-op on mainnet by construction, so this can never mint money where money is real. |
+| 49 | **Deepgram returns "My" for "Buy"** as well as "By", and a spoken order died on it. | The impostors count as the verb only immediately before an amount. Locked in as `E2d` with nine cases: five orders parse, and "what is my per trade limit", "what is my balance", "by the way…" and "my portfolio please" all stay questions. |
+
+**`node desktop/test/verify.mjs` — 97 pass, 0 fail, three consecutive runs.**
+`loadbearing.test.mjs` PASS. Zero console errors, zero non-2xx responses across
+all five screens.
+
+The paid-RPC caveat still stands for *sustained* load — a burst of twenty real
+swaps can still stall a free endpoint, and `FORK_RPC` pointed at a paid Base
+archive endpoint would remove that risk entirely. But it was never the whole
+story, and saying so was wrong.

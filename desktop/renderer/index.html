@@ -570,7 +570,8 @@ function drawTabs(){
     (t.dot ? `<span class="dot${armed?" on":""}"></span>` : ``) +
     `</button>`).join("");
 }
-function pickTab(id){
+function pickTab(id, fromHistory){
+  if (!TABS.some(t => t.id === id)) id = "home";
   tab = id;
   for (const t of TABS) el("p-"+t.id).classList.toggle("on", t.id===id);
   const t = TABS.find(x=>x.id===id) || {};
@@ -578,7 +579,15 @@ function pickTab(id){
   el("topsub").textContent = t.sub || "";
   el("scroll").scrollTop = 0;
   drawTabs();
+  // Put the screen in the URL. Without this the address never changed, so the
+  // browser's Back threw the operator out of the app entirely rather than
+  // moving them one screen — and returning meant re-finding where they were.
+  // The token stays in the query string; the screen rides in the hash.
+  if (!fromHistory && location.hash !== "#/" + id)
+    history.pushState({ tab: id }, "", "#/" + id);
 }
+addEventListener("popstate", (e) => pickTab(e.state?.tab || hashTab(), true));
+function hashTab(){ return (location.hash || "").replace(/^#\//, "") || "home"; }
 
 /** One control, both directions: stop it, or put it back. */
 async function killToggle(){ armed ? press("kill") : arm(); }
@@ -1360,7 +1369,8 @@ const BOOT_MARKETS = { ETH:{label:"Ethereum",class:"crypto",fee:100}, cbBTC:{lab
   EURC:{label:"Euro",class:"forex",fee:500}, AERO:{label:"Aerodrome",class:"defi",fee:500},
   MORPHO:{label:"Morpho",class:"defi",fee:10000}, VIRTUAL:{label:"Virtuals",class:"ai",fee:3000} };
 MARKETS = BOOT_MARKETS;
-pickTab("home"); drawMarkets(); drawAgents("momentum");
+pickTab(hashTab()); history.replaceState({ tab: tab }, "", "#/" + tab);
+drawMarkets(); drawAgents("momentum");
 el("store").innerHTML = `<div class="krow"><span class="k dim">recalling…</span></div>`;
 el("log").innerHTML     = `<div class="krow"><span class="k dim">connecting…</span></div>`;
 el("homelog").innerHTML = `<div class="krow"><span class="k dim">connecting…</span></div>`;

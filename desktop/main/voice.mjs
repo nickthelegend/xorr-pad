@@ -228,13 +228,15 @@ export function parseAmount(t) {
 export function parseIntent(text, fallbackAgent = "momentum", market = "ETH") {
   const raw = (text || "").toLowerCase();
   const t = glue(raw);
-  // "buy" and "by" are homophones and speech-to-text picks the wrong one often
-  // enough to kill a real order ("By $50 of ETH."). Accept "by" as the verb
-  // only when it is immediately followed by an amount, where no other reading
-  // exists — "by the way" and "go by" never match that shape.
-  const buyish = /\b(buy|long|add|accumulate)\b/.test(t)
-              || /\bby\s+\$?\d/.test(t)
-              || /\bby\s+(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|a\s+hundred|hundred)\b/.test(t);
+  // "buy", "by" and "my" are homophones and speech-to-text picks the wrong one
+  // often enough to kill a real order — Deepgram has returned both "By $50 of
+  // ETH." and "My $50 of ETH." for the same sentence. Accept the impostors as
+  // the verb ONLY when immediately followed by an amount, where no other
+  // reading exists: "by the way", "go by", "my per-trade limit" and "what's my
+  // balance" never match that shape.
+  const AMOUNT_WORD = "(one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|a\\s+hundred|hundred)";
+  const impostor = new RegExp(`\\b(?:by|my)\\s+(?:\\$?\\d|${AMOUNT_WORD}\\b)`);
+  const buyish = /\b(buy|long|add|accumulate)\b/.test(t) || impostor.test(t);
   const side = buyish ? "BUY"
              : /\b(sell|short|dump|exit|close)\b/.test(t) ? "SELL" : null;
   if (!side) return null;

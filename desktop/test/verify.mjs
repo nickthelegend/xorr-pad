@@ -505,11 +505,16 @@ try {
   await waitForNode(60);
   const u1 = await usdc();
   const fills = [a, b2].filter((r) => r.b?.fill).length;
+  // Compare the movement against the trade that actually ran, not a constant.
+  // The old guard hard-coded "< 60" and failed a correct single $100 fill the
+  // moment the size had been left at $100 — it was measuring the fixture, not
+  // the behaviour. What matters is that ONE trade moved, never two.
+  const one = Number(a.b?.fill ? a.b.verdict?.sizeUsd : b2.b?.verdict?.sizeUsd) || 50;
   chk("G6 concurrent confirm fills exactly once",
-      fills === 1 && u0 != null && u1 != null && (u0 - u1) < 60,
+      fills === 1 && u0 != null && u1 != null && (u0 - u1) <= one * 1.1,
       u0 == null || u1 == null
         ? "the Base node stalled and /portfolio returned 503 — cannot measure the balance"
-        : `${fills} fill, $${(u0 - u1).toFixed(2)} moved`);
+        : `${fills} fill, $${(u0 - u1).toFixed(2)} moved on a $${one} trade`);
 
   await Promise.all(["cbBTC", "EURC", "AERO"].map((m) =>
     j("/key", { method: "POST", body: JSON.stringify({ id: m }) })));
@@ -543,6 +548,23 @@ try {
   chk("E2b speech becomes an order", sig?.side === "BUY" && sig?.sizeUsd === 50, JSON.stringify(sig));
   chk("E2c spoken amounts parse", parseAmount("$50") === 50 && parseAmount("fifty bucks") === 50 &&
       parseAmount("two hundred") === 200, "'$50' · 'fifty bucks' · 'two hundred'");
+
+  // Deepgram returns "By" AND "My" for "Buy" — both have killed a real spoken
+  // order. The impostors count as the verb only immediately before an amount,
+  // so a question that merely contains "my" is still a question.
+  {
+    const sideOf = (t) => parseIntent(t, "momentum", "ETH")?.side ?? null;
+    const cases = [
+      ["Buy $50 of ETH.", "BUY"], ["By $50 of ETH.", "BUY"], ["My $50 of ETH.", "BUY"],
+      ["by fifty dollars of eth", "BUY"], ["my fifty dollars of eth", "BUY"],
+      ["What is my per trade limit?", null], ["what is my balance", null],
+      ["by the way what do you think", null], ["my portfolio please", null],
+    ];
+    const bad = cases.filter(([t, want]) => sideOf(t) !== want);
+    chk("E2d buy/by/my homophones, without false orders", bad.length === 0,
+        bad.length ? `${bad.length} wrong: ${bad.map(([t]) => `"${t}"`).join(", ")}`
+                   : `${cases.length}/${cases.length} — orders parse, questions do not`);
+  }
 
   const mk = (lim) => ({ limits: { max_trade_usd: lim, max_day_usd: 300, allow: ["ETH", "USDC"] },
                          positions: { ETH: { qty: 0.03, avg_entry_usd: 2479 } }, rules: [], watchlist: [] });
@@ -614,7 +636,18 @@ try {
   await j("/memory/seed", { method: "POST", body: "{}" });
   await j("/arm", { method: "POST" });
   const k = (id) => j("/key", { method: "POST", body: JSON.stringify({ id }) });
-  await k("AERO"); await k("buy"); await k("yes");
+  await k("AERO");
+  // Start from a known size and a flat book. A round trip that only partly
+  // closes a position left open by something earlier archives nothing — which
+  // is correct behaviour and a meaningless assertion. Sell down first.
+  await j("/size", { method: "POST", body: JSON.stringify({ usd: 50 }) });
+  for (let i = 0; i < 8; i++) {
+    if (!(await j("/memory")).b?.positions?.AERO) break;
+    const s = await k("sell");
+    if (s.b?.verdict?.action !== "EXECUTE") break;
+    await k("yes");
+  }
+  await k("buy"); await k("yes");
   const sv = await k("sell");
   if (sv.b?.verdict?.action === "EXECUTE") await k("yes");
   const store = (await j("/memory/full")).b;

@@ -449,6 +449,18 @@ async function onKey(mem, id) {
     const px = p.market.prices[p.sig.symbol];
     const [sell, buy] = p.sig.side === "BUY" ? ["USDC", p.sig.symbol] : [p.sig.symbol, "USDC"];
     let amountIn = p.sig.side === "BUY" ? p.verdict.sizeUsd : p.verdict.sizeUsd / px;
+    // On a fork, top the quote asset up rather than running dry mid-session.
+    // fundOnFork only replenishes below its floor and is a no-op on mainnet by
+    // construction, so this can never mint money where money is real. Without
+    // it the wallet drained over a long session and the next buy came back
+    // "insufficient USDC: need 25, have 0.000034" — which reads as a broken app
+    // and is really a sandbox that ran out of pretend money.
+    if (IS_FORK && sell === "USDC" && (await spendable("USDC")) < amountIn) {
+      const f = await fundOnFork().catch((e) => ({ funded: false, quoteAsset: e.message }));
+      note(f.funded ? `topped the fork wallet up to ${Number(f.usdc || 0).toFixed(2)} USDC`
+                    : `could not top up the fork wallet: ${f.quoteAsset || f.reason}`);
+    }
+
     // clamp to what the wallet actually holds, so an over-sized proposal
     // degrades to a smaller real trade instead of reverting
     const have = await spendable(sell);
