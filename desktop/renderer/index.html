@@ -612,7 +612,15 @@ async function press(id){
   if(r.signal){ pending = r; render_signal(r); }
   // Any error, however it arrives. Gating this on `ok===false` meant a 401 —
   // which answers {error} with no `ok` field — rendered NOTHING at all.
-  if(r.error) el("sig").innerHTML += note("block", esc(r.error));
+  // An error after the card was put into its in-flight state has to REPLACE it,
+  // not append to it: appending left "signing, submitting and waiting for the
+  // mine… nothing pending" on screen, which describes two different outcomes at
+  // once and neither of them truthfully.
+  if(r.error){
+    const row = el("sig").querySelector(".confirm");
+    if (row) row.outerHTML = note("block", esc(r.error));
+    else el("sig").innerHTML += note("block", esc(r.error));
+  }
   if(r.fill) settle(`Filled ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "exec", r.fill.hash);
   else if(r.rejected) settle("Refused", "rej");
   await refresh();
@@ -1016,9 +1024,20 @@ async function get(path){
 }
 function drawAuthBanner(){
   const b = el("authbar");
-  // Say exactly what is unavailable. Market prices come from the exchange feed,
-  // not from Base, so they stay live while the node is down.
-  if (chainDown) { b.hidden = false; b.textContent = chainDown + " Holdings and on-chain data are unavailable until it does; market prices come from the exchange feed and are still live."; return; }
+  // Say exactly what is unavailable, and only claim what is actually on screen.
+  // Prices come from the exchange feed rather than from Base, so they DO survive
+  // the node going down mid-session — but the app receives them on the
+  // /portfolio response, so a cold load with the node already down has none at
+  // all. Promising live prices beside six dashes is the same defect as claiming
+  // they were gone while six correct ones sat underneath.
+  if (chainDown) {
+    const havePrices = Object.values(lastPrices).some((v) => Number.isFinite(v));
+    b.hidden = false;
+    b.textContent = chainDown + (havePrices
+      ? " Holdings and on-chain data are unavailable until it does; the market prices below come from the exchange feed and are still live."
+      : " Holdings, prices and on-chain data are all unavailable until it does.");
+    return;
+  }
   b.hidden = !authBad;
   if (authBad) b.textContent =
     "Bad pad token. This page's ?token= value does not match PAD_TOKEN on the backend, so the data panes stay empty until it does.";
@@ -1090,7 +1109,17 @@ function drawScan(r){
    markets use. USDC is the quote asset and is taken at $1. */
 const STABLE = { USDC: 1 };
 function drawHome(p, brief, log, mem){
-  if (!p) { el("hero").textContent = "—"; el("herosub").textContent = chainDown ? "the node is not answering" : "reading balances…"; }
+  if (!p) {
+    el("hero").textContent = "—";
+    el("herosub").textContent = chainDown ? "the node is not answering" : "reading balances…";
+    // Clear the holdings with it. Leaving the last-known list on screen beside
+    // a hero that has gone to "—" presents stale balances as current — the very
+    // claim the banner is there to stop the app from making.
+    el("coincount").textContent = "";
+    el("pf").innerHTML = `<div class="krow"><span class="k dim">${chainDown
+      ? "Balances cannot be read while the node is down. Nothing here is stale — it is simply unknown."
+      : "reading balances…"}</span></div>`;
+  }
   else {
     let total = 0, coins = [];
     for (const [sym, v] of Object.entries(p.balances)) {
@@ -1248,9 +1277,13 @@ async function refresh(){
   el("armlabel").textContent = armed ? "armed" : "disarmed";
   el("killbtn").textContent = armed ? "Stop all trading" : "Re‑arm trading";
   el("killbtn").className = "btn " + (armed ? "danger" : "primary");
+  // Say what stopping actually does. The old copy promised that "the decision
+  // is kept", which is true of a proposal raised WHILE stopped and false of the
+  // one already on the table — pressing stop voids that one, so a ✓ afterwards
+  // answered "nothing pending" instead of the refusal the words had promised.
   el("killnote").textContent = armed
-    ? "Nothing trades without an explicit ✓. This stops even that: a confirmation while disarmed is refused, and the decision is kept so re-arming honours it."
-    : "Disarmed. Any ✓ is refused and the pending decision is held — re-arm and the same ✓ stands.";
+    ? "Nothing trades without an explicit ✓. Stopping refuses even that, and voids the decision currently on the table."
+    : "Stopped. You can still propose a trade — the ✓ is refused while stopped, and that proposal is held, so re-arming honours it.";
   drawAgents(h.agent);
   drawTabs();
   if (Number.isFinite(h.sizeUsd)) drawSizes(h.sizeUsd);

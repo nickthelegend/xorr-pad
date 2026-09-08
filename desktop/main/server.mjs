@@ -466,6 +466,11 @@ async function onKey(mem, id) {
 
   if (id === "base") return onKey(mem, "scan");   // the white key runs the book
   if (id === "portfolio") return { ok: true, ...(await snapshot(mem)) };
+  // Stopping voids the decision on the table as well as disarming — the same
+  // as POST /panic. A loaded ✓ left behind a kill switch is exactly what bites:
+  // the operator stops, walks away, and a later re-arm makes a decision reasoned
+  // from stale prices executable again. Proposing while stopped is still
+  // allowed, and THAT proposal is held across a re-arm (see the yes/no branch).
   if (id === "kill")      { state.armed = false; state.pending = null; note("KILL"); return { ok: true, armed: false }; }
   // The physical pad's mic key streams straight to POST /voice; the on-screen
   // one records in the browser and does the same. Neither routes through here,

@@ -350,3 +350,32 @@ readable banner naming the node, holdings emptied rather than left stale, prices
 correctly still shown because they come from the exchange feed, no false fills,
 zero console errors, and full self-healing the moment the node returns — without
 a reload.
+
+## The second browser audit — after the interface was rebuilt
+
+The audit above was run against the neo-brutalist interface. That interface was
+then replaced entirely with the xorr.finance desk, so every flow and edge case
+was driven again through Chrome against the new one.
+
+| # | Defect | Fix |
+|---|---|---|
+| 41 | **The kill note promised something the kill switch does not do.** It read "a confirmation while disarmed is refused, and the decision is kept so re-arming honours it" — but pressing stop *voids* the decision on the table (as `POST /panic` always has), so a ✓ afterwards answered "nothing pending" rather than the refusal the words had promised. The code is right: a loaded ✓ left behind a kill switch is what bites. | The copy now says what stopping actually does, and names the case that *is* held: a proposal raised **while** stopped survives a re-arm. Verified end to end — stop, propose, ✓ refused, re-arm, the held ✓ executes exactly once. |
+| 42 | **An error after the in-flight state was appended to it**, leaving "signing, submitting and waiting for the mine… nothing pending" on screen — two outcomes at once, neither of them true. | An error replaces the in-flight row rather than following it. |
+| 43 | **The node-down banner promised live prices beside six dashes.** Prices come from the exchange feed and do survive the node going down *mid-session* — but the app receives them on the `/portfolio` response, so a cold load with the node already down has none at all. | The banner reads the prices it actually has: "still live" when there are some, "all unavailable" when there are not. Both branches verified. |
+| 44 | **Holdings went stale rather than empty.** With the node killed mid-session the hero went to "—" while the coins list kept showing eight balances, presenting last-known numbers as current — the exact claim the banner exists to prevent. | The list clears with the hero and says why: "Balances cannot be read while the node is down. Nothing here is stale — it is simply unknown." |
+| 45 | Contrast, re-measured on the new surface: the source design system's ink ramp runs to 28% white, which on true black is 2.6:1. Measured live, 38% read **3.39:1** and 45% read **4.41:1** — under AA for text at these sizes. White on its `#EF3B36` destructive fill read **3.93:1**. | Text stops at 52% white (5.4:1); the destructive fill is `#D32B26` (5.0:1). **Every text node on all five screens passes AA**, measured in the live DOM with alpha composited. |
+| 46 | Four UI defects found by rendering rather than reading: a `<button>` takes the UA's colour, so agent names rendered `rgb(0,0,0)` on a `#0C0C0D` card; the store stretched a key and a value to opposite ends of a 1200px window; the agent strip clipped its last card mid-name; and the budget bar pushed the document wider than the window below 760px. | Buttons inherit colour; each store tier is its own column; the strip wraps; the bar is dropped at the width where it and the title cannot both fit. |
+
+**Re-run on the new interface and passing:** triple-clicking Confirm (exactly one
+fill), reload mid-decision (restored with all three footnotes, and the app moves
+you to it), rapid tab switching (one pane, one selection, decision intact),
+resubmit after success ("nothing pending"), a bad token (banner, empty panes,
+the keypress error surfaced), the full kill cycle, node down cold *and*
+mid-session, and recovery without a reload. **Zero console errors and zero
+failed requests in every state.**
+
+**A note on the static detector.** It cannot resolve `color:inherit` or
+composite a gradient, so it reported eight contrast failures that were not real
+— and missed the ramp problem that was. Both the false positives and the real
+failures were settled by measuring the live DOM. The detector's *type* findings
+were all real and were fixed.
