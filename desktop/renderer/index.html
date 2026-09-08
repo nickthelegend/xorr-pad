@@ -391,6 +391,9 @@ nav .dot.on{background:var(--up)}
      <div class="cols side">
       <div>
        <div id="mkts"></div>
+       <div class="shead"><h2>Stocks</h2><span class="aside" id="eqsub">tokenized equities on Base</span></div>
+       <div id="equities"></div>
+       <div class="note" id="eqnote" hidden><span class="nd warn"></span><span class="nt" id="eqwhy"></span></div>
        <div class="note" style="margin-top:14px"><span class="nd block"></span>
          <span class="nt" id="delisted"></span></div>
       </div>
@@ -530,9 +533,25 @@ const MARKS = {
   EURC:{c1:"#8FE0B4",c2:"#1E9660"}, AERO:{c1:"#7FE3F0",c2:"#128DA8"},
   MORPHO:{c1:"#B8A0FF",c2:"#6A3FD0"}, VIRTUAL:{c1:"#F0A8D8",c2:"#B33B8E"},
 };
-const markOf = (sym) => MARKS[sym] || { c1:"#9AA3B2", c2:"#4A5261" };
+/**
+ * Equity marks in each company's own colour. Drawn here rather than fetched:
+ * the fonts are self-hosted for venue wi-fi and a logo CDN would undo that,
+ * and shipping the actual wordmarks is someone else's trademark to license.
+ * A brand-coloured monogram is recognisable, offline and ours to ship.
+ */
+const STOCK_MARKS = {
+  NVDAc:{c1:"#A4E82B",c2:"#5C8F00"}, GOOGLc:{c1:"#6FA8FF",c2:"#1A56C4"},
+  AAPLc:{c1:"#C9D1D6",c2:"#6B7378"}, METAc:{c1:"#4A90FF",c2:"#0B44C4"},
+  AMZNc:{c1:"#FFB65C",c2:"#C46A00"}, MSFTc:{c1:"#FF7A5C",c2:"#C43A16"},
+  TSLAc:{c1:"#FF6B6B",c2:"#B3120F"},  MSTRc:{c1:"#FFB765",c2:"#C46A0A"},
+  SPCXc:{c1:"#5FA8E8",c2:"#0B4A82"},  SNDKc:{c1:"#FF7C6B",c2:"#B32410"},
+};
+const markOf = (sym) => STOCK_MARKS[sym] || MARKS[sym] || { c1:"#9AA3B2", c2:"#4A5261" };
 const markHtml = (sym) => { const m = markOf(sym);
-  return `<div class="mark" style="background:radial-gradient(circle at 32% 26%,${m.c1},${m.c2} 74%)">${esc(sym[0])}</div>`; };
+  // Tokenized equities carry a trailing "c" (AAPLc). The monogram is the
+  // company's initial, not the suffix.
+  const g = sym[0];
+  return `<div class="mark" style="background:radial-gradient(circle at 32% 26%,${m.c1},${m.c2} 74%)">${esc(g)}</div>`; };
 
 /** The orb. `face` draws the eyes and smile; `bloom` casts the agent's own c1. */
 function orb(a, size, {face=true, bloom=false}={}){
@@ -1084,6 +1103,33 @@ async function pickMarket(sym){
   activeMarket = sym; mktKeys = ""; drawMarkets(); await refresh();
 }
 
+/**
+ * The tokenized equities. They are listed with their real depth and their real
+ * blocker, because the interesting thing about them here is not that they exist
+ * — it is exactly why this build will not trade them yet.
+ */
+function drawEquities(mk){
+  const eq = mk?.equities || {}, blocked = mk?.equitiesBlocked || {};
+  const syms = Object.keys(eq);
+  if (!syms.length) { el("equities").innerHTML = ""; el("eqnote").hidden = true; return; }
+  el("eqsub").textContent = `${syms.length} on Base · backed 1:1 at a regulated broker`;
+  el("equities").innerHTML = syms.map((sym) => {
+    const m = eq[sym], px = lastPrices[sym];
+    const off = blocked[sym];
+    return `<div class="lrow"${off ? ` title="${esc(off)}"` : ""}>
+      ${markHtml(sym)}
+      <div class="lmain"><span class="lp">${esc(m.label)}${off ? ` <span class="tag">not yet</span>` : ``}</span>
+        <span class="ls">${esc(m.company)}</span></div>
+      <div class="lval"><span class="lv">${px != null ? money(px) : "—"}</span>
+        <span class="ld">${dollars(Math.round(m.liquidityUsd / 1000) * 1000)} depth</span></div>
+    </div>`;
+  }).join("");
+  // One blocker, said once, rather than ten identical badges.
+  const why = blocked[syms[0]];
+  el("eqnote").hidden = !why;
+  if (why) el("eqwhy").innerHTML = `<b>Listed, not yet tradeable.</b> ${esc(why)}`;
+}
+
 function drawScan(r){
   if(!r || !r.markets){ el("scanhead").textContent="scan returned nothing"; return; }
   for (const m of r.markets) if (m.price!=null) lastPrices[m.symbol]=m.price;
@@ -1309,6 +1355,7 @@ async function refresh(){
   if (!MARKETS.__fromServer) {
     const mk = await get("/markets");
     if (mk) { MARKETS = mk.markets; MARKETS.__fromServer = true; activeMarket = mk.active || activeMarket;
+      drawEquities(mk);
       const d = Object.entries(mk.delisted);
       el("delisted").innerHTML = `<b>Delisted for thin liquidity.</b> ` +
         d.map(([k,v])=>`${esc(k)} <span class="dim">(${esc(v.reason)})</span>`).join("; ") + `.`;

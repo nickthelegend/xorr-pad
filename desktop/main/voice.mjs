@@ -85,7 +85,9 @@ function groundIn(brief, market) {
   const px = Object.entries(market?.prices || {})
     .map(([s, v]) => `${s} ${usd(v)}`).join(", ") || "unknown";
   return [
-    `Risk limits: ${brief.limits ? `$${brief.limits.max_trade_usd}/trade, $${brief.limits.max_day_usd}/day, allowed ${brief.limits.allow.join("/")}` : "NONE REMEMBERED"}.`,
+    // Every field is optional. A brief missing one is a caller's bug, but the
+    // brain answering "I cannot" beats it throwing where the answer would go.
+    `Risk limits: ${brief?.limits ? `$${brief.limits.max_trade_usd}/trade, $${brief.limits.max_day_usd}/day, allowed ${(brief.limits.allow || []).join("/")}` : "NONE REMEMBERED"}.`,
     `Open positions: ${pos}.`,
     `Learned rules: ${(brief.rules || []).map((r) => r.text || r.id).join("; ") || "none"}.`,
     `Prices: ${px}.`,
@@ -98,11 +100,52 @@ const SYSTEM =
   "spoken sentence, under 25 words, no markdown, no lists. You are given the pad's memory " +
   "— use it and cite the concrete number when it matters. Never invent a price or a balance.";
 
+/**
+ * The Claude brain, through the CLI rather than the API.
+ *
+ * Auth is the operator's own Claude subscription, so there is no
+ * ANTHROPIC_API_KEY and no per-token billing. That is the entire reason for the
+ * CLI path and it is why this is the default brain.
+ *
+ * Three things this call does that the naive version did not:
+ *
+ * 1. **Every tool is disallowed.** The prompt embeds a Deepgram transcript and
+ *    the pad's own journal — text the operator spoke and text other code wrote.
+ *    Handing that to a CLI that can run Bash, edit files or fetch URLs is a
+ *    prompt-injection surface on a machine holding a funded wallet. The brain
+ *    needs to produce one sentence; it needs no tools at all.
+ * 2. **It never blocks on a permission prompt.** Headless with a tty-less
+ *    parent, a permission request would hang until the timeout and look like a
+ *    dead brain. Skipping prompts is only safe *because* of (1).
+ * 3. **JSON, not scraped text.** `--output-format json` returns an envelope
+ *    with an `is_error` flag; the old code took the last non-empty stdout line,
+ *    which silently turned an error message into the pad's spoken answer.
+ */
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-opus-5";
+const CLAUDE_TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS || 60000);
+const NO_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep",
+                  "WebSearch", "WebFetch", "Task", "NotebookEdit"];
+
 async function brainClaude(question, context) {
   const prompt = `${SYSTEM}\n\n--- pad memory ---\n${context}\n--- end memory ---\n\nOperator said: "${question}"`;
-  const { stdout } = await exec("claude", ["-p", prompt, "--output-format", "text"],
-    { timeout: 60000, maxBuffer: 1 << 20 });
-  return stdout.trim().split("\n").filter(Boolean).pop() || "";
+  const args = [
+    "-p", prompt,
+    "--output-format", "json",
+    "--model", CLAUDE_MODEL,
+    "--dangerously-skip-permissions",
+    "--disallowed-tools", ...NO_TOOLS,
+  ];
+  const { stdout } = await exec("claude", args,
+    { timeout: CLAUDE_TIMEOUT_MS, maxBuffer: 1 << 20 });
+
+  // The envelope, or the raw text if a future CLI stops wrapping it.
+  let env = null;
+  try { env = JSON.parse(stdout); } catch { return stdout.trim().split("\n").filter(Boolean).pop() || ""; }
+  if (env?.is_error) throw new Error(`claude: ${String(env.result || "unknown error").slice(0, 160)}`);
+  const out = String(env?.result ?? "").trim();
+  // One sentence is what gets spoken; a model that reasons out loud gets its
+  // last line taken rather than the whole monologue read to the operator.
+  return out.split("\n").filter(Boolean).pop() || "";
 }
 
 async function brainGroq(question, context) {

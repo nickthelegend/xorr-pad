@@ -91,6 +91,12 @@ The single worst thing in the codebase right now. `desktop/main/dex.mjs:18` sets
 
 ## Phase 2 — Aggregator routing: 1inch and the alternatives *(G2, G6)*
 
+> **Updated 2026-09-09 — this phase is now also what unlocks stocks.** Tokenized
+> equities are listed and priced (Phase 8) but their depth sits on a custom
+> concentrated-liquidity factory plus Uniswap v4, which this build cannot reach.
+> An aggregator is no longer a nice-to-have comparison exercise; it is the only
+> path to trading equities at all.
+
 ### How 1inch actually works, and whether it can work here
 
 Researched 2026-09-09:
@@ -356,3 +362,86 @@ costs nothing per call.
    trading demo. Needs the owner's go-ahead and a funded hot wallet.
 5. **T2.1 + T2.2** — real routing, once a 0x key exists.
 6. **Phase 6** — the moment the board is on the desk.
+
+
+---
+
+## Phase 8 — Tokenized equities *(added 2026-09-09)*
+
+Coinbase tokenized stocks went live natively on Base on 24 August 2026. Each
+token is backed 1:1 by a share held at Alpaca, a regulated broker, and carries
+dividends and voting rights. They are the strongest possible answer to "so it
+trades memecoins?" — the same pad, the same gate, buying Nvidia.
+
+- **T8.1 — List the equities, verified on-chain.** *DONE*
+  `desktop/main/stocks.mjs`. Ten tickers with addresses, `decimals = 8` and
+  measured pool depth, **each verified against real Base mainnet** — `symbol()`
+  and `decimals()` read back and compared, not copied from a blog. Three more
+  (COINc, INTCc, CRCLc) were announced but have no Base pool as of 2026-09-09
+  and are listed as unlisted with that reason.
+
+- **T8.2 — Show them, with marks.** *DONE*
+  A Stocks section on the Markets screen: brand-coloured monogram marks drawn
+  locally (no logo files, no CDN — the fonts are self-hosted for venue wi-fi and
+  a logo CDN would undo that, and the wordmarks are not ours to ship), company
+  name, real depth, and a "not yet" tag.
+
+- **T8.3 — Refuse precisely.** *DONE*
+  Two different refusals, never conflated: on a fork, "B20 token implemented by
+  the Base node, a fork returns OpcodeNotFound"; on mainnet without a router,
+  "depth is on a CL pool this build cannot route to — needs an aggregator key".
+
+- **T8.4 — Route to them.** *BLOCKED — needs an aggregator key (T2.2 / T2.3)*
+  **Done when:** a real equity fill mines on mainnet and the balance moves.
+
+- **T8.5 — Price them on the strip.** *NOT STARTED*
+  The equity rows show "—" because `feedPrices()` is Binance-backed and these
+  are not Binance symbols. Read the price from the pool, or from the aggregator
+  quote once T8.4 lands.
+
+### The finding that makes Phase 8 hard, and it is not obvious
+
+`eth_getCode` on a tokenized stock returns **a single byte, `0xef`**. There is
+no program there. These are **B20 tokens implemented by the Base node itself**,
+and the same call to the same address on 2026-09-09 gives:
+
+```
+real Base mainnet    symbol() -> "NVDAc"
+local anvil fork     symbol() -> EVM error: OpcodeNotFound
+```
+
+anvil is vanilla revm. It forks *state*, and the behaviour here lives in the
+node, not in state. **Tokenized equities cannot be traded on a fork at any
+block.** Every stock trade this project ever makes will be a real mainnet
+transaction with real money. That moves Phase 3 from "the strongest claim" to
+"a hard prerequisite for the stocks demo".
+
+---
+
+## Phase 9 — The Claude connector, hardened *(added 2026-09-09)*
+
+- **T9.1 — Lock the brain out of every tool.** *DONE*
+  `desktop/main/voice.mjs`. The prompt embeds a Deepgram transcript and the
+  pad's own journal — text the operator spoke and text other code wrote — and
+  the CLI was being invoked with **default tool access** on a machine that holds
+  a funded wallet. It now runs `--disallowed-tools Bash Read Edit Write Glob
+  Grep WebSearch WebFetch Task NotebookEdit`, and
+  `--dangerously-skip-permissions` is safe *only because* of that: headless with
+  no tty, a permission prompt would hang until the timeout and read as a dead
+  brain.
+
+- **T9.2 — Parse the envelope, not the last stdout line.** *DONE*
+  `--output-format json` with `is_error` honoured. The old code took the last
+  non-empty stdout line, which would have turned a CLI error message into the
+  pad's spoken answer.
+
+- **T9.3 — Pin the model.** *DONE* — `CLAUDE_MODEL`, default `claude-opus-5`.
+
+- **T9.4 — `think()` no longer throws on a partial brief.** *DONE*
+  It dereferenced `brief.limits.allow.join()` unguarded. Closes gap 7.
+
+Ported from `/Volumes/Extreme SSD/Projects/xorr` (`claude/claude_brain.py`,
+`tui/brain.py`), which had solved this properly already. That project also
+fails open to a deterministic fallback when the CLI is unavailable — worth
+taking next (**T9.5, NOT STARTED**): right now a missing `claude` binary makes
+the spoken answer fail rather than degrade.

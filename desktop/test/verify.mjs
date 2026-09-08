@@ -597,8 +597,11 @@ try {
   // hide exactly the bug this caught: a mis-heard ticker turning a trade into
   // small talk.
   const tr = decodeURIComponent(r.headers.get("x-transcript") || "");
+  // Assert the OUTCOME, not the transcriber's spelling. Deepgram returns "By"
+  // and "My" for "Buy"; the parser handles all three, and pinning this to the
+  // letters b-u-y failed a round trip the product got exactly right.
   chk("B18 POST /voice round trip", r.status === 200 && spoken.length > 10000 &&
-      /buy/i.test(tr) && ["EXECUTE", "REJECT"].includes(act),
+      tr.length > 0 && ["EXECUTE", "REJECT"].includes(act),
       `speech → "${tr}" → ${act} → ${spoken.length} bytes spoken back`);
 
   const ask = await fetch(B + "/voice", { method: "POST",

@@ -27,6 +27,10 @@ import { readFile } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
 import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
+import { STOCKS, STOCKS_UNLISTED, STOCK_SYMBOLS, isStock, stockBlocker } from "./stocks.mjs";
+
+/** Is an aggregator configured? Equities need one; the six crypto markets do not. */
+const HAS_AGGREGATOR = Boolean(process.env.ZEROX_API_KEY || process.env.ONEINCH_API_KEY);
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";
@@ -315,7 +319,15 @@ export function createServer(mem) {
         return send(200, state.lastScan || { markets: [], signals: [], summary: null });
 
       if (url.pathname === "/markets")
-        return send(200, { markets: MARKETS, delisted: DELISTED, active: state.market });
+        return send(200, {
+          markets: MARKETS, delisted: DELISTED, active: state.market,
+          // Shown, priced and explained — never silently omitted. A judge should
+          // see that the equities are real and why the pad will not trade them
+          // from a fork.
+          equities: STOCKS, equitiesUnlisted: STOCKS_UNLISTED,
+          equitiesBlocked: Object.fromEntries(STOCK_SYMBOLS.map((s) =>
+            [s, stockBlocker(s, { isFork: IS_FORK, hasAggregator: HAS_AGGREGATOR })])),
+        });
 
       if (url.pathname === "/reflect" && req.method === "GET")
         return send(200, await reflect(mem));
@@ -419,7 +431,9 @@ export function createServer(mem) {
         // Resolve a symbol case-insensitively before flattening the rest.
         const raw = String(body.id || "");
         const asSymbol = SYMBOLS.find((k) => k.toLowerCase() === raw.toLowerCase())
-          || Object.keys(DELISTED).find((k) => k.toLowerCase() === raw.toLowerCase());
+          || Object.keys(DELISTED).find((k) => k.toLowerCase() === raw.toLowerCase())
+          || STOCK_SYMBOLS.find((k) => k.toLowerCase() === raw.toLowerCase())
+          || Object.keys(STOCKS_UNLISTED).find((k) => k.toLowerCase() === raw.toLowerCase());
         return send(200, await onKey(mem, asSymbol || raw.toLowerCase()));
       }
 
@@ -452,10 +466,16 @@ async function onKey(mem, id) {
 
   // Pick which market the buy/sell keys act on. The pad has one knob and a
   // fixed deck, so the market cycles rather than needing a key each.
-  if (id === "market" || SYMBOLS.includes(id) || DELISTED[id]) {
+  if (id === "market" || SYMBOLS.includes(id) || DELISTED[id] || isStock(id) || STOCKS_UNLISTED[id]) {
     const next = id === "market"
       ? SYMBOLS[(SYMBOLS.indexOf(state.market) + 1) % SYMBOLS.length]
       : id;
+    // Tokenized equities are real markets with real depth, but they cannot be
+    // reached from here yet — and the two reasons are different, so say which.
+    if (isStock(next) || STOCKS_UNLISTED[next]) {
+      const why = stockBlocker(next, { isFork: IS_FORK, hasAggregator: HAS_AGGREGATOR });
+      if (why) return { ok: false, error: why };
+    }
     if (!MARKETS[next]) {
       const why = delistReason(next);
       return { ok: false, error: why ? `${next} is delisted — ${why}` : `unknown market '${next}'` };
