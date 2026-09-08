@@ -6,7 +6,7 @@
  * The LAN URL is printed and shown in the title so you know what to type into
  * the pad's captive portal.
  */
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, shell, dialog } from "electron";
 import { networkInterfaces } from "node:os";
 import { start } from "./server.mjs";
 
@@ -24,7 +24,16 @@ function lanAddress() {
 let win, backend;
 
 async function boot() {
-  backend = await start();
+  try {
+    backend = await start();
+  } catch (e) {
+    // Opening a window onto a backend this app did not start would let the
+    // operator confirm trades against the wrong server. Say what happened and
+    // stop instead.
+    dialog.showErrorBox("xorr-pad could not start", String(e.message || e));
+    app.quit();
+    return;
+  }
   const lan = `http://${lanAddress()}:${PORT}`;
   console.log(`\n  point the pad's captive portal at:  ${lan}`);
   console.log(`  pad token:                          ${TOKEN}\n`);

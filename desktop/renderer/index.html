@@ -71,7 +71,7 @@ h2+h2,.rule-top{margin-top:18px}
 
 /* ── the table: rules, never boxes ───────────────────────────────────────── */
 .row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:baseline;
-  padding:6px 0;border-bottom:1px solid var(--s2)}
+  padding:4px 0;border-bottom:1px solid var(--s2)}
 .row:last-child{border-bottom:0}
 .k{color:var(--s6)}
 .mono,.num{font-family:"Azeret Mono",monospace;font-size:var(--t1);font-weight:400;line-height:1.5;font-variant-numeric:tabular-nums;
@@ -223,11 +223,11 @@ provenance.
   <section><h2>Markets, all on Base</h2>
     <div class="mkts" id="mkts"></div>
     <h2 class="rule-top">The deck: every key is clickable</h2>
-    <div class="keys" id="keys"></div>
-    <div id="delisted" class="caveat"></div></section>
+    <div class="keys" id="keys"></div></section>
   <section><h2>The book: six measured strategies</h2>
     <div id="scanhead" class="caveat" style="margin-top:0;padding-top:0;border-top:0">Press SCAN to run the book across every market.</div>
     <div id="scan"></div>
+    <div id="delisted" class="caveat"></div>
     <div class="caveat"><b>Measured, not profitable.</b> These edges are real and
       published with their t&#8209;statistics. None has been shown to make money net of
       fees: the source engine&rsquo;s live book was &#43;$4.32 gross and &minus;$23.07 net
@@ -247,7 +247,7 @@ const H = {"content-type":"application/json","authorization":"Bearer "+TOKEN};
 const KEYS = [["dca"],["grid"],["momentum"],["rebalance"],["yield"],["risk"],["base","b"],["portfolio"],
               ["buy","g"],["sell","r"],["yes","g"],["no","r"],["mic"],["kill","r"],["scan","b"]];
 const CLASS_LABEL = {crypto:"crypto", forex:"forex", defi:"defi", ai:"ai agents"};
-let MARKETS = {}, activeMarket = "ETH", lastPrices = {};
+let MARKETS = {}, activeMarket = "ETH", lastPrices = {}, lastScanAt = null;
 let pending = null;
 const el = (id) => document.getElementById(id);
 const row = (k,v) => `<div class="row"><span class="k">${k}</span><span class="mono">${v}</span></div>`;
@@ -463,6 +463,9 @@ async function refresh(){
     if (pd.pending && !pending) { pending = pd; render_signal(pd); }
     else if (!pd.pending && pending) { pending = null; }
   }
+
+  const ls = await get("/scan/last");
+  if (ls && ls.summary && ls.at !== lastScanAt) { lastScanAt = ls.at; drawScan(ls); }
 
   const lg = await get("/log");
   if (lg) drawLog(lg.log);

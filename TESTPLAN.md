@@ -127,6 +127,16 @@ not a pass.
 | F12 | Reflection in UI | With >=3 rejections a proposal row appears with ACCEPT; clicking persists the rule and it shows under learned rules |
 | F13 | Pending survives refresh | Reload with a live decision: the card and its Confirm/Refuse return |
 
+## H. The Electron desk app
+
+| # | Item | Correct means |
+|---|---|---|
+| H1 | Launch | `electron .` boots the backend, binds :8080, prints the LAN URL and pad token, and opens the window |
+| H2 | Port conflict | With :8080 already taken, the app shows a readable error and quits — it must never open a window onto a backend it did not start |
+| H3 | Window loads | The window renders the same six-pane readout the browser does, at 1440x1000 on the `#0F100F` ground |
+| H4 | Pad-triggered scan appears | A scan run from the pad (or any client) renders in the desk UI, not only in the tab that pressed it |
+| H5 | Screenshot harness | `electron shots.mjs` drives the real app through eight states and writes real captures to `docs/images/app/` |
+
 ## G. Edge cases
 
 | # | Item | Correct means |
@@ -149,7 +159,7 @@ Run against the live product: backend on `:8080`, an anvil fork of Base mainnet
 on `:8545`, a real SQLite store, real Deepgram and Claude Code calls, driven
 through a real browser.
 
-**89 of 91 items PASS. 2 are untestable for want of a credential and are marked
+**94 of 96 items PASS. 2 are untestable for want of a credential and are marked
 as such, not passed.**
 
 - `node desktop/test/verify.mjs` — **74 pass, 0 fail**, 2 skipped.
@@ -162,6 +172,7 @@ as such, not passed.**
 | Section | Result |
 |---|---|
 | A. Shell and design system (16) | 16 PASS |
+| H. Electron desk app (5) | 5 PASS |
 | B. HTTP API (27) | 27 PASS |
 | C. On-chain (11) | 11 PASS — a real mined fill on all four asset classes |
 | D. Memory (7) | 7 PASS |
@@ -200,3 +211,11 @@ the node died and every balance read began failing. `base.llamarpc.com` returns
 now starts the fork on the archive-capable upstream with anvil's request rate
 throttled below the limit and the block pinned, and records why each alternative
 fails.
+
+## Defects found in the Electron pass
+
+| # | Defect | Fix | Re-verified |
+|---|---|---|---|
+| 8 | **`start()` reported success before the port was bound.** It called `listen()` and returned, so with :8080 already taken the desk app printed its LAN URL, opened a window, and loaded *someone else's* backend — meaning the operator would confirm trades against a server they did not start. `EADDRINUSE` had no handler at all, so the error event was an uncaught exception. | `start()` awaits the bind and rejects with a readable message; Electron shows it and quits rather than opening a window it cannot back | PASS — conflict refused, clean launch binds and serves |
+| 9 | **A scan run from the pad never appeared on the desk.** The server recorded it; the UI only rendered a scan the tab itself pressed — the same blind spot the Activity log had. | `GET /scan/last`, polled and rendered | PASS — the book fills in from a pad-triggered scan |
+| 10 | Pane headings scrolled out of view, so a scrolling table lost the label saying what it was | Headings stick to the top of their pane | PASS |

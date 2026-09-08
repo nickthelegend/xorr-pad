@@ -190,6 +190,11 @@ export function createServer(mem) {
           ? { pending: true, signal: state.pending.sig, verdict: state.pending.verdict }
           : { pending: false });
 
+      // The last book run, whoever ran it. Without this a scan triggered from
+      // the physical pad updated the server and never appeared on the desk.
+      if (url.pathname === "/scan/last")
+        return send(200, state.lastScan || { markets: [], signals: [], summary: null });
+
       if (url.pathname === "/markets")
         return send(200, { markets: MARKETS, delisted: DELISTED, active: state.market });
 
@@ -365,7 +370,17 @@ export async function start() {
     console.log("  seeded default risk limits into memory");
   }
   const srv = createServer(mem);
-  srv.listen(PORT, HOST, () => {
+  // Wait for the bind to actually succeed. Returning as soon as listen() is
+  // called reported success while the port was owned by someone else, and the
+  // desk app then opened a window onto a backend it did not start — which for
+  // a trading app means confirming trades against the wrong server.
+  await new Promise((resolve, reject) => {
+    srv.once("error", (e) => reject(e.code === "EADDRINUSE"
+      ? new Error(`port ${PORT} is already in use. Another xorr-pad (or a stale one) is running: stop it, or set PORT to something else.`)
+      : e));
+    srv.listen(PORT, HOST, () => { srv.removeAllListeners("error"); resolve(); });
+  });
+  {
     console.log(`xorr-pad backend on http://${HOST}:${PORT}  (${IS_FORK ? "Base fork" : "Base MAINNET"}, auth on)`);
     if (GENERATED) {
       console.log(`  no PAD_TOKEN was set, so one was generated for this run:`);
@@ -373,7 +388,9 @@ export async function start() {
       console.log(`  open  http://localhost:${PORT}/?token=${TOKEN}`);
       console.log(`  set PAD_TOKEN in the environment to keep it stable across restarts.`);
     }
-  });
+  }
+  // A listener from here on keeps a late socket error from taking the app down.
+  srv.on("error", (e) => console.error("[server]", e.message));
   return { srv, mem };
 }
 
