@@ -103,6 +103,15 @@ async function run() {
   if (rf2?.proposals?.length)
     await api("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: rf2.proposals[0] }) });
   await key("buy"); await key("yes");
+
+  // Round-trip a second market, so the store shows its archive tier. Closing a
+  // position retires it into archived_entities rather than deleting it — the
+  // pad can still answer "what did I used to hold?" — and that only shows up in
+  // a screenshot if something has actually been closed. ETH is under a learned
+  // rule by this point, so use a market the rule does not cover.
+  await key("AERO"); await key("buy"); await key("yes");
+  await key("sell"); await key("yes");
+
   await scrollTo("#memsec");
   await shot("09-memory", "the whole Sibyl store: every entity, reference, state key and journal event", 6500);
 

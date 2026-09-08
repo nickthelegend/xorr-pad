@@ -162,7 +162,8 @@ through a real browser.
 **94 of 96 items PASS. 2 are untestable for want of a credential and are marked
 as such, not passed.**
 
-- `node desktop/test/verify.mjs` — **74 pass, 0 fail**, 2 skipped.
+- `node desktop/test/verify.mjs` — **80 pass, 0 fail**, 2 skipped, stable across
+  three consecutive runs against the same accumulating store.
 - `node desktop/test/loadbearing.test.mjs` — exits 0; 3 of 4 verdicts change on
   a wipe, control unchanged.
 - Impeccable detector across the repository — **0 findings**.
@@ -219,3 +220,27 @@ fails.
 | 8 | **`start()` reported success before the port was bound.** It called `listen()` and returned, so with :8080 already taken the desk app printed its LAN URL, opened a window, and loaded *someone else's* backend — meaning the operator would confirm trades against a server they did not start. `EADDRINUSE` had no handler at all, so the error event was an uncaught exception. | `start()` awaits the bind and rejects with a readable message; Electron shows it and quits rather than opening a window it cannot back | PASS — conflict refused, clean launch binds and serves |
 | 9 | **A scan run from the pad never appeared on the desk.** The server recorded it; the UI only rendered a scan the tab itself pressed — the same blind spot the Activity log had. | `GET /scan/last`, polled and rendered | PASS — the book fills in from a pad-triggered scan |
 | 10 | Pane headings scrolled out of view, so a scrolling table lost the label saying what it was | Headings stick to the top of their pane | PASS |
+
+## Defects found in the Sibyl-integration pass
+
+Every one of these was found by running the product, not by reading it. All six
+now have a check in `desktop/test/verify.mjs` section N, so they cannot come
+back quietly.
+
+| # | Defect | Fix | Re-verified |
+|---|---|---|---|
+| 11 | **`recall_brief` computed today's spend and then dropped it from the returned dict.** `decide()` fell back to summing "the last 10 journal events" — right today, wrong the moment a day holds more than ten trades, and silently so. | The bridge returns `spent_today`, measured over a bounded `read_events(since=local midnight)`. The window is local midnight, not UTC, so it agrees with the JS fallback instead of disagreeing by up to a day. | PASS — N1, `spent_today=125` straight from the store |
+| 12 | **A closed position was never archived.** The close test was `newQty <= 1e-12`, but a round trip priced in USD never lands on exactly zero: buying $50 of ETH and selling $50 back left ~7e-7 ETH of dust, so the branch never fired. The pad went on claiming to hold 0.0000007 ETH forever, and `archived_entities` stayed empty. | Closed means *economically* nothing left — under a cent of value, or under a thousandth of what was held. | PASS — N2, a real round trip lands in the archive and the brief reports flat |
+| 13 | **Selling an entire position reverted with the opaque string `STF`.** A JS double cannot hold an 18-decimal balance: `spendable()` rounded 201017173684167191602 wei to `201.0171736841672`, and parsing that back asked the router for **8398 wei more than the wallet owned**. | The swap clamps its input to the on-chain raw balance, and an `STF` is reported as what it is — the router could not pull the input — rather than as a liquidity problem. | PASS — N3, the full balance sells to the last wei, leaving 0.000000000000000000 |
+| 14 | **Swaps intermittently ran out of gas.** viem sends exactly what `eth_estimateGas` returned; the swap then executes a block later against state that can cost more. One reverted at **145851 gas of a 147653 limit — 98.8% used**, no fill, gas burned. Replaying the identical call with a normal budget succeeded. | Every swap, approval and wrap estimates its own gas and adds a 30% margin. | PASS — N5, 12 consecutive swaps at 71–79% of limit, 0 failures |
+| 15 | **A reverted swap reported the symptom, not the cause** — "swap mined but USDC balance did not move" — sending an operator hunting through liquidity. | A non-success receipt says the swap reverted on chain, names the hash, and says nothing was booked. | PASS — surfaced defect 14 in one run |
+| 16 | **The store browser separated a heading from its rows.** Headings and rows were separate children of a two-column layout, so `archived — 1` sat at the foot of column one while its only row appeared at the head of column two, under the journal's heading. | Each tier is one block that cannot break; the journal, which may exceed a column, breaks internally but keeps its heading. | PASS — N4, and the captured screenshot |
+| 17 | **A fresh fork could not trade at all.** anvil's account #0 holds no USDC in Base mainnet state, so the only quote asset the wallet ever had was whatever an earlier session left in `--state`. Round-trip a few times and it drained to dust; the next buy failed with "insufficient USDC", which reads as an app bug. | `fundOnFork` tops up the quote asset through the app's own Uniswap route, and the server does it at boot. | PASS — C0, and the boot line reports the balance |
+
+**Two test-harness defects, which mattered as much:** one throwing section
+**killed the remaining 30 checks** — each section is now guarded, so a crash is
+a FAIL and the run continues. And `B7` asserted on ETH without ever selecting
+it, so it depended on whichever market the *previous* run happened to end on:
+it passed against a fresh store and failed on the second run against the same
+one. It now names its market. Three consecutive runs against one accumulating
+store: **80 passed, 0 failed** each time.

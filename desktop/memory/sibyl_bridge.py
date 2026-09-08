@@ -47,6 +47,28 @@ def recall_brief(_args):
     accepted rules and the active baton, in one shot, for prompt injection and
     for decide().
     """
+    # Today's executed spend, over a real window. Counting from "the last 50
+    # events" silently under-counts the moment the day has more than 50.
+    spent_today = 0.0
+    try:
+        from datetime import datetime, timezone
+        # LOCAL midnight, expressed in UTC. "Today" means the operator's day, and
+        # decide.mjs's fallback counts from local midnight too — a UTC window here
+        # would make the two paths disagree by up to a day's worth of trades.
+        midnight = (datetime.now().astimezone()
+                    .replace(hour=0, minute=0, second=0, microsecond=0)
+                    .astimezone(timezone.utc).isoformat().replace("+00:00", "Z"))
+        for e in (mem.read_events(limit=1000, since=midnight) or []):
+            acted = e.get("acted")
+            if isinstance(acted, str):
+                try: acted = json.loads(acted)
+                except Exception: acted = None
+            if isinstance(acted, dict) and acted.get("executed"):
+                try: spent_today += float(acted.get("usd") or 0)
+                except Exception: pass
+    except Exception:
+        spent_today = None
+
     limits = mem.get_reference("risk/limits")
     if limits and isinstance(limits.get("body"), str):
         try:
@@ -70,7 +92,7 @@ def recall_brief(_args):
     baton = (mem.get_state("baton") or {}).get("body")
 
     return {"limits": limits, "positions": positions, "rules": rules,
-            "watchlist": watch, "baton": baton,
+            "watchlist": watch, "baton": baton, "spent_today": spent_today,
             "journal_recent": mem.read_events(limit=10)}
 
 
@@ -107,7 +129,7 @@ def full_store(args):
     not a summary of it.
     """
     limit = int(args.get("limit") or 60)
-    out = {"entities": {}, "references": {}, "state": {}, "journal": [], "stats": None}
+    out = {"entities": {}, "references": {}, "state": {}, "journal": [], "archived": [], "stats": None}
 
     for category in ("position", "rule", "watchlist"):
         try:
@@ -172,10 +194,101 @@ def full_store(args):
         pass
 
     try:
+        out["archived"] = list_archived({"limit": 20})
+    except Exception:
+        out["archived"] = []
+
+    try:
         out["stats"] = stats(None)
     except Exception:
         out["stats"] = None
     return out
+
+
+def archive_entity(a):
+    """Retire an entity into archived_entities instead of destroying it.
+
+    Closing a position used to hard-delete it, so the store could not answer
+    "what did I used to hold?" — which for a trading agent throws away the only
+    record that a trade ever happened. Archiving keeps it, with the reason.
+    """
+    return mem.archive_entity(a["category"], a["name"], a.get("reason"))
+
+
+def list_archived(a):
+    """Everything that was retired, newest first. Read straight from the tier."""
+    limit = int(a.get("limit") or 50)
+    rows = []
+    with mem.storage.connection() as conn:
+        cur = conn.execute(
+            "SELECT category, name, body, archive_reason, archived_at "
+            "FROM archived_entities WHERE tenant_id = ? "
+            "ORDER BY archived_at DESC LIMIT ?",
+            (mem.get_tenant(), limit))
+        for category, name, body, reason, archived_at in cur.fetchall():
+            try:
+                body = json.loads(body) if isinstance(body, str) else body
+            except Exception:
+                pass
+            rows.append({"category": category, "name": name, "body": body,
+                         "reason": reason, "archived_at": archived_at})
+    return rows
+
+
+def search_tiers(a):
+    """FTS5 search, optionally scoped to specific tiers, with the verdict.
+
+    The verdict is the point: Sibyl distinguishes NO_MATCH ("I know things,
+    none of them match") from EMPTY_STORE ("I know nothing at all"). An agent
+    that says "no record" without knowing which of those it means is guessing.
+    """
+    tiers = a.get("tiers") or None
+    res = mem.search(a["query"], limit=int(a.get("limit") or 20),
+                     tiers=tuple(tiers) if tiers else None)
+    try:
+        from sibyl_memory_client import refine_zero
+        res = refine_zero(mem, res)
+    except Exception:
+        pass
+    hits = [dict(h) if not isinstance(h, dict) else h for h in (res.hits if hasattr(res, "hits") else res)]
+    verdict = getattr(res, "verdict", None)
+    return {
+        "hits": hits,
+        "verdict": {
+            "code": getattr(getattr(verdict, "code", None), "name", None),
+            "explain": explain_verdict(verdict),
+        } if verdict is not None else None,
+    }
+
+
+def explain_verdict(v):
+    try:
+        from sibyl_memory_client import explain
+        return explain.explain(v) if hasattr(explain, "explain") else None
+    except Exception:
+        return None
+
+
+def events_between(a):
+    """The journal over a bounded window — the temporal tier used as one.
+
+    Daily spend used to be computed by pulling the last N events and filtering
+    in JavaScript, which silently under-counts once the day has more than N.
+    Asking the store for a range is both correct and what the API is for.
+    """
+    return mem.read_events(limit=int(a.get("limit") or 500),
+                           since=a.get("since"), until=a.get("until"))
+
+
+def search_entities_op(a):
+    """Entity-scoped FTS, used to stop a duplicate rule being accepted twice."""
+    return mem.search_entities(a["query"], limit=int(a.get("limit") or 20),
+                               category=a.get("category"))
+
+
+def set_entity_status(a):
+    """Move an entity through its lifecycle (proposed -> active -> retired)."""
+    return mem.set_entity(a["category"], a["name"], a["body"], status=a.get("status"))
 
 
 OPS = {
@@ -200,6 +313,12 @@ OPS = {
     "stats":          stats,
     "wipe":           wipe,
     "full_store":     full_store,
+    "archive_entity": archive_entity,
+    "list_archived":  list_archived,
+    "search_tiers":   search_tiers,
+    "events_between": events_between,
+    "search_entities": search_entities_op,
+    "set_entity_status": set_entity_status,
     "ping":           lambda a: "pong",
 }
 

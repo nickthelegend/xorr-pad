@@ -178,6 +178,13 @@ button.on{background:var(--live);color:var(--ink);box-shadow:var(--drop)}
 .wipe{width:100%;margin-bottom:8px}
 #store{column-count:2;column-gap:22px}
 #store>*{break-inside:avoid}
+/* A tier's heading and its rows are one thing. Pushed as separate children they
+   broke across the column boundary — "archived — 1" sat at the foot of column
+   one while its only row appeared at the head of column two, under a different
+   heading. In a store browser whose whole job is showing what the agent knows,
+   that is not untidy, it is wrong. */
+#store>.long{break-inside:auto}
+#store h2.rule-top{break-after:avoid}
 @media (max-width:900px){#store{column-count:1}}
 .sizes{display:inline-flex;gap:6px}
 .sizes button{padding:6px 12px;font-size:var(--t0);min-width:0}
@@ -374,10 +381,12 @@ function drawStore(st){
   if (!st) { el("store").innerHTML = ""; return; }
   const kv = (k,v) => `<div class="row"><span class="k">${esc(k)}</span><span class="mono">${esc(v)}</span></div>`;
   const parts = [];
+  /** One tier = one block, so a heading can never be separated from its rows. */
+  const group = (head, body, cls = "") =>
+    `<div class="grp ${cls}"><h2 class="rule-top">${head}</h2>${body}</div>`;
 
   for (const [cat, items] of Object.entries(st.entities || {})) {
-    parts.push(`<h2 class="rule-top">entity / ${esc(cat)} &mdash; ${items.length}</h2>`);
-    parts.push(items.map(it => {
+    parts.push(group(`entity / ${esc(cat)} &mdash; ${items.length}`, items.map(it => {
       const b = it.body || {};
       const detail = cat === "position"
         ? `${qty(b.qty)} @ ${money(b.avg_entry_usd)}`
@@ -385,24 +394,33 @@ function drawStore(st){
           ? esc(b.text || b.id || "")
           : esc(JSON.stringify(b).slice(0, 90));
       return `<div class="row"><span class="k">${esc(it.name)}</span><span class="mono">${detail}</span></div>`;
-    }).join(""));
+    }).join("")));
   }
 
   for (const [k, v] of Object.entries(st.references || {})) {
-    parts.push(`<h2 class="rule-top">reference / ${esc(k)}</h2>`);
-    parts.push(kv("per trade", money(v.max_trade_usd)) + kv("per day", money(v.max_day_usd)) +
-               `<div class="row"><span class="k">allowlist</span><span class="mono">${esc((v.allow||[]).join(" "))}</span></div>`);
+    parts.push(group(`reference / ${esc(k)}`,
+      kv("per trade", money(v.max_trade_usd)) + kv("per day", money(v.max_day_usd)) +
+      `<div class="row"><span class="k">allowlist</span><span class="mono">${esc((v.allow||[]).join(" "))}</span></div>`));
   }
 
   for (const [k, v] of Object.entries(st.state || {})) {
-    parts.push(`<h2 class="rule-top">state / ${esc(k)}</h2>`);
-    parts.push(Object.entries(v).map(([kk,vv]) => kv(kk, String(vv))).join(""));
+    parts.push(group(`state / ${esc(k)}`,
+      Object.entries(v).map(([kk,vv]) => kv(kk, String(vv))).join("")));
+  }
+
+  const arch = st.archived || [];
+  if (arch.length) {
+    parts.push(group(`archived &mdash; ${arch.length}`, arch.map(a =>
+      `<div class="row"><span class="k">${esc(a.category)}/${esc(a.name)}</span>` +
+      `<span class="mono dim">${esc(a.reason || "")}</span></div>`).join("")));
   }
 
   const j = st.journal || [];
-  parts.push(`<h2 class="rule-top">journal &mdash; ${j.length} event${j.length===1?"":"s"}` +
-             ` <button style="float:right;padding:2px 8px;font-size:var(--t0)" onclick="toggleStore()">${storeOpen?"hide":"show"}</button></h2>`);
-  if (storeOpen) parts.push(j.map(e => {
+  // The journal is the one tier that may be taller than a column, so it is
+  // allowed to break internally — the heading still stays with its first rows.
+  parts.push(group(`journal &mdash; ${j.length} event${j.length===1?"":"s"}` +
+             ` <button style="float:right;padding:2px 8px;font-size:var(--t0)" onclick="toggleStore()">${storeOpen?"hide":"show"}</button>`,
+    !storeOpen ? "" : j.map(e => {
     const act = e.acted?.action || "—";
     const sig = e.evaluated?.signal;
     const what = sig ? `${sig.side} ${sig.symbol} $${sig.sizeUsd}`
@@ -410,13 +428,13 @@ function drawStore(st){
                : e.evaluated?.proposal ? `rule ${e.evaluated.proposal.id}` : "";
     return `<div class="row"><span class="k">${esc(act)} <span class="dim">${esc(what)}</span></span>` +
            `<span class="mono dim">${new Date(e.ts).toLocaleTimeString([], {hour12:false})}</span></div>`;
-  }).join(""));
+  }).join(""), "long"));
 
   const s2 = st.stats || {};
-  parts.push(`<h2 class="rule-top">store</h2>` +
+  parts.push(group("store",
     kv("file", String(s2.db || "").split("/").pop() || "—") +
     kv("size", `${Math.round((s2.size_bytes||0)/1024)} KB`) +
-    kv("tier", (s2.tier && s2.tier.tier) || "—"));
+    kv("tier", (s2.tier && s2.tier.tier) || "—")));
 
   el("store").innerHTML = parts.join("");
 }
@@ -577,9 +595,9 @@ async function refresh(){
 
   const rf = (await get("/reflect")) || { proposals: [] };
   if (m && rf.proposals?.length) {
-    el("store").innerHTML += `<h2 class="rule-top">Learned from your yes/no</h2>` +
+    el("store").innerHTML += `<div class="grp"><h2 class="rule-top">Learned from your yes/no</h2>` +
       rf.proposals.map((p,i)=>`<div class="row"><span>${p.text}</span>
-        <span><button class="g" onclick='acceptRule(${JSON.stringify(p)})'>ACCEPT</button></span></div>`).join("");
+        <span><button class="g" onclick='acceptRule(${JSON.stringify(p)})'>ACCEPT</button></span></div>`).join("") + `</div>`;
   }
   drawAuthBanner();
 }

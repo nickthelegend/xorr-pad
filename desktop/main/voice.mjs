@@ -164,8 +164,19 @@ async function recallHistory(mem, question) {
   const terms = [...new Set([...tickers, ...words])].slice(0, 5);
   if (!terms.length) return "";
   try {
-    const hits = await mem.search(terms.join(" "), 6);
-    if (!Array.isArray(hits) || !hits.length) return "";
+    // searchTiers carries Sibyl's verdict. "I have no record of that" and "I
+    // have never recorded anything" are different answers, and an agent that
+    // cannot tell them apart is guessing at which one it is giving.
+    const res = await mem.searchTiers(terms.join(" "), { limit: 6 });
+    const hits = res?.hits || [];
+    const code = res?.verdict?.code;
+    if (!hits.length) {
+      if (code === "EMPTY_STORE")
+        return "\nYour memory is EMPTY — nothing has ever been recorded. Say so plainly; do not imply you checked a history that does not exist.";
+      if (code === "NO_MATCH")
+        return `\nYou searched your history for "${terms.join(" ")}" and found nothing, but the store DOES hold other records. The honest answer is "no record of that", not "I do not know".`;
+      return "";
+    }
     const lines = hits.map((h) => {
       const when = h.ts ? String(h.ts).slice(0, 16).replace("T", " ") : "";
       const what = typeof h.snippet === "string" ? h.snippet.slice(0, 120) : JSON.stringify(h.body || {}).slice(0, 120);

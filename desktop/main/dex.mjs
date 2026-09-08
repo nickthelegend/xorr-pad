@@ -93,12 +93,35 @@ export async function quote(sell, buy, amountIn) {
   };
 }
 
+/**
+ * Gas, with room to breathe.
+ *
+ * viem sends exactly what eth_estimateGas returned. That estimate is taken
+ * against the state at the time of the call, and the transaction then executes
+ * a block later against state that can cost more — one extra initialised tick
+ * to cross, or a cold storage slot a fork still has to fetch from upstream. A
+ * $25 AERO round trip reverted at 145851 gas of a 147653 limit: 98.8% used, out
+ * of gas, and on mainnet that is real money burned for no fill. Replaying the
+ * identical call with a normal budget succeeded.
+ *
+ * So estimate here and add a margin. If the estimate itself fails, return
+ * undefined and let viem try — the send will surface the real reason.
+ */
+async function gasFor(call) {
+  try {
+    return ((await pub.estimateContractGas({ ...call, account })) * 130n) / 100n;
+  } catch {
+    return undefined;
+  }
+}
+
 async function ensureWeth(amountRaw) {
   const bal = await pub.readContract({ address: TOKENS.WETH.address, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });
   if (bal >= amountRaw) return null;
-  const hash = await wallet.writeContract({ address: TOKENS.WETH.address, abi: wethAbi,
-    functionName: "deposit", value: amountRaw - bal });
+  const call = { address: TOKENS.WETH.address, abi: wethAbi, functionName: "deposit",
+                 value: amountRaw - bal };
+  const hash = await wallet.writeContract({ ...call, gas: await gasFor(call) });
   await mined(hash, "the ETH wrap");
   return hash;
 }
@@ -107,8 +130,9 @@ async function ensureAllowance(token, spender, amountRaw) {
   const cur = await pub.readContract({ address: token, abi: erc20Abi,
     functionName: "allowance", args: [account.address, spender] });
   if (cur >= amountRaw) return null;
-  const hash = await wallet.writeContract({ address: token, abi: erc20Abi,
-    functionName: "approve", args: [spender, maxUint256] });
+  const call = { address: token, abi: erc20Abi, functionName: "approve",
+                 args: [spender, maxUint256] };
+  const hash = await wallet.writeContract({ ...call, gas: await gasFor(call) });
   await mined(hash, "the token approval");
   return hash;
 }
@@ -189,19 +213,49 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
 
   const steps = {};
   if (TOKENS[sell].native) steps.wrap = await ensureWeth(q.amountInRaw);
-  steps.approve = await ensureAllowance(addr(sell), UNISWAP_V3.router, q.amountInRaw);
+
+  // A JS double cannot hold an 18-decimal balance. spendable() rounds
+  // 201017173684167191602 wei to 201.0171736841672, and parsing that back gives
+  // ...200000 — 8398 wei MORE than the wallet owns. So "sell everything" asked
+  // the router to pull more than existed and Uniswap reverted with the opaque
+  // string "STF". Clamp to what is actually held: at wei scale the quote is
+  // unchanged, and minOut's slippage buffer is millions of times larger than
+  // the difference.
+  const pull = addr(sell);
+  const rawHeld = await pub.readContract({ address: pull, abi: erc20Abi,
+    functionName: "balanceOf", args: [account.address] });
+  const amountInRaw = q.amountInRaw > rawHeld ? rawHeld : q.amountInRaw;
+
+  steps.approve = await ensureAllowance(pull, UNISWAP_V3.router, amountInRaw);
 
   const outAddr = TOKENS[buy].native ? TOKENS.WETH.address : tOut.address;
   const before = await pub.readContract({ address: outAddr, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });
 
-  const hash = await wallet.writeContract({
+  const call = {
     address: UNISWAP_V3.router, abi: routerAbi, functionName: "exactInputSingle",
-    args: [{ tokenIn: addr(sell), tokenOut: addr(buy), fee: q.fee,
-             recipient: account.address, amountIn: q.amountInRaw,
+    args: [{ tokenIn: pull, tokenOut: addr(buy), fee: q.fee,
+             recipient: account.address, amountIn: amountInRaw,
              amountOutMinimum: minOut, sqrtPriceLimitX96: 0n }],
-  });
+  };
+  let hash;
+  try {
+    hash = await wallet.writeContract({ ...call, gas: await gasFor(call) });
+  } catch (e) {
+    // "STF" is SafeTransferFrom failing — the router could not pull the input.
+    // Unexplained, it sends an operator hunting through liquidity for a problem
+    // that is really a balance or an allowance.
+    if (/\bSTF\b/.test(String(e?.message || e)))
+      throw new Error(
+        `the ${sell}->${buy} swap was refused before sending: the router could not pull ` +
+        `${amountIn} ${sell} from the wallet (STF — balance or allowance short). Nothing was sent.`);
+    throw e;
+  }
   const receipt = await mined(hash, `the ${sell}->${buy} swap`);
+  // A reverted transaction still gets a receipt. Say so, rather than reporting
+  // the symptom ("balance did not move") and leaving the cause unnamed.
+  if (receipt.status !== "success")
+    throw new Error(`the ${sell}->${buy} swap reverted on chain (${hash}). Nothing was booked.`);
   const after = await pub.readContract({ address: outAddr, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });
 
@@ -211,7 +265,7 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
   return {
     route: ROUTE, hash, status: receipt.status, block: Number(receipt.blockNumber),
     gasUsed: Number(receipt.gasUsed), fee: q.fee, steps,
-    sold: `${amountIn} ${sell}`,
+    sold: `${formatUnits(amountInRaw, TOKENS[sell].decimals)} ${sell}`,
     received: Number(formatUnits(delta, tOut.decimals)),
     receivedSymbol: buy,
     explorer: IS_FORK ? "(local fork)" : `https://basescan.org/tx/${hash}`,

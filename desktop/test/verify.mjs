@@ -11,7 +11,7 @@
  *
  * Exits non-zero on the first section that fails.
  */
-import { chainInfo, balances, pub, erc20Abi } from "../main/chain.mjs";
+import { chainInfo, balances, pub, erc20Abi, fundOnFork } from "../main/chain.mjs";
 import { quote, swap, spendable } from "../main/dex.mjs";
 import { TOKENS, UNISWAP_V3 } from "../main/tokens.mjs";
 import { Memory, DEFAULT_LIMITS, NO_MEMORY_LIMITS } from "../main/memory.mjs";
@@ -47,7 +47,7 @@ const amt = (b, s) => b[s].amount;
 
 // ── A/B. the HTTP surface ───────────────────────────────────────────────────
 section("B. HTTP API");
-{
+try {
   const h = await j("/health", { noauth: true });
   chk("B1 GET /health open", h.s === 200 && h.b.ok === true && h.b.mode === "fork" &&
       typeof h.b.agent === "string" && typeof h.b.armed === "boolean", JSON.stringify(h.b));
@@ -84,11 +84,16 @@ section("B. HTTP API");
 
   const badBody = await j("/reflect/accept", { method: "POST", body: JSON.stringify({ id: "oops" }) });
   chk("B15a malformed accept is 400", badBody.s === 400 && /proposal/.test(badBody.b?.error || ""), `${badBody.s}`);
-}
+} catch (e) { chk("B crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── the gate: propose → confirm → real fill ─────────────────────────────────
 section("B6–B8 · F2–F4. propose, confirm, fill");
-{
+try {
+  // Name the market this section asserts on. The baton is remembered across
+  // restarts, so leaving it implicit made these checks depend on whichever
+  // market the PREVIOUS run happened to finish on — they passed on a fresh
+  // store and failed on the second run against the same one.
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
   const buy = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   const v = buy.b.verdict;
   const cites = v.why.some((w) => /memory|journal|holding|allowlist|rule|limits/i.test(w));
@@ -109,11 +114,11 @@ section("B6–B8 · F2–F4. propose, confirm, fill");
   await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   const no = await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
   chk("B8 NO rejects and journals", no.b?.rejected === true, "rejected, nothing traded");
-}
+} catch (e) { chk("B6–B8 · F2–F4 crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── the kill switch ─────────────────────────────────────────────────────────
 section("B11–B12 · F7. the kill switch");
-{
+try {
   await j("/key", { method: "POST", body: JSON.stringify({ id: "kill" }) });
   const h = await j("/health", { noauth: true });
   chk("B11 KILL disarms", h.b.armed === false, "armed=false");
@@ -137,11 +142,11 @@ section("B11–B12 · F7. the kill switch");
   const panic = await j("/panic", { method: "POST" });
   chk("B12 /panic disarms", panic.b.armed === false, "armed=false");
   await j("/arm", { method: "POST" });
-}
+} catch (e) { chk("B11–B12 · F7 crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── reflection: journal → proposal → accepted rule → veto ───────────────────
 section("B14–B15 · D5 · F8. the habit loop");
-{
+try {
   for (let i = 0; i < 3; i++) {
     await j("/key", { method: "POST", body: JSON.stringify({ id: "sell" }) });
     await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
@@ -163,11 +168,17 @@ section("B14–B15 · D5 · F8. the habit loop");
                    sell.b.verdict.why.some((w) => /vetoed by remembered rule/.test(w));
     chk("D5 the learned rule vetoes", vetoed, `"${sell.b.verdict.why.slice(-1)[0]}"`);
   }
-}
+} catch (e) { chk("B14–B15 · D5 · F8 crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── C. the chain ────────────────────────────────────────────────────────────
 section("C. Base fork — real contracts, real fills");
-{
+try {
+  // The fork's wallet is whatever previous runs left in --state. Top it up
+  // first, or the suite's pass/fail depends on residue from the last session.
+  const fund = await fundOnFork();
+  chk("C0 the fork wallet is funded to trade", fund.funded && fund.usdc >= 100,
+      `${fund.usdc?.toFixed(2)} USDC${fund.swapped ? " (topped up on-chain)" : ""}${fund.quoteAsset ? " — " + fund.quoteAsset : ""}`);
+
   const info = await chainInfo();
   const supply = await pub.readContract({ address: TOKENS.USDC.address, abi: erc20Abi, functionName: "totalSupply" });
   chk("C1 fork is Base mainnet state", info.chainId === 8453 && Number(info.block) > 0 && supply > 0n,
@@ -205,11 +216,11 @@ section("C. Base fork — real contracts, real fills");
   const anvilKey = guard({ CHAIN_MODE: "mainnet", AGENT_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" });
   chk("C5 mainnet guards hold", noKey === "refused" && anvilKey === "refused",
       "no key → refused; anvil key on mainnet → refused");
-}
+} catch (e) { chk("C crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── D. memory ───────────────────────────────────────────────────────────────
 section("D. Sibyl memory");
-{
+try {
   const DB = "/tmp/xorrpad-verify.db";
   for (const p of [DB, DB + "-wal", DB + "-shm"]) if (fs.existsSync(p)) fs.unlinkSync(p);
   const m = new Memory({ db: DB }); await m.ping();
@@ -250,11 +261,11 @@ section("D. Sibyl memory");
   chk("D6 no-memory fallback is stricter", NO_MEMORY_LIMITS.max_trade_usd < DEFAULT_LIMITS.max_trade_usd &&
       NO_MEMORY_LIMITS.max_day_usd < DEFAULT_LIMITS.max_day_usd,
       `$${NO_MEMORY_LIMITS.max_trade_usd}/trade vs the remembered $${DEFAULT_LIMITS.max_trade_usd}`);
-}
+} catch (e) { chk("D crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── G3. a wipe must void an outstanding ✓ ───────────────────────────────────
 section("G3. wiping memory mid-flow");
-{
+try {
   const buy = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   const usd0 = (await j("/portfolio")).b.balances.USDC.amount;
   const w = await j("/memory/wipe", { method: "POST" });
@@ -279,11 +290,11 @@ section("G3. wiping memory mid-flow");
       post.b.verdict.why.some((w) => /NO remembered limits/.test(w)),
       `$${buy.b.verdict.sizeUsd} with memory → $${post.b.verdict.sizeUsd} without it`);
   await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
-}
+} catch (e) { chk("G3 crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── M. markets, strategies, liquidity ───────────────────────────────────────
 section("M. markets — every asset class, on Base");
-{
+try {
   const classes = new Set(Object.values(MARKETS).map((m) => m.class));
   chk("M1 four asset classes are live", classes.size >= 4,
       [...classes].join(", ") + ` across ${SYMBOLS.length} markets`);
@@ -324,10 +335,10 @@ section("M. markets — every asset class, on Base");
       yes.b.fill.receivedSymbol === "EURC",
       `forex: ${(+yes.b?.fill?.received || 0).toFixed(2)} EURC at fee tier ${yes.b?.fill?.fee}`);
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
-}
+} catch (e) { chk("M crashed", false, String(e.message || e).slice(0, 92)); }
 
 section("S. the strategy book");
-{
+try {
   const gate = await marketUptrend();
   chk("S1 the market trend gate reads real BTC history", typeof gate.uptrend === "boolean" && gate.sma200 > 0,
       gate.reason);
@@ -355,11 +366,11 @@ section("S. the strategy book");
   chk("S7 the scan explains every market it looked at",
       sc.b.markets.every((m) => m.error || (typeof m.rsi === "number" && typeof m.regime === "string")),
       sc.b.markets.map((m) => `${m.symbol} RSI ${m.rsi}`).join(", "));
-}
+} catch (e) { chk("S crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── routes and chain behaviour the earlier sections do not reach ────────────
 section("R. remaining routes");
-{
+try {
   await j("/memory/seed", { method: "POST", body: "{}" });
   await j("/arm", { method: "POST" });
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
@@ -395,10 +406,10 @@ section("R. remaining routes");
   chk("A3/A4 fonts serve, traversal does not",
       fonts.status === 200 && fonts.headers.get("content-type") === "font/woff2" && trav.status !== 200,
       `woff2 200, traversal ${trav.status}`);
-}
+} catch (e) { chk("R crashed", false, String(e.message || e).slice(0, 92)); }
 
 section("C. chain behaviour on every asset class");
-{
+try {
   const q = await quote("ETH", "USDC", 0.1);
   chk("C3 quote uses the measured fee tier", q.fee === MARKETS.ETH.fee,
       `${q.fee / 10000}% matches markets.mjs`);
@@ -427,10 +438,10 @@ section("C. chain behaviour on every asset class");
       (/too thin/.test(msg) || /could not be measured/.test(msg)) && !/submitted/.test(msg),
       `$${affordable} attempt: "${msg.slice(0, 64)}"`);
   delete TOKENS.DEGEN;
-}
+} catch (e) { chk("C crashed", false, String(e.message || e).slice(0, 92)); }
 
 section("G. concurrency");
-{
+try {
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
   await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   // A stalled node must fail this check with a message, not crash the run.
@@ -459,11 +470,11 @@ section("G. concurrency");
       `baton ${bat}, next proposal ${nxt.b?.signal?.symbol}`);
   await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
-}
+} catch (e) { chk("G crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── E. voice + brain ────────────────────────────────────────────────────────
 section("E. Deepgram + the Claude Code brain");
-{
+try {
   const audio = await tts("buy fifty dollars of E T H");
   chk("E1 Deepgram TTS", Buffer.isBuffer(audio) && audio.length > 10000, `${audio.length} bytes of linear16`);
 
@@ -523,7 +534,63 @@ section("E. Deepgram + the Claude Code brain");
 
   console.log("  \x1b[33mSKIP\x1b[0m  E4 Groq                          every model returns model_permission_blocked_project");
   console.log("  \x1b[33mSKIP\x1b[0m  E5 1inch                         no ONEINCH_API_KEY; route falls back to Uniswap V3");
-}
+} catch (e) { chk("E crashed", false, String(e.message || e).slice(0, 92)); }
+
+// ── N. the bugs found by running it, locked shut ────────────────────────────
+section("N. regressions");
+try {
+  // recall_brief computed spent_today and then dropped it from the returned
+  // dict, so decide() silently fell back to "the last 10 events" — correct
+  // today, wrong the moment a day has more than ten.
+  const m = await j("/memory");
+  chk("N1 the brief carries spent_today", Number.isFinite(m.b.spent_today),
+      `spent_today=${JSON.stringify(m.b.spent_today)}`);
+
+  // A USD-denominated round trip never lands on exactly zero, so a fully closed
+  // position left sub-cent dust and the 1e-12 close test never fired: nothing
+  // was ever archived and the pad kept claiming to hold 0.0000007 ETH.
+  await j("/memory/seed", { method: "POST", body: "{}" });
+  await j("/arm", { method: "POST" });
+  const k = (id) => j("/key", { method: "POST", body: JSON.stringify({ id }) });
+  await k("AERO"); await k("buy"); await k("yes");
+  const sv = await k("sell");
+  if (sv.b?.verdict?.action === "EXECUTE") await k("yes");
+  const store = (await j("/memory/full")).b;
+  const arch = store.archived || [];
+  const live = (store.entities?.position || []).map((r) => r.name);
+  chk("N2 a closed position is archived, not deleted",
+      arch.some((a) => a.name === "AERO") && !live.includes("AERO"),
+      arch.length ? `archived: ${arch[0].category}/${arch[0].name} — "${arch[0].reason}"` : "nothing archived");
+
+  // spendable() rounds an 18-decimal balance through a JS double, which can
+  // round UP: selling "everything" asked the router for 8398 wei more than the
+  // wallet held and Uniswap reverted with the opaque string STF.
+  await swap("USDC", "AERO", 25);
+  const all = await spendable("AERO");
+  const f = await swap("AERO", "USDC", all);
+  chk("N3 selling the entire balance does not revert", f.status === "success",
+      `sold ${f.sold} -> ${f.received.toFixed(4)} USDC`);
+
+  // viem sends exactly the estimate, and the swap executes a block later
+  // against state that can cost more. One reverted at 98.8% of its limit —
+  // out of gas, no fill, gas burned. Every swap now carries a margin.
+  const rc = await pub.getTransactionReceipt({ hash: f.hash });
+  const tx = await pub.getTransaction({ hash: f.hash });
+  const used = Number(rc.gasUsed) / Number(tx.gas);
+  chk("N5 a swap has gas headroom", used < 0.9,
+      `used ${(used * 100).toFixed(1)}% of the limit (${rc.gasUsed} of ${tx.gas})`);
+
+  // The store's headings and rows were separate children of a two-column
+  // layout, so "archived — 1" could sit at the foot of one column with its row
+  // at the head of the next, under a different heading.
+  const html = fs.readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
+  const body = html.slice(html.indexOf("function drawStore"), html.indexOf("// --- first paint"));
+  chk("N4 no store tier pushes a bare heading", !/parts\.push\(\s*`<h2/.test(body),
+      /parts\.push\(\s*`<h2/.test(body) ? "a heading is pushed outside group()" : "every tier goes through group()");
+
+  // Leave the baton where the suite found it, so the next run starts clean.
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+} catch (e) { chk("N crashed", false, String(e.message || e).slice(0, 92)); }
 
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             "   (2 skipped: credentials unavailable)\n");

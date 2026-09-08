@@ -120,7 +120,7 @@ hosted multi-user service. Showing xorr-eth, which is a separate product.
 | Task | Status | Where |
 |---|---|---|
 | G1 Explicit test plan with per-item pass criteria | **DONE** | `TESTPLAN.md` (96 items) |
-| G2 End-to-end suite against the live product | **DONE** | `desktop/test/verify.mjs` (74 checks) |
+| G2 End-to-end suite against the live product | **DONE** | `desktop/test/verify.mjs` (80 checks, section N locks the Sibyl-pass defects) |
 | G3 Load-bearing proof exits non-zero on regression | **DONE** | `desktop/test/loadbearing.test.mjs` |
 | G4 Design-slop detector clean across the repo | **DONE** | Impeccable `detect.mjs` |
 | G5 Reproducible product screenshots from the real app | **DONE** | `desktop/shots.mjs` |

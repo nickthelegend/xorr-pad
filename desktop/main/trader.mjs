@@ -57,7 +57,22 @@ export async function applyFill(mem, { symbol, side, usd, price }) {
     });
   } else {
     const newQty = Math.max(0, (cur?.qty || 0) - qty);
-    if (newQty <= 1e-12) await mem.deleteEntity("position", symbol).catch(() => {});
+    // A round trip priced in USD never lands exactly on zero. Buying $50 of ETH
+    // at one price and selling $50 back at another leaves a sub-cent residual,
+    // and a 1e-12 threshold called that dust an open position forever — so a
+    // fully closed trade was never archived, and the pad kept claiming to hold
+    // 0.0000007 ETH. Closed means economically nothing is left: under a cent of
+    // value, or under a thousandth of what was held.
+    const dust = newQty * (price || 0) < 0.01
+              || (cur?.qty ? newQty / cur.qty < 1e-3 : true);
+    if (dust) {
+      // Archive, do not destroy. A closed trade is the only record that the
+      // trade ever happened, and hard-deleting it left the store unable to
+      // answer "what did I used to hold?".
+      const held = cur?.qty ? `${Number(cur.qty).toFixed(6)} @ $${Number(cur.avg_entry_usd).toFixed(4)}` : "";
+      await mem.archiveEntity("position", symbol,
+        `closed at $${Number(price).toFixed(4)}${held ? ` (was ${held})` : ""}`).catch(() => {});
+    }
     else await mem.setEntity("position", symbol, {
       qty: newQty, avg_entry_usd: cur?.avg_entry_usd ?? price,
       updated: new Date().toISOString(),

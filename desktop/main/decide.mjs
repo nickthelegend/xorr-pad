@@ -63,8 +63,12 @@ export function decide(signal, brief) {
     }
   }
 
-  // 4. Daily budget, from the journal.
-  const spent = spentToday(brief?.journal_recent || []);
+  // 4. Daily budget. brief.spent_today comes from a bounded read_events(since
+  //    midnight) — asking the store for the day rather than pulling the last N
+  //    events and hoping the day fits inside them.
+  const spent = Number.isFinite(brief?.spent_today)
+    ? brief.spent_today
+    : spentToday(brief?.journal_recent || []);
   if (spent > 0) {
     memoryUsed = true;
     why.push(`$${spent} already executed today (journal)`);

@@ -73,6 +73,14 @@ export class Memory {
   wipe()                     { return this.call("wipe"); }
   recallBrief()              { return this.call("recall_brief"); }
   fullStore(limit = 60)      { return this.call("full_store", { limit }); }
+  archiveEntity(category, name, reason) { return this.call("archive_entity", { category, name, reason }); }
+  listArchived(limit = 50)   { return this.call("list_archived", { limit }); }
+  /** FTS5 with Sibyl's verdict attached: NO_MATCH and EMPTY_STORE are not the same answer. */
+  searchTiers(query, { tiers = null, limit = 20 } = {}) { return this.call("search_tiers", { query, tiers, limit }); }
+  searchEntities(query, { category = null, limit = 20 } = {}) { return this.call("search_entities", { query, category, limit }); }
+  /** The journal over a real time range, rather than "the last N and hope". */
+  eventsBetween({ since = null, until = null, limit = 500 } = {}) { return this.call("events_between", { since, until, limit }); }
+  setEntityStatus(category, name, body, status) { return this.call("set_entity_status", { category, name, body, status }); }
   getState(key)              { return this.call("get_state", { key }); }
   setState(key, body)        { return this.call("set_state", { key, body }); }
   setEntity(category, name, body) { return this.call("set_entity", { category, name, body }); }

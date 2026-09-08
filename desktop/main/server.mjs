@@ -20,7 +20,7 @@ import { runOnce, getMarket, snapshot, applyFill } from "./trader.mjs";
 import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
 import { swap, spendable } from "./dex.mjs";
-import { IS_FORK } from "./chain.mjs";
+import { IS_FORK, fundOnFork } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule } from "./reflect.mjs";
 import { readFile } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
@@ -420,6 +420,16 @@ export async function start() {
       console.log(`  set PAD_TOKEN in the environment to keep it stable across restarts.`);
     }
   }
+  // A fork's wallet starts with nothing the pad can spend: anvil's account #0
+  // holds no USDC in Base mainnet state, so the operator's very first buy came
+  // back "insufficient USDC" on a freshly-started fork. Top it up at boot —
+  // never on mainnet, where fundOnFork is a no-op by construction.
+  if (IS_FORK) {
+    const f = await fundOnFork().catch((e) => ({ funded: false, quoteAsset: e.message }));
+    if (f.funded) console.log(`  fork wallet: ${f.usdc?.toFixed(2) ?? "?"} USDC${f.swapped ? " (topped up)" : ""}`);
+    else console.log(`  fork wallet could NOT be funded: ${f.quoteAsset || f.reason}`);
+  }
+
   // A listener from here on keeps a late socket error from taking the app down.
   srv.on("error", (e) => console.error("[server]", e.message));
   return { srv, mem };

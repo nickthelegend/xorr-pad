@@ -62,14 +62,43 @@ export async function balances(symbols = Object.keys(TOKENS)) {
   return Object.fromEntries(reads);
 }
 
-/** Fund the agent on the fork so it can actually trade. No-op on mainnet. */
-export async function fundOnFork(eth = "5") {
+/**
+ * Fund the agent on the fork so it can actually trade. No-op on mainnet.
+ *
+ * ETH alone is not a funded wallet. Every buy in this app spends the quote
+ * asset, and anvil's account #0 holds no USDC in Base mainnet state — so the
+ * only USDC the fork ever had was whatever an earlier session happened to swap
+ * into it and leave behind in --state. Round-trip a few times and it drains to
+ * dust, and the next swap dies with "insufficient USDC: need 5, have 0.000001",
+ * which reads like an app bug and is really an empty test wallet.
+ *
+ * So top the quote asset up too — through the app's own Uniswap route, so the
+ * balance is come by honestly rather than poked into a storage slot.
+ */
+export async function fundOnFork(eth = "5", { minUsdc = 200 } = {}) {
   if (!IS_FORK) return { funded: false, reason: "not a fork" };
   const hex = "0x" + parseUnits(eth, 18).toString(16);
   await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "anvil_setBalance",
                            params: [account.address, hex] }) });
-  return { funded: true, eth };
+
+  let usdc = 0, swapped = null;
+  try {
+    const read = async () => Number(formatUnits(await pub.readContract({
+      address: TOKENS.USDC.address, abi: erc20Abi, functionName: "balanceOf",
+      args: [account.address] }), TOKENS.USDC.decimals));
+    usdc = await read();
+    if (usdc < minUsdc) {
+      // dex.mjs imports this module, so the import has to stay lazy.
+      const { swap } = await import("./dex.mjs");
+      const f = await swap("ETH", "USDC", 0.5);
+      swapped = f.hash;
+      usdc = await read();
+    }
+  } catch (e) {
+    return { funded: true, eth, usdc, quoteAsset: String(e.message || e).slice(0, 110) };
+  }
+  return { funded: true, eth, usdc, swapped };
 }
 
 export { formatUnits, parseUnits, erc20Abi };
