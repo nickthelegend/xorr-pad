@@ -59,25 +59,35 @@
  *  pool with real depth. Liquidity figures are USD, measured 2026-09-09. */
 export const STOCKS = {
   NVDAc:  { symbol: "NVDAc",  label: "NVIDIA",            company: "NVIDIA Corporation",
-            address: "0xb20000000000000000000078ee7ce2fE4908108C", decimals: 8, liquidityUsd: 2_233_000 },
+            address: "0xb20000000000000000000078ee7ce2fE4908108C", decimals: 8, liquidityUsd: 2_233_000,
+            pool: "0x853F5f1B92b16714Fe6CDA67CAad0856B83C7ab9" },
   GOOGLc: { symbol: "GOOGLc", label: "Alphabet",          company: "Alphabet Inc. Class A",
-            address: "0xb2000000000000000000002D0BA3164cc74f58B7", decimals: 8, liquidityUsd: 1_690_000 },
+            address: "0xb2000000000000000000002D0BA3164cc74f58B7", decimals: 8, liquidityUsd: 1_690_000,
+            pool: "0xB1987CAD1682841b4b641d50E520777eC5Ab5542" },
   AAPLc:  { symbol: "AAPLc",  label: "Apple",             company: "Apple Inc.",
-            address: "0xb200000000000000000000C2e324d24d7eEcd1fb", decimals: 8, liquidityUsd: 1_511_000 },
+            address: "0xb200000000000000000000C2e324d24d7eEcd1fb", decimals: 8, liquidityUsd: 1_511_000,
+            pool: "0xA3b1E3f9747065e2073722Ff4c9027d3eA4994F0" },
   METAc:  { symbol: "METAc",  label: "Meta",              company: "Meta Platforms, Inc.",
-            address: "0xb2000000000000000000008bC8786B856E61707C", decimals: 8, liquidityUsd: 1_308_000 },
+            address: "0xb2000000000000000000008bC8786B856E61707C", decimals: 8, liquidityUsd: 1_308_000,
+            pool: "0xEAF57753BC382E0324a1D43F72E7027705a2273E" },
   AMZNc:  { symbol: "AMZNc",  label: "Amazon",            company: "Amazon.com, Inc.",
-            address: "0xb200000000000000000000d9192b6B456483C2E8", decimals: 8, liquidityUsd:   848_000 },
+            address: "0xb200000000000000000000d9192b6B456483C2E8", decimals: 8, liquidityUsd:   848_000,
+            pool: "0xd03Bc8C7F2FAedCe2aac81bF0444AEA08Ea06E9b" },
   MSFTc:  { symbol: "MSFTc",  label: "Microsoft",         company: "Microsoft Corporation",
-            address: "0xB200000000000000000000Ab99cFa739E253872B", decimals: 8, liquidityUsd:   711_000 },
+            address: "0xB200000000000000000000Ab99cFa739E253872B", decimals: 8, liquidityUsd:   711_000,
+            pool: "0x7103eB3c9590d1281f7dc03b2A9EE27C39dF5D54" },
   SNDKc:  { symbol: "SNDKc",  label: "SanDisk",           company: "SanDisk Corporation",
-            address: "0xb200000000000000000000397293Cb8cda9a10c5", decimals: 8, liquidityUsd:   650_000 },
+            address: "0xb200000000000000000000397293Cb8cda9a10c5", decimals: 8, liquidityUsd:   650_000,
+            pool: "0x5A8236f575471e7BfCA2C8462a200c28f737246E" },
   SPCXc:  { symbol: "SPCXc",  label: "SpaceX",            company: "Space Exploration Technologies",
-            address: "0xb2000000000000000000007b9fcbd005511aCBd5", decimals: 8, liquidityUsd:   620_000 },
+            address: "0xb2000000000000000000007b9fcbd005511aCBd5", decimals: 8, liquidityUsd:   620_000,
+            pool: "0x0bf58fe0FAc935Ac69595c19B12Ba0d75E3F8c0E" },
   TSLAc:  { symbol: "TSLAc",  label: "Tesla",             company: "Tesla, Inc.",
-            address: "0xb2000000000000000000001e800a7f5189430cD0", decimals: 8, liquidityUsd:   609_000 },
+            address: "0xb2000000000000000000001e800a7f5189430cD0", decimals: 8, liquidityUsd:   609_000,
+            pool: "0x469337fDcc5E8f38e2E4B670B04F57865D13a7BB" },
   MSTRc:  { symbol: "MSTRc",  label: "Strategy",          company: "Strategy Inc. (MicroStrategy)",
-            address: "0xb2000000000000000000004884b426556b92883d", decimals: 8, liquidityUsd:   599_000 },
+            address: "0xb2000000000000000000004884b426556b92883d", decimals: 8, liquidityUsd:   599_000,
+            pool: "0x8b27f626ab668197000BC722A1012022CAeD10E2" },
 };
 
 /** Announced in the Coinbase rollout but with no Base pair found on
@@ -107,4 +117,62 @@ export function stockBlocker(symbol, { isFork, hasAggregator }) {
     return `${symbol}'s depth is on a concentrated-liquidity pool this build cannot route to yet ` +
            `(custom factory, plus Uniswap v4). It needs an aggregator key — set ZEROX_API_KEY or ONEINCH_API_KEY.`;
   return null;
+}
+
+/**
+ * What the pool says a share costs, in USDC.
+ *
+ * THIS WORKS ON A FORK, and the reason is worth stating: the B20 token is
+ * implemented by the node and reverts on a fork, but the POOL is ordinary EVM
+ * bytecode — an EIP-1167 clone, 45 bytes — so `slot0()` answers normally. Price
+ * the pool and never touch the token, and a fork can quote an equity it can
+ * never trade.
+ *
+ * Every pool address above was discovered on-chain from the CL factory at
+ * 0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef via getPool(USDC, token, 10) —
+ * not copied from a listing.
+ *
+ * This is deliberately the POOL's price, not the share price on an exchange.
+ * They can differ, and on a thin pool they differ a lot: SNDKc reads far above
+ * SanDisk's quoted price. The pool's number is the one that matters here
+ * because it is the one you would actually pay — and `priceImpact()` still
+ * refuses a trade the pool is too thin to absorb.
+ */
+const SLOT0_ABI = [{
+  type: "function", name: "slot0", stateMutability: "view", inputs: [],
+  outputs: [{ type: "uint160" }, { type: "int24" }, { type: "uint16" },
+            { type: "uint16" }, { type: "uint16" }, { type: "bool" }],
+}];
+const TOKEN0_ABI = [{ type: "function", name: "token0", stateMutability: "view",
+                      inputs: [], outputs: [{ type: "address" }] }];
+const USDC_ADDR = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+
+/** USDC per share for one ticker, or null if the pool cannot be read. */
+export async function stockPrice(pub, symbol) {
+  const t = STOCKS[symbol];
+  if (!t?.pool) return null;
+  try {
+    const [slot0, token0] = await Promise.all([
+      pub.readContract({ address: t.pool, abi: SLOT0_ABI, functionName: "slot0" }),
+      pub.readContract({ address: t.pool, abi: TOKEN0_ABI, functionName: "token0" }),
+    ]);
+    const sqrt = Number(slot0[0]) / 2 ** 96;
+    const ratio = sqrt * sqrt;                     // raw token1 per raw token0
+    if (!Number.isFinite(ratio) || ratio <= 0) return null;
+    const d = t.decimals - 6;                      // share decimals - USDC decimals
+    const usdc = String(token0).toLowerCase() === USDC_ADDR
+      ? Math.pow(10, d) / ratio                    // USDC is token0
+      : ratio * Math.pow(10, -d);
+    return Number.isFinite(usdc) && usdc > 0 ? usdc : null;
+  } catch { return null; }                         // a fork without the pool, or a node blip
+}
+
+/** Every listed equity priced at once. Missing ones are simply absent. */
+export async function stockPrices(pub, symbols = STOCK_SYMBOLS) {
+  const out = {};
+  await Promise.all(symbols.map(async (s) => {
+    const p = await stockPrice(pub, s);
+    if (p != null) out[s] = p;
+  }));
+  return out;
 }

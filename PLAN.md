@@ -192,7 +192,7 @@ there themselves. Never in chat, a commit, a log line or a command argument.
 Verified 2026-09-09: zero tracked files and zero commits in history contain a
 key. Use a dedicated hot wallet funded with **≤ $30**.
 
-- **T3.1 — Pre-flight guards.** *DONE*
+- **T3.1 — Pre-flight guards.** *DONE — and now asserted every run (section M)*
   `chain.mjs:24` requires the key on mainnet; `:25` refuses the anvil key on
   mainnet; `server.mjs` gates auto-execute on `state.armed && IS_FORK`, so
   **automation can never fire on mainnet** — only a human ✓.
@@ -450,9 +450,22 @@ are the strongest answer to "so it trades memecoins?".
 - **T8.4 — Route to them.** *BLOCKED — needs Phase 2 **and** Phase 3*
   **Done when:** a real equity fill mines on mainnet and the balance moves.
 
-- **T8.5 — Price them on the strip.** *NOT STARTED*
+- **T8.5 — Price them on the strip.** *DONE — 2026-09-09*
   Equity rows show "—" because `feedPrices()` is Binance-backed and these are
   not Binance symbols. Read from the pool, or from the aggregator quote.
+  **Done, and it works on a fork — which this plan assumed impossible.** The B20
+  token reverts on a fork, but the **pool behind it is ordinary bytecode**: an
+  EIP-1167 clone, 45 bytes, whose `slot0()` answers normally. Price the pool and
+  never touch the token, and a fork can quote an equity it can never trade.
+
+  All ten pool addresses were **discovered on-chain**, not copied from a
+  listing: `getPool(USDC, token, 10)` on the CL factory
+  `0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef`. Ten of ten priced in 29 ms.
+
+  These are the **pool's** prices, not exchange quotes, and the code says so —
+  SNDKc reads far above SanDisk's quoted price. The pool's number is the one
+  that matters because it is the one you would pay, and `priceImpact()` still
+  refuses a trade the pool is too thin to absorb.
 
 ### The finding that makes this phase hard
 
@@ -527,7 +540,7 @@ Ordered by what it costs to leave. Every gap tied to the task it blocks.
 | ~~**6**~~ | **CLOSED 2026-09-09.** `npm run dist` produces a launching arm64 `.app` that starts its own fork, seeds a warm fork cache so a fresh install is not cold against a rate-limited RPC, and collects its credentials on first run. | launched and verified | ~~T5.1, T5.2, T5.3~~ |
 | **7** | **The firmware has never run.** Compiles and its backend contract is covered, but provisioning, I2S, matrix and NVS are unverified. | no `/dev/cu.*` | Phase 6, G4 |
 | **8** | **No Groq model can be called.** Corrected: the key is **valid** (models list returns 200); every chat model returns `403 model_permission_blocked_project` / `…_org`. Needs the account owner to grant model access — not a code change, and a new key will not help. The app already names the cause and the console page to fix it. | live probe of 9 models | T4.2 |
-| **9** | **Equity prices show "—".** `feedPrices()` is Binance-backed; these are not Binance symbols. | `stocks.mjs` + the Markets screen | T8.5 |
+| ~~**9**~~ | **CLOSED 2026-09-09.** All ten priced from their own pools, discovered on-chain from the CL factory — and it works on a fork, because only the token is B20; the pool is ordinary bytecode. Suite section K. | verify.mjs section K | ~~T8.5~~ |
 | ~~**10**~~ | **CLOSED 2026-09-09.** With no model reachable, a spoken question is answered from the store — real numbers, and it says it has no model. Section S. | verify.mjs section S | ~~T4.5~~ |
 | **11** | **Exposed credentials not rotated.** Not in git, but in a transcript. | T7.1 verification | T7.2 |
 | **13** | **A whole Loom backend still ships in `orchestrator-pad`**, tracked and pushed: `server.mjs` serves `/select`, and `loom.mjs`/`config.mjs` carry 47 Loom references between them. Zero mentions of xorr. It is what the stale firmware was written against, and it makes the repo look like two products. | route + grep of `orchestrator-pad/backend` | T6.0 |

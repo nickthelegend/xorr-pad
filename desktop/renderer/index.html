@@ -1110,11 +1110,16 @@ async function pickMarket(sym){
  */
 function drawEquities(mk){
   const eq = mk?.equities || {}, blocked = mk?.equitiesBlocked || {};
+  // Read from each equity's own pool. These work even on a fork: the B20 token
+  // reverts there, but the pool behind it is ordinary bytecode.
+  const eqpx = mk?.equityPrices || {};
   const syms = Object.keys(eq);
   if (!syms.length) { el("equities").innerHTML = ""; el("eqnote").hidden = true; return; }
-  el("eqsub").textContent = `${syms.length} on Base · backed 1:1 at a regulated broker`;
+  const priced = syms.filter((s) => eqpx[s] != null).length;
+  el("eqsub").textContent = `${syms.length} on Base · backed 1:1 at a regulated broker`
+    + (priced ? ` · ${priced} priced from their own pools` : ``);
   el("equities").innerHTML = syms.map((sym) => {
-    const m = eq[sym], px = lastPrices[sym];
+    const m = eq[sym], px = eqpx[sym] ?? lastPrices[sym];
     const off = blocked[sym];
     return `<div class="lrow"${off ? ` title="${esc(off)}"` : ""}>
       ${markHtml(sym)}

@@ -898,6 +898,77 @@ try {
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
 
+// ── K. the tokenized equities ───────────────────────────────────────────────
+section("K. equities, priced and refused");
+try {
+  const mk = (await j("/markets")).b;
+  const eq = mk?.equities || {}, px = mk?.equityPrices || {}, blocked = mk?.equitiesBlocked || {};
+  const syms = Object.keys(eq);
+
+  chk("K1 every listed equity carries a pool discovered on-chain",
+      syms.length === 10 && syms.every((s) => /^0x[0-9a-fA-F]{40}$/.test(eq[s].pool || "")),
+      `${syms.length} listed, ${syms.filter((s) => eq[s].pool).length} with pools`);
+
+  // The B20 token reverts on a fork; the pool behind it is ordinary bytecode.
+  // Pricing the pool and never touching the token is what makes this work here.
+  const priced = syms.filter((s) => Number.isFinite(px[s]) && px[s] > 0);
+  chk("K2 they are priced from those pools, even on a fork",
+      priced.length === syms.length, `${priced.length}/${syms.length} priced`);
+
+  // A price that is real but absurd would pass the check above. These are
+  // large-cap US shares: single digits or six figures means the maths is wrong.
+  const sane = priced.filter((s) => px[s] > 10 && px[s] < 10_000);
+  chk("K3 and the prices are in the range a share can actually be",
+      sane.length === priced.length,
+      `${sane.length}/${priced.length} within $10–$10,000 — NVDAc $${(px.NVDAc || 0).toFixed(2)}`);
+
+  chk("K4 every one is still refused, with a reason",
+      syms.every((s) => typeof blocked[s] === "string" && blocked[s].length > 20),
+      `"${String(blocked[syms[0]]).slice(0, 68)}…"`);
+
+  // The two refusals are different and must never be conflated.
+  chk("K5 the fork refusal names the B20 cause, not a liquidity one",
+      /B20|OpcodeNotFound/.test(blocked[syms[0]] || ""),
+      /B20/.test(blocked[syms[0]] || "") ? "names B20 and the node" : `"${blocked[syms[0]]}"`);
+} catch (e) { chk("K crashed", false, String(e.message || e).slice(0, 92)); }
+
+// ── M. the guards standing between this app and real money ──────────────────
+section("M. mainnet guards");
+try {
+  // These are the only things preventing a mistake here from spending the
+  // owner's money. They cost nothing to check, so they are checked every run.
+  const boots = (env) => {
+    try {
+      execFileSync(process.execPath, ["-e", 'await import("./main/chain.mjs"); console.log("BOOTED")'],
+        { env: { ...process.env, ...env }, cwd: ROOT, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+      return null;                                  // it booted — no guard fired
+    } catch (e) { return String(e.stderr || e.message); }
+  };
+
+  const noKey = boots({ CHAIN_MODE: "mainnet", AGENT_PRIVATE_KEY: "" });
+  chk("M1 mainnet refuses to start without a signing key",
+      /AGENT_PRIVATE_KEY is required/.test(noKey || ""),
+      noKey ? `"${(noKey.match(/Error: (.*)/) || [, noKey])[1].slice(0, 62)}"` : "IT BOOTED");
+
+  // anvil's account #0 key is published in its own README. Signing a real
+  // transaction with it hands the funds to anyone watching the chain.
+  const anvilKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+  const wellKnown = boots({ CHAIN_MODE: "mainnet", AGENT_PRIVATE_KEY: anvilKey });
+  chk("M2 mainnet refuses the publicly-known anvil key",
+      /refusing to use the anvil key/.test(wellKnown || ""),
+      wellKnown ? `"${(wellKnown.match(/Error: (.*)/) || [, wellKnown])[1].slice(0, 62)}"` : "IT BOOTED");
+
+  // The book may propose all it likes on mainnet; only a human ✓ can execute.
+  const src = fs.readFileSync(path.join(ROOT, "main", "server.mjs"), "utf8");
+  chk("M3 automation cannot execute on mainnet, only a human confirm can",
+      /execute:\s*state\.armed\s*&&\s*IS_FORK/.test(src),
+      "runOnce is gated on state.armed && IS_FORK");
+
+  chk("M4 the fork is the default, so a mistyped mode cannot mean mainnet",
+      (await j("/health")).b?.mode === "fork" && !process.env.CHAIN_MODE,
+      `mode=${(await j("/health")).b?.mode}, CHAIN_MODE unset`);
+} catch (e) { chk("M crashed", false, String(e.message || e).slice(0, 92)); }
+
 // ── T. first run, with no credentials anywhere ──────────────────────────────
 section("T. the packaged app's first run");
 try {

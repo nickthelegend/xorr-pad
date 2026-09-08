@@ -20,14 +20,14 @@ import { runOnce, getMarket, snapshot, applyFill } from "./trader.mjs";
 import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
 import { swap, spendable } from "./dex.mjs";
-import { IS_FORK, fundOnFork, chainReachable } from "./chain.mjs";
+import { IS_FORK, fundOnFork, chainReachable, pub } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
 import { prices as feedPrices } from "./scan.mjs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
 import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
-import { STOCKS, STOCKS_UNLISTED, STOCK_SYMBOLS, isStock, stockBlocker } from "./stocks.mjs";
+import { STOCKS, STOCKS_UNLISTED, STOCK_SYMBOLS, isStock, stockBlocker, stockPrices } from "./stocks.mjs";
 
 /** Is an aggregator configured? Equities need one; the six crypto markets do not. */
 const HAS_AGGREGATOR = Boolean(process.env.ZEROX_API_KEY || process.env.ONEINCH_API_KEY);
@@ -378,6 +378,11 @@ export function createServer(mem) {
           // see that the equities are real and why the pad will not trade them
           // from a fork.
           equities: STOCKS, equitiesUnlisted: STOCKS_UNLISTED,
+          // Read from each equity's own pool. The B20 token reverts on a fork
+          // but the pool is ordinary bytecode, so these are real prices even
+          // here — and they are the POOL's price, which is what you would pay,
+          // not the share price on an exchange.
+          equityPrices: await stockPrices(pub).catch(() => ({})),
           equitiesBlocked: Object.fromEntries(STOCK_SYMBOLS.map((s) =>
             [s, stockBlocker(s, { isFork: IS_FORK, hasAggregator: HAS_AGGREGATOR })])),
         });
