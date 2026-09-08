@@ -40,11 +40,19 @@ export function pcmToWav(pcm, sampleRate = SR) {
   return Buffer.concat([h, pcm]);
 }
 
+/**
+ * Every call out of this file carries a deadline. Without one, a hung provider
+ * hangs POST /voice forever: the browser's request never returns, the mic key
+ * sits on "TRANSCRIBING…", and there is nothing on screen to say why.
+ */
+const DEADLINE = (ms) => ({ signal: AbortSignal.timeout(ms) });
+
 export async function stt(wav) {
   if (!DG) throw new Error("DEEPGRAM_API_KEY missing");
   const r = await fetch(
     "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
-    { method: "POST", headers: { Authorization: `Token ${DG}`, "content-type": "audio/wav" }, body: wav });
+    { method: "POST", headers: { Authorization: `Token ${DG}`, "content-type": "audio/wav" },
+      body: wav, ...DEADLINE(30_000) });
   if (!r.ok) throw new Error(`stt ${r.status}: ${(await r.text()).slice(0, 160)}`);
   const j = await r.json();
   return j.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() || "";
@@ -55,7 +63,7 @@ export async function tts(text) {
   const r = await fetch(
     `https://api.deepgram.com/v1/speak?model=aura-2-thalia-en&encoding=linear16&sample_rate=${SR}`,
     { method: "POST", headers: { Authorization: `Token ${DG}`, "content-type": "application/json" },
-      body: JSON.stringify({ text }) });
+      body: JSON.stringify({ text }), ...DEADLINE(30_000) });
   if (!r.ok) throw new Error(`tts ${r.status}: ${(await r.text()).slice(0, 160)}`);
   return Buffer.from(await r.arrayBuffer());
 }
@@ -106,6 +114,7 @@ async function brainGroq(question, context) {
       body: JSON.stringify({ model, max_tokens: 80, messages: [
         { role: "system", content: SYSTEM + "\n\n--- pad memory ---\n" + context },
         { role: "user", content: question }] }),
+      ...DEADLINE(20_000),
     });
     const j = await r.json().catch(() => ({}));
     if (r.ok) return j.choices?.[0]?.message?.content?.trim() || "";

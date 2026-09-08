@@ -84,8 +84,24 @@ export function createServer(mem) {
       const chunks = [];
       for await (const c of req) chunks.push(c);
       const pcm = Buffer.concat(chunks);
+      // A request with no audio in it is not a question.
+      if (pcm.length === 0) return send(400, { error: "no audio in the request body" });
       try {
         const transcript = await stt(pcmToWav(pcm));
+        // Deepgram heard nothing — silence, or noise it could not resolve. Say
+        // so and stop. Handing an empty transcript to the brain made it answer
+        // as though something had been asked: an empty POST came back with a
+        // confident spoken portfolio summary, invented out of no input at all.
+        // That is the one thing this agent must never do, and it cost a
+        // Deepgram call and a Claude call to do it.
+        if (!transcript.trim()) {
+          const reply = "I didn't catch that. Say it again?";
+          note("heard nothing — no answer invented");
+          const quiet = await tts(reply);
+          res.writeHead(200, { "content-type": "application/octet-stream",
+            "x-transcript": "", "x-reply": encodeURIComponent(reply), "x-action": "UNHEARD" });
+          return res.end(quiet);
+        }
         const brief = await mem.recallBrief();
         const market = await getMarket([state.market]).catch(() => ({ prices: {} }));
 
@@ -451,7 +467,11 @@ async function onKey(mem, id) {
   if (id === "base") return onKey(mem, "scan");   // the white key runs the book
   if (id === "portfolio") return { ok: true, ...(await snapshot(mem)) };
   if (id === "kill")      { state.armed = false; state.pending = null; note("KILL"); return { ok: true, armed: false }; }
-  if (id === "mic")       return { ok: true, note: "voice handled on /voice" };
+  // The physical pad's mic key streams straight to POST /voice; the on-screen
+  // one records in the browser and does the same. Neither routes through here,
+  // and answering {ok:true} made a dead on-screen key look like it had worked.
+  if (id === "mic")
+    return { ok: false, error: "the mic is not a server-side key — record and POST to /voice" };
 
   return { ok: false, error: `unknown key '${id}'` };
 }
@@ -542,6 +562,26 @@ export async function briefing(mem) {
   return bits.join(" ");
 }
 
+
+/**
+ * Touch everything the pad will read, so the fork answers from its own state.
+ * Same job as warm.mjs, run automatically at boot rather than by hand.
+ */
+async function warmFork() {
+  const t0 = Date.now();
+  const { quote } = await import("./dex.mjs");
+  const { balances } = await import("./chain.mjs");
+  const { SYMBOLS } = await import("./markets.mjs");
+  const jobs = [balances().then(() => true).catch(() => false)];
+  for (const sym of SYMBOLS) {
+    jobs.push(quote("USDC", sym, 25).then(() => true).catch(() => false));
+    jobs.push(quote(sym, "USDC", sym === "cbBTC" ? 0.0005 : sym === "ETH" ? 0.01 : 5)
+      .then(() => true).catch(() => false));
+  }
+  const done = await Promise.all(jobs);
+  return { ok: done.filter(Boolean).length, total: done.length, ms: Date.now() - t0 };
+}
+
 export async function start() {
   const mem = new Memory();
   await mem.ping();
@@ -580,6 +620,15 @@ export async function start() {
     const f = await fundOnFork().catch((e) => ({ funded: false, quoteAsset: e.message }));
     if (f.funded) console.log(`  fork wallet: ${f.usdc?.toFixed(2) ?? "?"} USDC${f.swapped ? " (topped up)" : ""}`);
     else console.log(`  fork wallet could NOT be funded: ${f.quoteAsset || f.reason}`);
+
+    // Pull every pool and balance the pad will touch into the fork's cache,
+    // in the background. anvil fetches state lazily from a rate-limited
+    // upstream, so the FIRST read of an uncached slot can take 30s or simply
+    // time out — and it happens mid-trade, which reads as the app hanging.
+    // Leaving this to the operator to remember running by hand is not a
+    // property you want a demo to depend on. It does not block the bind.
+    warmFork().then((r) => console.log(`  fork warmed: ${r.ok}/${r.total} reads cached in ${r.ms}ms`))
+              .catch((e) => console.log(`  fork could not be warmed: ${String(e.message || e).slice(0, 80)}`));
   }
 
   // A listener from here on keeps a late socket error from taking the app down.

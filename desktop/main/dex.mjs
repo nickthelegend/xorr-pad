@@ -157,7 +157,11 @@ export async function priceImpact(sell, buy, amountIn) {
     // Negative impact = you got a better rate than the small order, which is
     // just rounding. What matters is how much WORSE the full size prices.
     const impact = (pxRef - pxBig) / pxRef;
-    return { impact, ok: impact <= MAX_IMPACT, pxBig, pxRef };
+    // Hand back the full-size quote. swap() used to re-quote the identical
+    // trade a third time: a wasted round trip against a rate-limited fork on
+    // every swap, and a real inconsistency — the price the gate measured was
+    // not the one minOut was computed from.
+    return { impact, ok: impact <= MAX_IMPACT, pxBig, pxRef, quote: big };
   } catch (e) {
     // A risk control that cannot measure must fail CLOSED. Returning "fine" on
     // an unquotable pool let exactly the trade this gate exists to stop go
@@ -207,7 +211,9 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
       : `${buy} pool too thin: ${amountIn} ${sell} would move the price ` +
         `${(imp.impact * 100).toFixed(1)}% (limit ${(MAX_IMPACT * 100).toFixed(0)}%)`);
 
-  const q = await quote(sell, buy, amountIn);
+  // priceImpact already quoted this exact trade; reuse it rather than asking
+  // the node the same question again.
+  const q = imp.quote || await quote(sell, buy, amountIn);
   const tOut = TOKENS[buy];
   const minOut = q.amountOutRaw * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
 

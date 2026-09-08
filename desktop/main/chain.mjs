@@ -78,7 +78,12 @@ export async function balances(symbols = Object.keys(TOKENS)) {
 export async function fundOnFork(eth = "5", { minUsdc = 200 } = {}) {
   if (!IS_FORK) return { funded: false, reason: "not a fork" };
   const hex = "0x" + parseUnits(eth, 18).toString(16);
+  // A raw fetch with no timeout. A wedged node made this hang forever, so
+  // boot-time funding never finished and never reported — the server came up
+  // serving an unfunded wallet in silence. Everything that touches this node
+  // gets a deadline.
   await fetch(RPC, { method: "POST", headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(8_000),
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "anvil_setBalance",
                            params: [account.address, hex] }) });
 

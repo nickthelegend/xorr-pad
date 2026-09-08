@@ -1,4 +1,8 @@
-<!doctype html><meta charset="utf-8"><title>xorr-pad</title>
+<!doctype html><html lang="en"><meta charset="utf-8"><title>xorr-pad</title>
+<!-- Without this a phone renders the page at a 980px virtual viewport and
+     scales it down, so the 900px and 520px breakpoints below NEVER fire and
+     the pad arrives as an unreadable sliver. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 /* ─────────────────────────────────────────────────────────────────────────
    Faces ship with the repo. A readout whose type fails to arrive on venue
@@ -61,6 +65,11 @@ h1{font-family:Archivo;font-size:var(--t3);font-weight:700;line-height:1;
 .stat b{font-family:"Azeret Mono",monospace;font-size:var(--t0);font-weight:700;
   letter-spacing:0;color:var(--ink);font-variant-numeric:tabular-nums}
 .stat.on b{color:#0B7A38} .stat.off{background:var(--sell);color:var(--ink)} .stat.off b{color:var(--ink)}
+/* The re-arm control is a real <button>: it is the kill switch, and a
+   clickable <span> is not reachable by keyboard and is not announced as
+   actionable. Reset the button chrome so the pill looks identical. */
+button.stat{font-family:inherit;line-height:1;cursor:default}
+button.stat[disabled]{opacity:1}
 .stat.clickable{cursor:pointer}
 .stat.clickable:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--ink)}
 .addr{margin-left:auto;font-family:"Azeret Mono",monospace;font-size:var(--t0);
@@ -107,6 +116,12 @@ h2.rule-top{margin-top:16px}
 
 /* ── the deck: keycaps, and they press ───────────────────────────────────── */
 .keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+/* The mic while it is open. ink on live, per the contrast rule. */
+.keys button.live{background:var(--live);color:var(--ink)}
+/* An operation in flight, where its buttons were. Same weight as the buttons
+   so the card does not resize under the reader. */
+.working{display:inline-block;padding:11px 4px;font:700 var(--t0)/1 Archivo,system-ui,sans-serif;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
 button{background:var(--paper);color:var(--ink);border:var(--edge) solid var(--ink);
   border-radius:0;box-shadow:var(--drop-sm);padding:11px 4px;
   font-family:Archivo;font-size:var(--t0);font-weight:700;line-height:1;
@@ -267,7 +282,7 @@ provenance.
 <header>
   <h1>xorr&#8209;pad</h1>
   <span class="stat" id="mode">chain <b>&mdash;</b></span>
-  <span class="stat" id="armed">state <b>&mdash;</b></span>
+  <button type="button" class="stat" id="armed" disabled>state <b>&mdash;</b></button>
   <span class="stat" id="agent">agent <b>&mdash;</b></span>
   <span class="stat" id="blk">block <b>&mdash;</b></span>
   <span class="addr" id="addr"></span>
@@ -292,7 +307,7 @@ provenance.
       fees: the source engine&rsquo;s live book was &#43;$4.32 gross and &minus;$23.07 net
       over 30 trades, the loss entirely fees.</div></section>
   <section class="wide" id="memsec"><h2>Memory: everything Sibyl is holding</h2>
-    <div class="brief" id="briefing">&nbsp;</div>
+    <div class="brief" id="briefing" hidden></div>
     <div class="warn">Wiping is the demo. The agent forgets its limits, positions and learned rules.</div>
     <button class="r wipe" onclick="wipe()">Wipe memory</button>
     <button class="g wipe" id="reteach" hidden onclick="reteach()">Re&#8209;teach its limits</button>
@@ -335,6 +350,21 @@ function drawKeys(active){
   for (const b of el("keys").children) b.classList.toggle("on", b.dataset.key === active);
 }
 async function press(id){
+  // MIC is the one key the screen owns rather than forwards. The server's
+  // handler for it only ever replied {ok:true, note:"voice handled on /voice"}
+  // — a no-op that reported success, so the key animated and nothing happened.
+  if (id === "mic") return micToggle();
+
+  // A confirmed swap signs, submits and waits for a mine — several seconds in
+  // which nothing on the card changed and both buttons stayed live. It looked
+  // frozen, and a second ✓ was one click away. Say what is happening and take
+  // the buttons out of play.
+  const confirmRow = el("sig").querySelector(".confirm");
+  if (confirmRow && (id === "yes" || id === "no"))
+    confirmRow.innerHTML = `<span class="working">${id === "yes"
+      ? "signing, submitting and waiting for the mine\u2026"
+      : "refusing\u2026"}</span>`;
+
   // The scan keys run the book server-side and hand back the result with the
   // pending decision attached. Calling /scan as well would run it twice.
   const scanning = (id === "scan" || id === "base");
@@ -345,12 +375,136 @@ async function press(id){
   if (r.scan) drawScan(r.scan);
   else if (scanning) el("scanhead").textContent = "scan failed" + (r.error?": "+r.error:"");
   if(r.signal){ pending = r; render_signal(r); }
-  if(r.ok===false && r.error) el("sig").innerHTML += `<div class="fnote"><span class="fnref">!</span><span style="color:var(--sell-t)">${esc(r.error)}</span></div>`;
+  // Any error, however it arrives. Gating this on `ok===false` meant a 401 —
+  // which answers {error:"bad pad token"} with no `ok` field at all — rendered
+  // NOTHING: the key was pressed, the request was refused, and the pane went on
+  // showing the idle instructions as though nobody had touched it.
+  if(r.error) el("sig").innerHTML += `<div class="fnote"><span class="fnref">!</span><span style="color:var(--sell-t)">${esc(r.error)}</span></div>`;
   // Once answered, the card must stop looking like a live order awaiting a ✓.
   if(r.fill) settle(`FILLED ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "x", r.fill.hash);
   else if(r.rejected) settle("REFUSED", "n");
   await refresh();
 }
+
+// ── the microphone ──────────────────────────────────────────────────────────
+// Click to start, click again to send. The server wants raw 16-bit PCM at
+// 16 kHz mono, which is what Deepgram is asked for on the way back out, so the
+// browser resamples to that rather than shipping WebM the server cannot read.
+let micState = null;
+
+function micKey(){ return [...document.querySelectorAll(".keys button")].find(b => b.dataset.key === "mic"); }
+function micLabel(text, live){
+  const k = micKey(); if (!k) return;
+  k.textContent = text;
+  k.classList.toggle("live", !!live);
+}
+
+async function micToggle(){
+  if (micState) return micStop();
+  // Say what is happening BEFORE awaiting permission. The browser's prompt can
+  // sit unanswered for as long as the user likes — and with nothing on screen
+  // the pad simply looked frozen, which is the worst possible reading of a
+  // trading app that has just been asked to listen.
+  el("sig").innerHTML = `<div class="verdict"><span class="act">ASKING FOR THE MICROPHONE</span></div>` +
+    `<div class="fnote"><span class="fnref">&mdash;</span><span>Your browser is asking whether this page may listen. Allow it to carry on.</span></div>`;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    // A refused or missing microphone is a normal outcome, not a crash. Say
+    // which it was, in words, where the answer would have gone.
+    el("sig").innerHTML = `<div class="verdict n"><span class="act n">NO MICROPHONE</span></div>` +
+      `<div class="fnote"><span class="fnref">!</span><span>${esc(
+        e && e.name === "NotAllowedError"
+          ? "The browser refused microphone access. Allow it for this page and press MIC again."
+          : "No microphone is available to this window: " + String(e && e.message || e))}</span></div>`;
+    return;
+  }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(stream);
+  // ScriptProcessor is deprecated but is the one path that works without
+  // shipping a separate worklet file, which the CSP here would have to allow.
+  const node = ctx.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+  node.onaudioprocess = (ev) => chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+  src.connect(node); node.connect(ctx.destination);
+  micState = { stream, ctx, src, node, chunks };
+  micLabel("SEND", true);
+  el("sig").innerHTML = `<div class="verdict"><span class="act">LISTENING</span></div>` +
+    `<div class="fnote"><span class="fnref">&mdash;</span><span>Ask it something, or say an order like "buy fifty dollars of ETH". Press MIC again to send.</span></div>`;
+}
+
+async function micStop(){
+  const m = micState; micState = null;
+  micLabel("MIC", false);
+  m.node.onaudioprocess = null;
+  try { m.src.disconnect(); m.node.disconnect(); } catch {}
+  m.stream.getTracks().forEach(t => t.stop());
+  const rate = m.ctx.sampleRate;
+  await m.ctx.close().catch(()=>{});
+
+  const pcm = toPcm16(m.chunks, rate, 16000);
+  if (pcm.byteLength < 3200) {          // under 0.1s of audio is not a question
+    el("sig").innerHTML = `<div class="verdict n"><span class="act n">NOTHING RECORDED</span></div>` +
+      `<div class="fnote"><span class="fnref">!</span><span>That was too short to hear. Hold the key open a little longer.</span></div>`;
+    return;
+  }
+  el("sig").innerHTML = `<div class="verdict"><span class="act">TRANSCRIBING…</span></div>`;
+  try {
+    const r = await fetch("/voice", { method: "POST",
+      headers: { "authorization": "Bearer " + TOKEN, "content-type": "application/octet-stream" },
+      body: pcm });
+    if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || ("voice " + r.status));
+    const heard = decodeURIComponent(r.headers.get("x-transcript") || "");
+    const said  = decodeURIComponent(r.headers.get("x-reply") || "");
+    const action = r.headers.get("x-action") || "ANSWER";
+    const audio = await r.arrayBuffer();
+    el("sig").innerHTML =
+      `<div class="verdict ${action === "EXECUTE" ? "" : action === "REJECT" ? "n" : "x"}">` +
+      `<span class="act">${esc(action === "UNHEARD" ? "DIDN\u2019T CATCH THAT" : action)}</span></div>` +
+      (heard ? `<div class="fnote"><span class="fnref">&ldquo;</span><span>${esc(heard)}</span></div>` : "") +
+      `<div class="fnote"><span class="fnref">&mdash;</span><span>${esc(said)}</span></div>`;
+    playPcm(audio);
+    await refresh();
+    // A spoken order leaves a real decision waiting on a ✓, exactly as the key
+    // would have. Pick it up so YES/NO act on it.
+    const pd = await get("/pending");
+    if (pd?.pending) { pending = { signal: pd.signal, verdict: pd.verdict }; }
+  } catch (e) {
+    el("sig").innerHTML = `<div class="verdict n"><span class="act n">VOICE FAILED</span></div>` +
+      `<div class="fnote"><span class="fnref">!</span><span>${esc(String(e.message || e))}</span></div>`;
+  }
+}
+
+/** Float32 frames at the browser's rate -> mono 16-bit PCM at `out` Hz. */
+function toPcm16(chunks, from, out){
+  let n = 0; for (const c of chunks) n += c.length;
+  const flat = new Float32Array(n);
+  let o = 0; for (const c of chunks) { flat.set(c, o); o += c.length; }
+  const ratio = from / out;
+  const len = Math.floor(flat.length / ratio);
+  const pcm = new Int16Array(len);
+  for (let i = 0; i < len; i++) {
+    const s = Math.max(-1, Math.min(1, flat[Math.floor(i * ratio)] || 0));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return pcm.buffer;
+}
+
+/** The reply comes back as the same raw 16 kHz PCM, so play it directly. */
+function playPcm(buf){
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const pcm = new Int16Array(buf);
+    const b = ctx.createBuffer(1, pcm.length, 16000);
+    const ch = b.getChannelData(0);
+    for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 0x8000;
+    const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start();
+    s.onended = () => ctx.close().catch(()=>{});
+  } catch {}
+}
+
 function settle(msg, kind, hash){
   pending = null;
   el("sig").innerHTML =
@@ -516,11 +670,17 @@ async function showAt(ts){
 async function decay(){
   const r = await (await fetch("/memory/decay",{method:"POST",headers:H,body:JSON.stringify({days:14})})).json();
   const box = el("ttout"); box.hidden = false;
-  box.innerHTML = `<h3>retire unused rules</h3>` +
-    `<div>Checked ${r.checked} rule${r.checked===1?"":"s"} over ${r.days} days. ` +
-    (r.archived?.length
-      ? `Retired ${r.archived.join(", ")} into the archive — readable, not deleted.`
-      : `Nothing retired: every rule has either fired or is younger than the window.`) + `</div>`;
+  // "Checked 0 rules. Every rule has either fired or is younger than the
+  // window." is nonsense when there are no rules — the same failure as not
+  // telling an empty store from one that simply has no match.
+  box.innerHTML = `<h3>retire unused rules</h3><div>` + (
+    r.checked === 0
+      ? `You have not taught it any rules yet, so there is nothing to retire.`
+      : `Checked ${r.checked} rule${r.checked===1?"":"s"} over ${r.days} days. ` +
+        (r.archived?.length
+          ? `Retired ${r.archived.join(", ")} into the archive — readable, not deleted.`
+          : `Nothing retired: every rule has either fired or is younger than the window.`)
+  ) + `</div>`;
   await refresh();
 }
 
@@ -582,7 +742,10 @@ async function get(path){
 }
 function drawAuthBanner(){
   const b = el("authbar");
-  if (chainDown) { b.hidden = false; b.textContent = chainDown + " Holdings and prices are unavailable until it does."; return; }
+  // Say exactly what is unavailable. Market prices come from the exchange feed,
+  // not from Base, so they stay live while the node is down — claiming
+  // otherwise put a false statement on screen next to six correct prices.
+  if (chainDown) { b.hidden = false; b.textContent = chainDown + " Holdings and on-chain data are unavailable until it does; market prices come from the exchange feed and are still live."; return; }
   b.hidden = !authBad;
   if (authBad) b.textContent =
     "Bad pad token. This page's ?token= value does not match PAD_TOKEN on the backend, so the data panes stay empty until it does.";
@@ -610,8 +773,12 @@ function drawScan(r){
   if(!r || !r.markets){ el("scanhead").textContent="scan returned nothing"; return; }
   for (const m of r.markets) if (m.price!=null) lastPrices[m.symbol]=m.price;
   drawMarkets();
+  // Stamp the run. The summary says what is true "right now", and a scan from
+  // seven minutes ago saying that is simply wrong — the reader has no way to
+  // tell a fresh book from a stale one without it.
   el("scanhead").innerHTML = `<b style="color:${r.signals.length?'var(--buy)':'var(--s6)'}">${esc(r.summary)}</b>`
-    + `<div style="margin-top:3px">${esc(r.gate.reason)}</div>`;
+    + `<div style="margin-top:3px">${esc(r.gate.reason)}</div>`
+    + (r.at ? `<div class="dim" style="margin-top:3px">book run at ${esc(new Date(r.at).toLocaleTimeString([], {hour12:false}))}</div>` : "");
   const head = `<div class="trow thead"><span>market</span><span>rsi</span>` +
     `<span>vs ema50</span><span>rel vol</span><span>regime</span></div>`;
   const rows = r.markets.map(m=> m.error
@@ -638,8 +805,13 @@ async function refresh(){
   el("mode").className = "stat " + (h.mode==="fork"?"":"off");
   el("armed").innerHTML = `state <b>${h.armed?"armed":"disarmed"}</b>`;
   el("armed").className = "stat " + (h.armed?"on":"off clickable");
+  // Disabled while armed: there is nothing to re-arm, and a focusable control
+  // that does nothing is worse than one that is plainly out of play.
+  el("armed").disabled = !!h.armed;
   el("armed").onclick = h.armed ? null : arm;
-  el("armed").title = h.armed ? "trading enabled" : "the kill switch is engaged. Click to re-arm.";
+  el("armed").title = h.armed ? "trading enabled" : "the kill switch is engaged. Press to re-arm.";
+  el("armed").setAttribute("aria-label",
+    h.armed ? "trading is armed" : "the kill switch is engaged — activate to re-arm trading");
   el("agent").innerHTML = `agent <b>${esc(h.agent)}</b>`; drawKeys(h.agent);
   if (Number.isFinite(h.sizeUsd)) drawSizes(h.sizeUsd);
 
@@ -681,7 +853,10 @@ async function refresh(){
 
   // Recall as the first thing on screen: what it remembers, in one sentence,
   // before it is trusted with anything.
+  // An empty briefing is not a briefing. Left visible it renders as a bare
+  // 1843x50 blue block — furniture that reads as a rendering fault.
   const bf = await get("/briefing");
+  el("briefing").hidden = !bf?.text;
   if (bf?.text) el("briefing").textContent = bf.text;
 
   // Rules that cannot do what they claim. Only shown when there are any —

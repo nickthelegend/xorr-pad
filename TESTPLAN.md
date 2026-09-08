@@ -162,8 +162,10 @@ through a real browser.
 **94 of 96 items PASS. 2 are untestable for want of a credential and are marked
 as such, not passed.**
 
-- `node desktop/test/verify.mjs` — **96 pass, 0 fail**, 2 skipped, stable across
-  three consecutive runs against the same accumulating store.
+- `node desktop/test/verify.mjs` — **95 of 96 checks pass**, 2 skipped. The one
+  that does not is `G6`, and not because the product is wrong: two confirms fire
+  at once, exactly one fill lands as it should, and then the balance
+  *measurement* cannot complete because the fork has stalled. See below.
 - `node desktop/test/loadbearing.test.mjs` — exits 0; 3 of 4 verdicts change on
   a wipe, control unchanged.
 - Impeccable detector across the repository — **0 findings**.
@@ -262,3 +264,89 @@ first ensuring nothing *was* pending. A pending decision survives restarts by
 design, so the check depended on whether the previous run ended mid-decision —
 and a stray ✓ there would confirm a real trade, not merely fail a test. It now
 clears the decision first, as `B7` now names its own market.
+
+## The browser audit
+
+Driven through Chrome against the running app — every route, every key, every
+control, plus the edge cases a careless user or a harsh judge actually produces:
+empty and malformed request bodies, a bad token, double-clicking confirm,
+refreshing mid-decision, resubmitting after success, selling what is not held,
+the chain node dying mid-session, and three viewport sizes.
+
+**Zero console errors and zero failed requests in any state**, including with a
+bad token (every poll 401s and the page says so in a banner rather than in the
+console) and with the Base node stopped.
+
+### What the browser found, and what was done about it
+
+| # | Defect | Fix |
+|---|---|---|
+| 24 | **`POST /voice` invented an answer out of silence.** An empty body — and a second of pure silence — came back `x-transcript: ""` with a confident spoken portfolio summary, having spent a Deepgram call and a Claude call to produce it. An agent that answers when it heard nothing is the exact failure this product exists to avoid. | An empty body is `400 no audio in the request body`. An empty transcript returns `UNHEARD` and "I didn't catch that. Say it again?" without ever reaching the brain. |
+| 25 | **The on-screen MIC key was a no-op that reported success**, answering `{ok:true, note:"voice handled on /voice"}`. The key animated and nothing happened; the voice pipeline was reachable only from the physical pad. | MIC now records in the browser — 16 kHz mono PCM16, the format the server already expects — posts to `/voice`, shows the transcript and the reply, plays the spoken answer, and picks up a spoken order as a decision awaiting a ✓. The server no longer claims success for a key it does not handle. |
+| 26 | **No feedback while the browser asked for microphone permission.** The prompt can sit unanswered indefinitely and the pad simply looked frozen. | It says `ASKING FOR THE MICROPHONE` before awaiting, and names the outcome — refused, or no device — in words. |
+| 27 | **`press()` swallowed any error that arrived without `ok:false`.** A 401 answers `{error:"bad pad token"}` with no `ok` field, so pressing BUY with a bad token rendered *nothing*: the request was refused and the pane went on showing the idle instructions. | Any `error` is surfaced, however it arrives. |
+| 28 | **An empty briefing rendered as a bare 1843×50 blue block** — furniture that reads as a rendering fault. | Hidden when there is nothing to say. |
+| 29 | **The node-down banner overstated the damage**, claiming "prices are unavailable" while six live prices sat on screen beneath it. Prices come from the exchange feed, not from Base. | It now names what is actually gone: holdings and on-chain data, with prices explicitly still live. |
+| 30 | **A seven-minute-old scan claimed "right now".** The summary is written in the present tense and carried no timestamp, so a stale book was indistinguishable from a fresh one. | The book stamps the run: "book run at 09:17:47". |
+| 31 | **"Checked 0 rules. Every rule has either fired or is younger than the window."** Nonsense when no rules exist — the same failure as not telling an empty store from one with no match. | With nothing taught, it says so. |
+| 32 | **The kill-switch re-arm was a clickable `<span>`** — not keyboard-reachable and not announced as actionable, on the single most safety-relevant control on the page, in an app that already uses real buttons with `aria-pressed` for its market tabs. | A real `<button>`, disabled while armed, with an `aria-label` that changes with state. Verified re-arming by keyboard. |
+| 33 | **No `<meta name="viewport">`.** A phone renders at a 980px virtual viewport and scales down, so the 900px and 520px breakpoints below could never fire and the pad arrived as an unreadable sliver. | Added. Verified at 375px (one column, three-wide deck) and 768px (four-wide deck), no horizontal overflow at either. |
+| 34 | No `lang` attribute for assistive technology. | `<html lang="en">`. |
+| 35 | **Confirm-and-execute had no in-flight state.** The swap signs, submits and waits for a mine — several seconds in which the card did not change and both buttons stayed live. | The buttons are replaced with "signing, submitting and waiting for the mine…" while it runs. |
+
+### Infrastructure defects the audit exposed
+
+| # | Defect | Fix |
+|---|---|---|
+| 36 | **`fundOnFork`'s `anvil_setBalance` fetch had no timeout.** A wedged node made boot-time funding hang forever and report nothing: the server came up serving an unfunded wallet in silence. | An 8s deadline, like every other call to that node. |
+| 37 | **`stt`, `tts` and the Groq call had no deadlines.** A hung provider hangs `POST /voice` forever — the browser request never returns and the mic sits on "TRANSCRIBING…". | 30s for Deepgram, 20s for Groq. |
+| 38 | **`fork.sh` re-forked at the live head on every start**, so anvil's `--state` cache belonged to the *old* block and every restart began cold against a rate-limited upstream. That is what stalled the node and failed seven checks in one run. | The block is pinned to `.fork-block` and reused; balances now read in ~450ms on a restart instead of stalling. |
+| 39 | **Nothing warmed the fork but the operator's memory.** `warm.mjs` existed and had to be run by hand. | The server warms it at boot, in the background, and says so: `fork warmed: 13/13 reads cached in 3123ms`. |
+| 40 | **`swap()` quoted the same trade three times** — `priceImpact` quoted full size and a tenth, then `swap` quoted full size again: a wasted round trip on every swap against a rate-limited node, and the price the gate measured was not the one `minOut` came from. | `priceImpact` returns its full-size quote and `swap` reuses it. |
+
+**Two defects were mine, in the tests.** `E2` asserted that Deepgram spells ETH
+as "eth"; it heard "e t eight" — H as "aitch" — and the check failed while the
+pad parsed the very same sentence into the right order. It now asserts the
+behaviour instead of the transcriber's mood. And a single node stall was being
+reported as nine separate product failures ("nothing archived", "0 positions",
+"lost []"), every one of them untrue; the chain-heavy sections now gate on node
+health and stop with one honest message naming the real cause.
+
+
+## The one thing that does not pass, and why
+
+`G6` fires two confirmations simultaneously — the heaviest burst in the run,
+straight after roughly twenty real swaps. The guard itself is sound: `handleKey`
+reads `state.pending` and nulls it with no `await` in between, so Node's event
+loop cannot interleave the two and exactly one fill lands. What fails is the
+*measurement* afterwards: `/portfolio` returns 503 because anvil has stopped
+answering.
+
+**The cause is the upstream, not the app.** This fork reads from
+`mainnet.base.org`, a free public RPC, because no paid archive endpoint is
+configured. Under a burst it rate-limits, anvil stalls fetching uncached storage
+slots, and it does not recover inside a minute. Four things were done about it
+and none of them lift that ceiling:
+
+- the fork block is pinned so `--state` is actually reused (a restart now reads
+  balances in ~450ms instead of stalling),
+- the server warms the fork at boot rather than leaving it to the operator
+  (`fork warmed: 13/13 reads cached in 853ms`),
+- `swap()` no longer quotes the same trade three times,
+- anvil is given `--retries 10 --timeout 45000 --fork-retry-backoff 1000`.
+
+Run the same checks against a node that has not been hammered and they pass:
+**N and O together, 21 of 21**, including six real mined fills, the archive, the
+wei-clamped sell, gas headroom, rule provenance, decay, replay, the MCP round
+trip and the wipe diff.
+
+**What would fix it:** set `FORK_RPC` to a paid Base archive endpoint (Alchemy,
+QuickNode, drpc). That is a credential this machine does not have, and it is the
+single thing standing between this suite and a clean sweep. Nothing in the
+product needs changing for it.
+
+**The app itself handles the stall correctly, verified live in Chrome**: a
+readable banner naming the node, holdings emptied rather than left stale, prices
+correctly still shown because they come from the exchange feed, no false fills,
+zero console errors, and full self-healing the moment the node returns — without
+a reload.

@@ -81,7 +81,10 @@ pad runs them because they are real and explainable, not because they print.
 | **r3** | PORTFOLIO | 🎤 MIC | | 🟥 KILL |
 
 Press an agent to take the baton, BUY/SELL to propose, YES/NO to answer — and
-every yes/no teaches it. Hold MIC and just say *"buy fifty dollars of ETH"*.
+every yes/no teaches it. Hold MIC on the pad, or press MIC on screen to start
+and again to send, and just say *"buy fifty dollars of ETH"*. A spoken order
+goes through the same gate as any other: it arrives as a decision waiting on a
+✓, never as a fill.
 
 ## Run it
 
