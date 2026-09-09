@@ -357,12 +357,26 @@ export function parseIntent(text, fallbackAgent = "momentum", market = "ETH") {
   // wrong asset: "Buy $50 of ETH" came back from the transcriber as "ETA" and
   // bought VIRTUAL, because VIRTUAL happened to be in hand. Say so instead.
   if (!matched) {
-    // Tolerate the punctuation the transcriber adds — "of Zorblax." ends with a
-    // full stop, and anchoring hard to end-of-string let exactly that through.
-    const slot = t.match(/\b(?:of|in|into|worth\s+of)\s+([a-z][a-z0-9\s]{0,14}?)[\s.,!?]*$/);
-    const named = slot && slot[1].trim();
-    if (named && !/^(it|that|this|them|the\s+market|dollars?|bucks?)$/.test(named))
-      return { needsMarket: true, side, sizeUsd: usd, heard: named.trim(),
+    // What is left after the verb, the amount and the filler words? Anything
+    // still standing was meant to name a market, and it resolved to nothing.
+    //
+    // This used to require an "of" before the name. The transcriber does not
+    // reliably produce one: "Buy fifty dollars of Zorblax" came back as
+    // "Buy $50 Absorb Locks." — no preposition, no alias match — so the guard
+    // never fired and the pad proposed BUY $50 of ETH, the market that happened
+    // to be in hand. Substituting a different asset for a word it did not
+    // recognise is the worst failure this product has, and it is exactly the
+    // bug the "ETA" case was supposed to close.
+    const leftover = t
+      .replace(/\b(buy|long|add|accumulate|sell|short|dump|exit|close|by|my)\b/g, " ")
+      .replace(/\$?\d[\d,.]*/g, " ")
+      .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\b/g, " ")
+      .replace(/\b(dollars?|bucks?|usd|of|in|into|worth|please|now|the|a|an|some|more|it|that|this|them|market|position|again|and|for|to|my)\b/g, " ")
+      .replace(/[^a-z\s]/g, " ")
+      .split(/\s+/).filter((w) => w.length > 1);
+
+    if (leftover.length)
+      return { needsMarket: true, side, sizeUsd: usd, heard: leftover.join(" "),
                reason: `spoken: "${text}"` };
   }
 

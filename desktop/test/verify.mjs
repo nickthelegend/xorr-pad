@@ -887,6 +887,12 @@ try {
       ["Buy $50 of ETA.", "ETH"], ["Buy $50 of E T A", "ETH"], ["buy fifty dollars of eath", "ETH"],
       // Deepgram really returned this one, spelling E-T-H and hearing "eight".
       ["Buy $50 of e t eight.", "ETH"], ["buy 50 of e t ate", "ETH"],
+      // And this one: "Buy fifty dollars of Zorblax" came back as "Buy $50
+      // Absorb Locks." — no preposition and no alias, so the old guard (which
+      // needed an "of") let it through and the pad proposed the market in hand.
+      ["Buy $50 Absorb Locks.", "REFUSE"], ["buy fifty dollars absorb locks", "REFUSE"],
+      ["buy fifty bucks please", "VIRTUAL"], ["sell twenty dollars", "VIRTUAL"],
+      ["buy $25 more", "VIRTUAL"],
       ["buy 40 dollars", "VIRTUAL"], ["buy 30 of it.", "VIRTUAL"],
       ["Buy $40 of Zorblax.", "REFUSE"], ["Sell $25 of Doge!", "REFUSE"],
     ];
@@ -913,6 +919,20 @@ try {
   const cases = [["AERO", 0.6154, "$0.6154"], ["VIRTUAL", 0.0421, "$0.0421"],
                  ["EURC", 1.163, "$1.16"], ["cbBTC", 78723.4, "$78,723"]];
   const wrong = cases.filter(([s, a, want]) => cite(s, a) !== want);
+  // A known path reached with the wrong verb must say so. Answering 404 claims
+  // the route does not exist, which sends the caller hunting for a missing
+  // endpoint — it misled me while testing this server.
+  {
+    const wrong = await fetch(B + "/pad", { method: "POST", headers: H, body: "{}" });
+    const wj = await wrong.json().catch(() => ({}));
+    chk("V0 a wrong method on a real route is 405 with an Allow header, not 404",
+        wrong.status === 405 && (wrong.headers.get("allow") || "").includes("GET"),
+        `${wrong.status} allow=${wrong.headers.get("allow")} "${String(wj.error).slice(0, 50)}"`);
+    const gone = await fetch(B + "/definitely-not-a-route", { headers: H });
+    chk("V0b a path that really does not exist is still 404",
+        gone.status === 404, `${gone.status}`);
+  }
+
   chk("V1 a sub-dollar entry price is cited at the precision it was paid at",
       wrong.length === 0,
       wrong.length ? wrong.map(([s, a, w]) => `${s}: got ${cite(s, a)}, want ${w}`).join("; ")

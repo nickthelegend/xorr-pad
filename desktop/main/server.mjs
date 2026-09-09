@@ -235,7 +235,12 @@ export function createServer(mem) {
           // Live, without a restart — every credential in this app is read at
           // call time precisely so this works.
           for (const [k, v] of Object.entries(fields)) if (v && String(v).trim()) process.env[k] = String(v).trim();
-          return send(200, { ok: true, saved: lines.map((l) => l.split("=")[0]), file });
+          // Hand back the token that is actually in force, not the one typed.
+          // An empty field means "leave it alone", so the page must not redirect
+          // with the blank it was given — that opens the desk with ?token= and
+          // locks the operator out of their own app with every pane empty.
+          return send(200, { ok: true, saved: lines.map((l) => l.split("=")[0]), file,
+                             token: existing.get("PAD_TOKEN") || TOKEN });
         }
         return send(405, { error: "GET or POST" });
       }
@@ -538,6 +543,15 @@ export function createServer(mem) {
         return send(200, await onKey(mem, asSymbol || raw.toLowerCase()));
       }
 
+      // A known path reached with the wrong verb is 405, not 404. Answering
+      // "no such route" for `POST /pad` is a lie — the route exists — and it
+      // sends the caller looking for a missing endpoint instead of a wrong
+      // method. It misled me while testing this very server.
+      const allowed = ROUTE_METHODS[url.pathname];
+      if (allowed) {
+        res.setHeader("Allow", allowed.join(", "));
+        return send(405, { error: `${req.method} is not allowed on ${url.pathname} — use ${allowed.join(" or ")}` });
+      }
       return send(404, { error: "no such route" });
     } catch (e) {
       console.error("[route]", url.pathname, e.message);
@@ -808,6 +822,22 @@ async function warmFork() {
   const done = await Promise.all(jobs);
   return { ok: done.filter(Boolean).length, total: done.length, ms: Date.now() - t0 };
 }
+
+/**
+ * Which verbs each route answers. Used only to turn a wrong-method request into
+ * a truthful 405 instead of a 404 that claims the route does not exist.
+ */
+const ROUTE_METHODS = {
+  "/health": ["GET"], "/pad": ["GET"], "/speak": ["GET"], "/portfolio": ["GET"],
+  "/markets": ["GET"], "/memory": ["GET"], "/memory/full": ["GET"], "/log": ["GET"],
+  "/briefing": ["GET"], "/reflect": ["GET"], "/pending": ["GET"], "/scan/last": ["GET"],
+  "/memory/contradictions": ["GET"], "/memory/at": ["GET"], "/memory/diff": ["GET"],
+  "/padqr": ["GET"], "/scan": ["GET"],
+  "/voice": ["POST"], "/key": ["POST"], "/arm": ["POST"], "/panic": ["POST"],
+  "/tick": ["POST"], "/size": ["POST"], "/memory/wipe": ["POST"], "/memory/seed": ["POST"],
+  "/memory/decay": ["POST"], "/reflect/accept": ["POST"], "/reflect/reject": ["POST"],
+  "/setup": ["GET", "POST"],
+};
 
 export async function start() {
   const mem = new Memory();

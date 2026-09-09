@@ -111,9 +111,13 @@
       if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
       msg.className = "good";
       msg.textContent = "Saved " + j.saved.join(", ") + ". Opening the desk…";
+      // Redirect with the token the SERVER says is in force, never the field.
+      // Leaving the field blank means "keep the current one", and using the
+      // blank here opened the desk at ?token= — every pane empty, locked out.
+      const tok = j.token || $("token").value;
       // The key is live immediately — credentials are read at call time, so no
       // restart is needed.
-      setTimeout(() => { location.href = "/?token=" + encodeURIComponent($("token").value); }, 700);
+      setTimeout(() => { location.href = "/?token=" + encodeURIComponent(tok); }, 700);
     } catch (e) {
       msg.className = "bad";
       msg.textContent = String(e.message || e);
@@ -122,8 +126,15 @@
   }
 
   $("save").addEventListener("click", save);
-  $("skip").addEventListener("click", () => {
-    location.href = "/?token=" + encodeURIComponent($("token").value);
+  $("skip").addEventListener("click", async () => {
+    // Same trap as Save: a blank field must not become the URL's token.
+    let tok = $("token").value;
+    if (!tok) {
+      try { tok = (await (await fetch("/setup", { method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chainMode: $("chainMode").value }) })).json()).token || ""; } catch { /* keep blank */ }
+    }
+    location.href = "/?token=" + encodeURIComponent(tok);
   });
   $("deepgram").addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
 </script>
