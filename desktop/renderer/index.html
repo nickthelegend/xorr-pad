@@ -1127,6 +1127,7 @@ async function get(path){
   if (!r.ok) return null;
   return r.json().catch(()=>null);
 }
+let backendDown = false;
 function drawAuthBanner(){
   const b = el("authbar");
   // Say exactly what is unavailable, and only claim what is actually on screen.
@@ -1135,6 +1136,15 @@ function drawAuthBanner(){
   // /portfolio response, so a cold load with the node already down has none at
   // all. Promising live prices beside six dashes is the same defect as claiming
   // they were gone while six correct ones sat underneath.
+  // A dead backend outranks a dead node: without the backend we cannot even
+  // know whether the node is up, and every number on screen is stale.
+  if (backendDown) {
+    b.hidden = false;
+    b.textContent = "The desk cannot reach its backend. Nothing on this screen is live — " +
+      "the figures below are the last ones it managed to read, and may be minutes old. " +
+      "Nothing can be traded until it reconnects.";
+    return;
+  }
   if (chainDown) {
     const havePrices = Object.values(lastPrices).some((v) => Number.isFinite(v));
     b.hidden = false;
@@ -1430,7 +1440,21 @@ function drawAgents(active){
 async function refresh(){
   authBad = false; chainDown = null;
   const h = await fetch("/health").then(r=>r.json()).catch(()=>null);
-  if (!h) return;
+  if (!h) {
+    // The BACKEND is gone, not just the chain. Returning here used to leave the
+    // last render standing — a confident total, a block number and a wallet,
+    // all minutes stale and presented as current. On a trading desk that is
+    // worse than showing nothing: the operator can act on it. Say it, and stop
+    // asserting the numbers we can no longer stand behind.
+    backendDown = true;
+    drawAuthBanner();
+    el("hero").textContent = "—";
+    el("herosub").textContent = "the desk cannot reach its backend";
+    el("railblock").textContent = "—";
+    el("railaddr").textContent = "—";
+    return;
+  }
+  backendDown = false;
   armed = !!h.armed; agentNow = h.agent;
 
   el("livedot").className = "livedot" + (armed ? " on" : "");
