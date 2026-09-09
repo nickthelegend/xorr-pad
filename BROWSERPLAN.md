@@ -898,3 +898,99 @@ they all pass. Worth knowing: the backend does not read `.env` itself, the
 desktop shell does, and a hand-started backend is a backend with no credentials
 and no pad token (it mints a random one, which is exactly what the shell's own
 comment warns about).
+
+## V. Two things at once — the ninth run's axis
+
+Eight runs tested this pad the way a person uses it: one key at a time, one
+request, one answer. Every guard in the execute path was written for that, and
+`/tick` is an open HTTP POST that anything can fire twice.
+
+`decide()` reads `spent_today`, and the fill that changes it is journalled
+several `await`s later. Anything that overlaps inside that window reads the same
+pre-fill number. The daily cap — the one limit that is supposed to be
+un-arguable — is a check-then-act with nothing serialising it.
+
+| # | Item | Correct means |
+|---|---|---|
+| V1 | Concurrent ticks cannot outspend the day | N simultaneous `/tick` against a cap of C never execute more than C in total. The surplus rejects with "daily budget exhausted" |
+| V2 | …and the rejection is the real one | Refused ticks carry `verdict.action === "REJECT"` and the budget reason, not a crash, a timeout, or a silent `fill: null` |
+| V3 | The budget is enforced when it signs, not when it proposes | A tick that waits behind another re-reads the spend it waited for, and clamps or refuses against the *current* number |
+| V4 | The human path and the automated one share the limit | A `YES` and a `/tick` overlapping cannot both spend the last of the day |
+| V5 | Two simultaneous `YES` still cannot double-fill | Exactly one fill, one `nothing pending`. **Already covered by G6** — kept as an explicit statement of the property, not counted as new ground |
+| V6 | A failed execution releases the lock | An execution that throws leaves the next one able to run; the server does not wedge |
+| V7 | Reads never queue behind a trade | `/pad`, `/health` and `/scan` answer while a swap is in flight. The pad's status light must not go dark because a trade is executing |
+
+Reproduced before writing this: four concurrent `/tick` calls against a $50/day
+cap produced **four real signed fills and zero rejections**.
+
+## Ninth full run — 2026-09-10, 137 items
+
+**172 passed, 0 failed, 1 skipped** (E4 Groq, account-level). Sections A–U
+re-verified; section V is new.
+
+### The daily cap was a check-then-act, and `/tick` is an open POST — V1–V4
+
+`runOnce` read `spent_today`, ran it through `decide()`, and then `await`ed a
+swap before the fill that moves that number was journalled. Nothing serialised
+that window. Reproduced with real signed transactions before any fix:
+
+```
+4 concurrent POST /tick, $50/day cap
+  -> 4 EXECUTE, 0 REJECT, 4 real fills
+     0xaac41d…  0x537efc…  0xc26285…  0x9b851f…
+```
+
+Every one of the four read the same pre-fill spend, every one cleared the same
+cap, every one signed. The daily limit is the one number on this pad that is
+supposed to be un-arguable, and two clicks defeated it.
+
+**`main/lock.mjs`.** A queue rather than a refusal, deliberately: refusing the
+second caller would throw away an operator's ✓ whose pending proposal is already
+cleared by the time the lock is reached, and losing a confirm costs more than
+waiting for one. But queueing alone is not the fix — an execution that waits and
+then acts on the budget it read *before* it waited spends money that is already
+gone. So callers re-read the day's room **inside** the lock and clamp against
+the current number, exactly as `decide()` step 4 and 6 do. Both execute paths
+take it: the automation tick and the human `YES`, because they spend the same
+day's money.
+
+After: `4 at once · $25 -> $55 against a $55 cap · 3 fill(s), overspend $0.00`
+— the three that fit each re-read the remaining room and clamped ($25, then the
+last $5), and the fourth was refused citing the budget. V4 shows the same for a
+`YES` and a tick landing together: `$55 -> $85 against $85`.
+
+### What was actually new here, and what was not
+
+The suite already had **G6 "concurrent confirm fills exactly once"**, so
+concurrent *confirm* was covered and V5 restates it rather than extending it.
+The double-fill guard is race-safe by construction anyway — `state.pending` is
+cleared synchronously, with no await between the read and the clear. What had
+never been tested is the **budget** under concurrency, and that is where the
+hole was.
+
+### Both of my new checks were wrong before the code was — V2, V7
+
+- **V2** asked "was anything refused for the budget?" without handling the case
+  where no tick proposed anything at all. On a pass where the book was quiet it
+  read `0 fill(s)` and failed an app that had done nothing wrong. Rewritten to
+  set the cap to *zero room* and assert the only correct outcome — no fills, and
+  every verdict that exists is a budget REJECT — while reporting a quiet book as
+  a quiet book instead of counting it as agreement.
+- **V7** sampled `slowDone` *after* `await slow`. Awaiting the holder is what
+  makes it finish, so the flag could only ever say "done" and the check could
+  only ever fail. Sampled before the await it passes at 3 ms with the lock still
+  held. Sixth run running that one of my own expectations, not the app, was the
+  thing that was wrong.
+
+### The fork had drifted overnight, again
+
+The pin from 2026-09-09 was 14,209 blocks (~8 h) behind by morning and had
+pushed A4 to **4.700%** against a 5% bar — a hair from failing for exactly the
+reason the seventh run diagnosed. Re-pinned to 51,102,781: **0.031%**, and after
+the run's own trading, 0.159%.
+
+Note `fork.sh` refused `mainnet.base.org` at that block ("will not serve state")
+and fell through to blastapi on its own — the upstream list earning its keep.
+And the re-pin cost its throwaway run exactly as the seventh run said it would:
+**136 passed, 8 failed**, six of them `the Base node never came back`. The
+re-run on the warmed cache was clean.

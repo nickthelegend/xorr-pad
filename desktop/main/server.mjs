@@ -23,6 +23,7 @@ import { swap, spendable } from "./dex.mjs";
 import { IS_FORK, fundOnFork, chainReachable, pub, READ_ONLY } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
 import { prices as feedPrices } from "./scan.mjs";
+import { withTradeLock, dayBudget } from "./lock.mjs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
@@ -718,19 +719,35 @@ async function onKey(mem, id) {
                     : `could not top up the fork wallet: ${f.quoteAsset || f.reason}`);
     }
 
-    // clamp to what the wallet actually holds, so an over-sized proposal
-    // degrades to a smaller real trade instead of reverting
-    const have = await spendable(sell);
-    if (have <= 0) return { ok: false, error: `no ${sell} to spend` };
-    if (amountIn > have) { note(`clamped to balance: ${amountIn.toFixed(4)} -> ${have.toFixed(4)} ${sell}`); amountIn = have * 0.999; }
-    const fill = await swap(sell, buy, Number(amountIn.toFixed(6)));
-    await applyFill(mem, { symbol: p.sig.symbol, side: p.sig.side, usd: p.verdict.sizeUsd, price: px, agent: p.sig.agent });
-    await mem.journal({ evaluated: { signal: p.sig },
-                        acted: { action: "FILL", usd: p.verdict.sizeUsd, executed: true, hash: fill.hash },
-                        forward: { received: fill.received } });
-    state.lastFill = fill;
-    note(`FILL ${fill.hash.slice(0, 12)}… ${Number(fill.received).toFixed(6)} ${fill.receivedSymbol}`);
-    return { ok: true, fill };
+    // The operator's ✓ and the automation spend the same day's money, so they
+    // take the same lock and re-read the same number. Without it a YES landing
+    // mid-tick reasons against a spend figure the tick is about to change.
+    return await withTradeLock(async () => {
+      const day = await dayBudget(mem, { NO_MEMORY_LIMITS });
+      if (day.left <= 0) {
+        note(`YES refused — $${day.spent} already executed today, the day's budget is gone`);
+        return { ok: false, error: `daily budget exhausted — $${day.spent} of $${day.max} already executed today` };
+      }
+      if (p.verdict.sizeUsd > day.left) {
+        note(`clamped to the day's room: $${p.verdict.sizeUsd} -> $${day.left}`);
+        p.verdict.sizeUsd = day.left;
+        amountIn = p.sig.side === "BUY" ? day.left : day.left / px;
+      }
+
+      // clamp to what the wallet actually holds, so an over-sized proposal
+      // degrades to a smaller real trade instead of reverting
+      const have = await spendable(sell);
+      if (have <= 0) return { ok: false, error: `no ${sell} to spend` };
+      if (amountIn > have) { note(`clamped to balance: ${amountIn.toFixed(4)} -> ${have.toFixed(4)} ${sell}`); amountIn = have * 0.999; }
+      const fill = await swap(sell, buy, Number(amountIn.toFixed(6)));
+      await applyFill(mem, { symbol: p.sig.symbol, side: p.sig.side, usd: p.verdict.sizeUsd, price: px, agent: p.sig.agent });
+      await mem.journal({ evaluated: { signal: p.sig },
+                          acted: { action: "FILL", usd: p.verdict.sizeUsd, executed: true, hash: fill.hash },
+                          forward: { received: fill.received } });
+      state.lastFill = fill;
+      note(`FILL ${fill.hash.slice(0, 12)}… ${Number(fill.received).toFixed(6)} ${fill.receivedSymbol}`);
+      return { ok: true, fill };
+    });
   }
 
   if (id === "base") return onKey(mem, "scan");   // the white key runs the book

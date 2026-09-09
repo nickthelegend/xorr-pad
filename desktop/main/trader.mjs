@@ -15,6 +15,8 @@ import { balances, chainInfo, IS_FORK } from "./chain.mjs";
 import { TOKENS } from "./tokens.mjs";
 import { SYMBOLS } from "./markets.mjs";
 import { prices as feedPrices } from "./scan.mjs";
+import { withTradeLock, dayBudget } from "./lock.mjs";
+import { NO_MEMORY_LIMITS } from "./memory.mjs";
 
 /**
  * Real prices for every tradeable market.
@@ -133,18 +135,42 @@ export async function runOnce(mem, { execute = IS_FORK, cfgs = {}, market } = {}
   let fill = null;
   if (verdict.action === "EXECUTE" && execute) {
     if (!IS_FORK) throw new Error("refusing to auto-execute on mainnet — needs explicit confirmation");
-    const px = mkt.prices[signal.symbol];
-    const [sell, buy] = signal.side === "BUY"
-      ? ["USDC", signal.symbol] : [signal.symbol, "USDC"];
-    const amountIn = signal.side === "BUY"
-      ? verdict.sizeUsd                       // spend USD
-      : verdict.sizeUsd / px;                 // sell this much of the asset
-    fill = await swap(sell, buy, Number(amountIn.toFixed(TOKENS[sell].decimals > 8 ? 8 : 6)));
-    await applyFill(mem, { symbol: signal.symbol, side: signal.side, usd: verdict.sizeUsd, price: px, agent: signal.agent });
-    await mem.journal({
-      evaluated: { signal },
-      acted: { action: "FILL", usd: verdict.sizeUsd, executed: true, hash: fill.hash },
-      forward: { received: fill.received, symbol: fill.receivedSymbol },
+
+    // Everything from here to the journalled fill runs alone. The verdict above
+    // was reasoned against a spend figure another execution may already have
+    // moved, so the day's room is read again now that nothing else is in
+    // flight. See lock.mjs for what overlapping without this actually cost.
+    return await withTradeLock(async () => {
+      const day = await dayBudget(mem, { NO_MEMORY_LIMITS });
+      if (day.left <= 0) {
+        const why = [`$${day.spent} already executed today (journal)`, "daily budget exhausted"];
+        const rejected = { action: "REJECT", sizeUsd: 0, why, memoryUsed: true };
+        await mem.journal({ evaluated: { signal, market: mkt.prices },
+                            acted: { action: "REJECT", usd: 0, executed: false },
+                            forward: { why } });
+        return { signals, signal, verdict: rejected, fill: null, market: mkt, brief };
+      }
+      // Same clamp decide() applies, against the number as it stands now.
+      if (verdict.sizeUsd > day.left) {
+        verdict.why = [...(verdict.why || []),
+                       `clamped $${verdict.sizeUsd} -> $${day.left} (the day's room, re-read at execution)`];
+        verdict.sizeUsd = day.left;
+      }
+
+      const px = mkt.prices[signal.symbol];
+      const [sell, buy] = signal.side === "BUY"
+        ? ["USDC", signal.symbol] : [signal.symbol, "USDC"];
+      const amountIn = signal.side === "BUY"
+        ? verdict.sizeUsd                       // spend USD
+        : verdict.sizeUsd / px;                 // sell this much of the asset
+      fill = await swap(sell, buy, Number(amountIn.toFixed(TOKENS[sell].decimals > 8 ? 8 : 6)));
+      await applyFill(mem, { symbol: signal.symbol, side: signal.side, usd: verdict.sizeUsd, price: px, agent: signal.agent });
+      await mem.journal({
+        evaluated: { signal },
+        acted: { action: "FILL", usd: verdict.sizeUsd, executed: true, hash: fill.hash },
+        forward: { received: fill.received, symbol: fill.receivedSymbol },
+      });
+      return { signals, signal, verdict, fill, market: mkt, brief };
     });
   }
 

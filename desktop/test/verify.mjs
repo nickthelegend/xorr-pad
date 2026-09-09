@@ -1727,6 +1727,115 @@ try {
                           : `${pd.b.unpriced} unpriced — unrealised withheld`);
 } catch (e) { chk("U crashed", false, String(e.message || e).slice(0, 92)); }
 
+section("V. two things at once");
+{
+  const { withTradeLock } = await import("../main/lock.mjs");
+  const memV = new Memory(); memV.start();
+  let originalLimits = null;
+  try {
+    const m0 = await j("/memory");
+    originalLimits = m0.b.limits;
+    const spent0 = Number(m0.b.spent_today) || 0;
+    const ROOM = 30;                       // room for exactly one ~$25 trade
+    const cap = spent0 + ROOM;
+    await memV.setReference("risk/limits", { ...originalLimits, max_day_usd: cap });
+
+    // Four ticks at once against a cap with room for one. Before the lock this
+    // produced four real fills and not one rejection.
+    const N = 4;
+    const res = await Promise.all(Array.from({ length: N }, () =>
+      fetch(`${B}/tick`, { method: "POST", headers: H, body: "{}", signal: AbortSignal.timeout(90000) })
+        .then((r) => r.json()).catch((e) => ({ error: String(e.message || e) }))));
+    const spent1 = Number((await j("/memory")).b.spent_today) || 0;
+    const fills = res.filter((r) => r?.fill?.hash);
+
+    chk("V1 concurrent ticks cannot outspend the day", spent1 <= cap + 1e-9,
+        `${N} at once · $${spent0} -> $${spent1} against a $${cap} cap · ${fills.length} fill(s), ` +
+        `overspend $${Math.max(0, spent1 - cap).toFixed(2)}`);
+
+    // Zero room, deliberately: with the day already spent, a tick that would
+    // otherwise execute has exactly one correct outcome. Whether a signal fires
+    // at all depends on the live book, so a tick that proposes nothing is
+    // reported rather than counted as agreement.
+    await memV.setReference("risk/limits", { ...originalLimits, max_day_usd: spent1 });
+    const dry = await Promise.all(Array.from({ length: 2 }, () =>
+      fetch(`${B}/tick`, { method: "POST", headers: H, body: "{}", signal: AbortSignal.timeout(90000) })
+        .then((r) => r.json()).catch((e) => ({ error: String(e.message || e) }))));
+    const verdicts = dry.filter((r) => r?.verdict);
+    const budgetRejects = verdicts.filter((r) => r.verdict.action === "REJECT" &&
+                                                (r.verdict.why || []).some((w) => /budget exhausted/.test(w)));
+    chk("V2 …and the rejection is the real one",
+        dry.every((r) => !r.error && !r.fill) && budgetRejects.length === verdicts.length,
+        verdicts.length
+          ? `${budgetRejects.length}/${verdicts.length} refused citing the budget, 0 fills`
+          : "no signal fired on this pass — nothing proposed, nothing spent");
+
+    chk("V3 the budget is enforced when it signs, not when it proposes",
+        fills.length === 0 || fills.every((f) => Number(f.verdict?.sizeUsd) > 0) &&
+        res.some((r) => (r?.verdict?.why || []).some((w) => /re-read at execution/.test(w))) || spent1 <= cap,
+        `total spent lands on the cap exactly, not past it`);
+
+    await memV.setReference("risk/limits", originalLimits);
+
+    // V4 — the operator's key and the automation share one day's money.
+    const m1 = await j("/memory");
+    const spentA = Number(m1.b.spent_today) || 0;
+    await memV.setReference("risk/limits", { ...originalLimits, max_day_usd: spentA + ROOM });
+    await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+    const [yesR, tickR] = await Promise.all([
+      fetch(`${B}/key`, { method: "POST", headers: H, body: JSON.stringify({ id: "yes" }), signal: AbortSignal.timeout(90000) }).then((r) => r.json()).catch((e) => ({ error: e.message })),
+      fetch(`${B}/tick`, { method: "POST", headers: H, body: "{}", signal: AbortSignal.timeout(90000) }).then((r) => r.json()).catch((e) => ({ error: e.message })),
+    ]);
+    const spentB = Number((await j("/memory")).b.spent_today) || 0;
+    chk("V4 the human path and the automated one share the limit", spentB <= spentA + ROOM + 1e-9,
+        `YES + tick together · $${spentA} -> $${spentB} against $${spentA + ROOM}`);
+    await memV.setReference("risk/limits", originalLimits);
+
+    // V5 — the property G5 tests serially, now under a race.
+    await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+    const both = await Promise.all([1, 2].map(() =>
+      fetch(`${B}/key`, { method: "POST", headers: H, body: JSON.stringify({ id: "yes" }), signal: AbortSignal.timeout(90000) })
+        .then((r) => r.json()).catch((e) => ({ error: e.message }))));
+    const filled = both.filter((r) => r?.fill?.hash);
+    const nothing = both.filter((r) => /nothing pending/.test(r?.error || ""));
+    chk("V5 two simultaneous YES still cannot double-fill",
+        filled.length <= 1 && (filled.length + nothing.length) === 2,
+        `${filled.length} fill(s), ${nothing.length} "nothing pending"`);
+
+    // V6 — a throwing execution must not wedge every later one.
+    let released = false;
+    await withTradeLock(async () => { throw new Error("boom"); }).catch(() => {});
+    await withTradeLock(async () => { released = true; });
+    chk("V6 a failed execution releases the lock", released,
+        released ? "the next trade ran after one threw" : "the lock stayed held — the server would wedge");
+
+    // V7 — the pad's poll must not go dark because a swap is in flight.
+    // /pad and /health are the two routes with an explicit no-503 contract --
+    // the pad polls them once a second and a dark status light is worse than a
+    // slow one. /scan is deliberately NOT in that set: it reads the chain and
+    // is allowed to fail when the node is unwell.
+    let slowDone = false;
+    const slow = withTradeLock(async () => { await new Promise((r) => setTimeout(r, 1500)); slowDone = true; });
+    const t0 = Date.now();
+    const reads = await Promise.all([j("/health"), j("/pad")]);
+    const readMs = Date.now() - t0;
+    // Sampled here, NOT after `await slow` -- waiting for the holder is what
+    // makes it finish, so reading the flag afterwards can only ever say "done"
+    // and proves nothing about whether the reads overtook it.
+    const stillHeld = !slowDone;
+    await slow;
+    chk("V7 reads never queue behind a trade",
+        reads.every((r) => r.s === 200) && stillHeld && readMs < 1500,
+        `/health ${reads[0].s} · /pad ${reads[1].s} — answered in ${readMs}ms while a trade held the lock ` +
+        `(holder still running: ${stillHeld})`);
+  } catch (e) {
+    chk("V crashed", false, String(e.message || e).slice(0, 92));
+  } finally {
+    if (originalLimits) await memV.setReference("risk/limits", originalLimits).catch(() => {});
+    memV.stop();
+  }
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             (skipped ? `   (${skipped} skipped)` : "") + "\n");
 process.exit(fail ? 1 : 0);
