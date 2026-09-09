@@ -37,6 +37,12 @@ const TOKEN = process.env.PAD_TOKEN || "xorrpad-dev";
 const H = { "content-type": "application/json", authorization: "Bearer " + TOKEN };
 
 let pass = 0, fail = 0, skipped = 0;
+// NOTE on the message argument: it is a template literal, so it is evaluated
+// BEFORE chk() runs. A momentarily-bad response therefore used to throw inside
+// the message and abort the whole section — one flaky read took nine unrelated
+// checks with it and reported "R crashed" instead of naming what failed. Every
+// message below reaches into the response optionally for that reason; the
+// assertions themselves stay strict.
 /** A check that could not run, with the reason. Counted, never assumed. */
 function skip(name, why) {
   skipped++;
@@ -191,7 +197,7 @@ try {
   }
   const rf = await j("/reflect");
   chk("B14 GET /reflect", rf.s === 200 && Array.isArray(rf.b.proposals) && typeof rf.b.journalDepth === "number",
-      `${rf.b.proposals.length} proposal(s) from ${rf.b.journalDepth} journalled events`);
+      `${rf.b?.proposals?.length} proposal(s) from ${rf.b?.journalDepth} journalled events`);
 
   const prop = rf.b.proposals[0];
   if (!prop) { chk("D5 a rule is proposed", false, "nothing mined from the journal"); }
@@ -204,7 +210,7 @@ try {
     const sell = await j("/key", { method: "POST", body: JSON.stringify({ id: "sell" }) });
     const vetoed = sell.b.verdict.action === "REJECT" &&
                    sell.b.verdict.why.some((w) => /vetoed by remembered rule/.test(w));
-    chk("D5 the learned rule vetoes", vetoed, `"${sell.b.verdict.why.slice(-1)[0]}"`);
+    chk("D5 the learned rule vetoes", vetoed, `"${sell.b?.verdict?.why?.slice(-1)[0]}"`);
   }
 } catch (e) { chk("B14–B15 · D5 · F8 crashed", false, String(e.message || e).slice(0, 92)); }
 
@@ -317,7 +323,7 @@ try {
   const yes = await j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) });
   const usd1 = (await j("/portfolio")).b.balances.USDC.amount;
   chk("G3 the forgotten ✓ is voided", w.b.pendingVoided === true && yes.b?.ok === false && usd0 === usd1,
-      `proposed $${buy.b.verdict.sizeUsd} before the wipe, then refused — balance unmoved`);
+      `proposed $${buy.b?.verdict?.sizeUsd} before the wipe, then refused — balance unmoved`);
 
   const m = await j("/memory");
   chk("B16 post-wipe recall is empty", m.b.limits === null && Object.keys(m.b.positions).length === 0,
@@ -333,7 +339,7 @@ try {
   const post = await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   chk("F6 the same press now decides differently", post.b.verdict.sizeUsd <= NO_MEMORY_LIMITS.max_trade_usd &&
       post.b.verdict.why.some((w) => /NO remembered limits/.test(w)),
-      `$${buy.b.verdict.sizeUsd} with memory → $${post.b.verdict.sizeUsd} without it`);
+      `$${buy.b?.verdict?.sizeUsd} with memory → $${post.b?.verdict?.sizeUsd} without it`);
   await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
 } catch (e) { chk("G3 crashed", false, String(e.message || e).slice(0, 92)); }
 
@@ -421,15 +427,15 @@ try {
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
 
   const lg = await j("/log");
-  chk("B6 GET /log", lg.s === 200 && Array.isArray(lg.b.log) && lg.b.log.every((e) => e.t && e.m),
-      `${lg.b.log.length} server-side entries, so pad presses are visible`);
+  chk("B6 GET /log", lg.s === 200 && Array.isArray(lg.b?.log) && lg.b.log.every((e) => e.t && e.m),
+      `${lg.b?.log?.length} server-side entries, so pad presses are visible`);
 
   await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
   const live = await j("/pending");
   await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
   const gone = await j("/pending");
   chk("B7 GET /pending both states", live.b.pending === true && !!live.b.signal && !!live.b.verdict && gone.b.pending === false,
-      `${live.b.signal.side} ${live.b.signal.symbol} $${live.b.signal.sizeUsd} -> none`);
+      `${live.b?.signal?.side} ${live.b?.signal?.symbol} $${live.b?.signal?.sizeUsd} -> none`);
 
   const sw = await j("/key", { method: "POST", body: JSON.stringify({ id: "eurc" }) });
   const baton = (await j("/memory")).b.baton?.market;
@@ -438,8 +444,8 @@ try {
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
 
   const tick = await j("/tick", { method: "POST" });
-  chk("B20 POST /tick", tick.s === 200 && Array.isArray(tick.b.signals),
-      `${tick.b.signals.length} signal(s), verdict ${tick.b.verdict?.action ?? "none"}`);
+  chk("B20 POST /tick", tick.s === 200 && Array.isArray(tick.b?.signals),
+      `${tick.b?.signals?.length} signal(s), verdict ${tick.b?.verdict?.action ?? "none"}`);
 
   const noId = await j("/key", { method: "POST", body: "{}" });
   const junk = await j("/reflect/reject", { method: "POST", body: '{"x":1}' });
@@ -767,7 +773,7 @@ try {
   const veto = await k("sell");
   chk("O3 the veto cites its provenance",
       veto.b.verdict?.vetoedBy === live.id && veto.b.verdict.why.some((w) => /mined from/.test(w)),
-      `"${veto.b.verdict.why.find((w) => /mined from/.test(w)) || veto.b.verdict.why[0]}"`);
+      `"${veto.b?.verdict?.why?.find((w) => /mined from/.test(w)) || veto.b?.verdict?.why?.[0]}"`);
   const jr = (await j("/memory/full")).b.journal || [];
   const vetoed = jr.some((e) => {
     const a = typeof e.acted === "string" ? JSON.parse(e.acted) : e.acted;
@@ -800,7 +806,7 @@ try {
   chk("O7 a rule nothing needs is archived, not deleted",
       dec.b.archived.includes("dead-doge-rule") &&
       ((await j("/memory/full")).b.archived || []).some((a) => a.name === "dead-doge-rule"),
-      `archived: [${dec.b.archived.join(", ")}]`);
+      `archived: [${(dec.b?.archived || []).join(", ")}]`);
   const dz = await j("/memory/decay", { method: "POST", body: JSON.stringify({ days: 0 }) });
   chk("O8 days:0 is honoured, not silently 14", dz.b.days === 0, `days=${dz.b.days}`);
 

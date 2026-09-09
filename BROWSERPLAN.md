@@ -146,6 +146,18 @@ the correct behaviour; the item fails if it succeeds instead.
 | L3 | Chain unreachable | `/pad` still returns 200 with `chainOk:false`; the UI degrades without going blank |
 | L4 | Rapid double-confirm | Exactly one fill, not two |
 
+## N. Routing and best execution — added after the first run, when the aggregator landed
+
+| # | Item | Correct means |
+|---|---|---|
+| N1 | Two routers are built and usable | `uniswap` and `kyberswap` both usable, with **no** `ZEROX_API_KEY` or `ONEINCH_API_KEY` set |
+| N2 | The aggregator quotes for real | A live quote naming ≥ 1 venue, within 5% of the direct pool's quote |
+| N3 | A fill records the comparison | The fill carries every router quoted and the margin the winner won by |
+| N4 | The fill card shows the route | The verdict card names the router, and when it won a comparison, by how much |
+| N5 | A fallback is visible, never silent | When the aggregator fails, the fill routes through the direct pool **and the card says what it fell back from and why** |
+| N6 | The aggregator prices an equity | KyberSwap returns a route for USDC → NVDAc, which a direct V3 call cannot reach |
+| N7 | Read-only mainnet refuses to sign | With `CHAIN_MODE=mainnet` and no key: reads work, `wallet` is null, a confirm is refused naming the missing key — **before** any balance check |
+
 ## M. Cleanliness
 
 | # | Item | Correct means |
@@ -156,7 +168,7 @@ the correct behaviour; the item fails if it succeeds instead.
 
 ---
 
-**Total: 61 items.**
+**Total: 68 items.**
 
 ## Results — 61 of 61 PASS
 
