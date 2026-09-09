@@ -715,7 +715,7 @@ async function onKey(mem, id) {
     if (have <= 0) return { ok: false, error: `no ${sell} to spend` };
     if (amountIn > have) { note(`clamped to balance: ${amountIn.toFixed(4)} -> ${have.toFixed(4)} ${sell}`); amountIn = have * 0.999; }
     const fill = await swap(sell, buy, Number(amountIn.toFixed(6)));
-    await applyFill(mem, { symbol: p.sig.symbol, side: p.sig.side, usd: p.verdict.sizeUsd, price: px });
+    await applyFill(mem, { symbol: p.sig.symbol, side: p.sig.side, usd: p.verdict.sizeUsd, price: px, agent: p.sig.agent });
     await mem.journal({ evaluated: { signal: p.sig },
                         acted: { action: "FILL", usd: p.verdict.sizeUsd, executed: true, hash: fill.hash },
                         forward: { received: fill.received } });

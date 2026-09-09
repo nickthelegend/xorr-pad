@@ -44,7 +44,7 @@ export async function getMarket(symbols = SYMBOLS) {
 }
 
 /** Fold a fill back into the remembered position (average up/down honestly). */
-export async function applyFill(mem, { symbol, side, usd, price }) {
+export async function applyFill(mem, { symbol, side, usd, price, agent }) {
   const cur = (await mem.getEntity("position", symbol).catch(() => null))?.body || null;
   const qty = price ? usd / price : 0;
   if (side === "BUY") {
@@ -77,6 +77,24 @@ export async function applyFill(mem, { symbol, side, usd, price }) {
       qty: newQty, avg_entry_usd: cur?.avg_entry_usd ?? price,
       updated: new Date().toISOString(),
     });
+  }
+
+  // The DCA interval is only real if something records when it last bought.
+  //
+  // `dca_last_ms` was read by the agent and written by nobody — the whole
+  // codebase mentioned it once, in the read. So `last` was always 0,
+  // `Date.now() - 0` always cleared a 24h window, and "recurring buy every 24h"
+  // proposed a buy on EVERY evaluation. Armed, that is every tick rather than
+  // once a day, and the reason string was stating a schedule the code did not
+  // keep.
+  //
+  // Stamped on the fill rather than the proposal: a refused DCA has not had its
+  // buy yet, so it should be free to ask again. Merged rather than replaced —
+  // the baton also carries the agent, market and size that the desk restores on
+  // boot, and setState writes the whole document.
+  if (agent === "dca" && side === "BUY") {
+    const b = await mem.recallBrief();
+    await mem.setState("baton", { ...(b.baton || {}), dca_last_ms: Date.now() });
   }
 }
 
@@ -122,7 +140,7 @@ export async function runOnce(mem, { execute = IS_FORK, cfgs = {}, market } = {}
       ? verdict.sizeUsd                       // spend USD
       : verdict.sizeUsd / px;                 // sell this much of the asset
     fill = await swap(sell, buy, Number(amountIn.toFixed(TOKENS[sell].decimals > 8 ? 8 : 6)));
-    await applyFill(mem, { symbol: signal.symbol, side: signal.side, usd: verdict.sizeUsd, price: px });
+    await applyFill(mem, { symbol: signal.symbol, side: signal.side, usd: verdict.sizeUsd, price: px, agent: signal.agent });
     await mem.journal({
       evaluated: { signal },
       acted: { action: "FILL", usd: verdict.sizeUsd, executed: true, hash: fill.hash },

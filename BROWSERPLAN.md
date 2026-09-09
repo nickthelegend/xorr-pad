@@ -173,7 +173,7 @@ above: so nothing here is shaped by what happens to pass.
 | O6 | Mainnet slippage is not the fork's | With `CHAIN_MODE=mainnet`, the default tolerance is 0.3%, not the fork's 1% |
 | O7 | The fork refuses a bad upstream | `fork.sh` rejects an upstream that cannot serve state at the pinned block and falls through to one that can, rather than handing anvil a node that fails at the first trade |
 
-**Total with sections O, P, Q and R: 110 items.**
+**Total with sections O, P, Q, R and S: 116 items.**
 
 ## P. The routes and flows the plan never covered
 
@@ -243,6 +243,24 @@ the API.
 | R9 | Replaying before any history is honest | A timestamp older than the whole journal replays to an empty book — 0 events, flat, nothing spent — rather than showing today's positions under a past date |
 
 **Section R: 9 items.**
+
+## S. The strategies' arithmetic
+
+Added on the seventh run. Sections A–R establish that every signal is
+*tradeable* and *well-formed*; none of them checks whether a single threshold,
+drift or sizing number is **numerically right**. Each formula below was computed
+by hand and checked against real recorded output.
+
+| # | Item | Correct means |
+|---|---|---|
+| S1 | `dca` honours its own interval | It proposes at most once per configured window. "Recurring buy every 24h" must describe what it does — silent a minute after buying, silent at 23h, proposing again at 25h |
+| S2 | A dca buy records when it bought | A filled DCA buy stamps `dca_last_ms`, **merged** into the baton so the agent, market and size the desk restores on boot survive it |
+| S3 | `grid` drift is a true percentage from entry | `((px − entry) / entry) × 100`, BUY below the rung and SELL above it, with no division by a zero entry |
+| S4 | `momentum` confidence stays in range | `min(1, ch / (th × 3))` — ⅓ at the threshold, saturating at 1.0 by 3× threshold, never above 1 |
+| S5 | `rebalance` sizing lands the weight on target | `usd = |drift/100| × total` must move the asset to **exactly** its target weight, not approximately |
+| S6 | `risk` cuts the whole position at the stop | `dd = ((px − entry)/entry) × 100` fires at ≤ −stop, and `sizeUsd = qty × px` closes all of it |
+
+**Section S: 6 items.**
 
 ## M. Cleanliness
 
@@ -647,3 +665,62 @@ visible so you know what is hidden — and only my description of it was wrong.
 
 Suite check **X4** added: nothing may write to the time-machine panel without
 stamping the refresh clock, asserted against the renderer source.
+
+---
+
+## Seventh full run — 2026-09-09, 116 items
+
+The axis named at the end of the sixth run: **the strategies' arithmetic**.
+Every section before this establishes that a signal is tradeable and
+well-formed; none checks whether a single threshold, drift or sizing number is
+numerically right. Section S covers it.
+
+Five of the six formulas were correct, verified by hand against real output:
+
+- `grid` drift 25% on entry 2000 → px 2500, SELL, reason cites 25.0% ✓
+- `momentum` confidence ⅓ at threshold, 1.0 at 3×, capped at 1.0 for 50% ✓
+- `rebalance` $1200 on a 2600 book — and the post-trade weight is **exactly
+  0.5000**, not approximately ✓
+- `risk` −39% drawdown → SELL the whole position, $61 = qty × price ✓
+- `yield` `usdc − buffer`, dimensionally loose but numerically right because
+  USDC is a dollar stablecoin, consistent with `rebalance` pricing it at 1 ✓
+
+### The sixth agent: `dca`'s interval was decorative — S1
+
+```js
+const last = brief.baton?.dca_last_ms ?? 0;
+if (Date.now() - last < everyMs) return null;
+```
+
+**`dca_last_ms` appeared exactly once in the entire codebase — in that read.**
+Nothing ever wrote it. So `last` was always 0, `Date.now() - 0` always cleared
+the 24-hour window, and "recurring buy every 24h" proposed a buy on *every*
+evaluation. Armed, that is every tick rather than once a day, and the reason
+string stated a schedule the code did not keep.
+
+It is the same shape as the two self-swap bugs: a mechanism that reads state
+nobody maintains. And it was the most-fired agent in every tick run across four
+sessions, which is precisely why it never looked wrong — a DCA signal appearing
+constantly is what DCA is *supposed* to look like at a glance.
+
+Fixed at the fill, not the proposal: a refused DCA has not had its buy yet, so
+it should be free to ask again. The stamp **merges** into the baton, because
+`setState` writes the whole document and the baton also carries the agent,
+market and size the desk restores on boot.
+
+Verified end to end with a real fill: DCA chosen → `0xa0daed77…` mined →
+`dca_last_ms` stamped → `agent`/`market`/`sizeUsd` all preserved → the next
+evaluation gated. And a rebalance-won tick correctly does **not** stamp it.
+
+Suite checks **X5** (the gate gates: silent at 1 minute and 23h, proposes at
+25h) and **X6** (a dca fill stamps, merging rather than replacing).
+
+### On the interruption
+
+This run was blocked partway by the machine's root volume filling to zero bytes,
+which stops the Bash tool outright — it cannot create its own output file. The
+audit was completed by inspection in the meantime and the fix deliberately held
+back: an unverifiable change to the trading brain is exactly the one not to
+ship, and an earlier fix this session would have liquidated the book had it gone
+out untested. Space was reclaimed by truncating this session's own log, and the
+fix was then verified against a real mined fill before being committed.

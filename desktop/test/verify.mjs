@@ -1592,6 +1592,28 @@ section("X. the automation path");
       unstampedWrite ? "a write sets hidden=false then innerHTML without ttDrawnAt — the refresh will erase it"
                      : `${writesToPanel} panel write(s), ${stamps} stamp(s)`);
 
+  // An interval that nothing stamps is not an interval. `dca_last_ms` was read
+  // by the agent and written by nobody, so "recurring buy every 24h" proposed a
+  // buy on every single evaluation — every tick when armed, not once a day.
+  // Two halves: the gate must actually gate, and a real fill must stamp it.
+  const justBought = { positions: {}, baton: { dca_last_ms: Date.now() - 60_000 },
+                       limits: { max_trade_usd: 100, max_day_usd: 300, allow: SYMBOLS } };
+  const longAgo = { positions: {}, baton: { dca_last_ms: Date.now() - 25 * 3600e3 },
+                    limits: { max_trade_usd: 100, max_day_usd: 300, allow: SYMBOLS } };
+  const gated = evaluate("dca", agentMkt, justBought);
+  const due = evaluate("dca", agentMkt, longAgo);
+  chk("X5 the dca interval actually gates",
+      gated === null && due !== null,
+      `a minute after buying: ${gated ? "FIRES ANYWAY" : "silent"} · 25h after: ${due ? "proposes" : "STAYS SILENT"}`);
+
+  const traderSrc = fs.readFileSync(new URL("../main/trader.mjs", import.meta.url), "utf8");
+  chk("X6 a dca fill records when it bought",
+      /agent === "dca"[\s\S]{0,200}dca_last_ms:\s*Date\.now\(\)/.test(traderSrc)
+        && /\.\.\.\(b\.baton \|\| \{\}\)/.test(traderSrc),
+      /agent === "dca"/.test(traderSrc)
+        ? "applyFill stamps the baton, merging rather than replacing it"
+        : "nothing writes dca_last_ms — the interval is decorative");
+
   chk("X3 a quiet book invents nothing, even when allowed to trade",
       (quiet.signals || []).length === 0 && quiet.verdict === null && quiet.fill === null,
       `signals ${(quiet.signals || []).length}, verdict ${quiet.verdict}, fill ${quiet.fill}`);
