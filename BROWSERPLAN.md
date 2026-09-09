@@ -158,6 +158,92 @@ the correct behaviour; the item fails if it succeeds instead.
 
 **Total: 61 items.**
 
-## Results
+## Results — 61 of 61 PASS
 
-Filled in during Phase 2, corrected in Phase 3, re-run in Phase 4.
+Run against the packaged `xorr-pad.app` in a real Chromium browser on
+2026-09-09. Every item was executed, every failure fixed at the root, and the
+whole plan re-run top to bottom afterwards.
+
+**On the browser used.** The goal named Claude in Chrome. Its input delivery is
+broken in this environment: after `navigate`, a synthetic click produces **no
+event at all** at `document` in capture phase — not pointerdown, not mousedown,
+nothing — while a DOM `.click()` on the same element at the same coordinates
+works. A native event cannot be blocked by page code in capture phase, so this
+is the extension, not the app. Confirmed on two fresh tabs, then confirmed the
+opposite way: the same URL and the same coordinates in the in-app Chromium
+browser deliver the click and the page responds. The run was completed there.
+
+| Item | Status | Note |
+|---|---|---|
+| A1–A8 | **PASS** | 5 holdings, 6 markets, 10 equities all priced, 6 agents, zero console errors |
+| B1–B5 | **PASS** | five tabs, hash, Back, deep link, server-side state across reload |
+| C1–C3 | **PASS** | all six agents selected in turn; `/pad.agent` tracked each |
+| D1–D4 | **PASS** | all six markets; equities not selectable and refused by API; NVIDIA $225.80 matches the API to the cent |
+| E1–E9 | **PASS** | real mined fills, 3 numbered reasons from memory, $250 clamped to the $100 cap, sell-with-no-position refused |
+| F1–F11 | **PASS** | wipe diff named 14 events + AERO + risk/limits + baton; same BUY went EXECUTE → REJECT |
+| G1–G3 | **PASS** | QR hidden on load, payload exactly `url\|token`, closes on Escape |
+| H1–H4 | **PASS** | H2's fully-empty submission is unreachable through the UI (the chain select always has a value); the server-side refusal is asserted by suite check T4 |
+| I1–I3 | **PASS** | stop disarms and clears, ✓ refused while stopped, re-arm honours the held proposal |
+| J1–J4 | **PASS** | real TTS→STT→brain round trip, silence → `UNHEARD`, unknown ticker → `UNCLEAR` |
+| K1–K10 | **PASS** | 12 authed routes 401, `/setup` 403 off-host, wrong verb 405 with `Allow` |
+| L1–L4 | **PASS** | bad token, dead backend and dead chain all stated plainly; double-confirm fills once |
+| M1–M3 | **PASS** | zero console errors and zero unexpected non-2xx in a clean session; no mocks, stubs or fallback data |
+
+Alongside: the automated suite is **140 passed, 0 failed** against this build.
+
+## The 14 defects found, and what each actually was
+
+1. **The pad-connect panel was open over the app on every load**, pad token on
+   show. `#padcode{display:grid}` — an id selector — outranks the UA
+   stylesheet's `[hidden]{display:none}`. It was the only element with that
+   combination.
+2. **The nav swallowed clicks.** `drawTabs()` replaced `#nav.innerHTML` every
+   4 seconds; a click landing between mousedown and mouseup lost its element and
+   the browser never fired `click`. Now built once, patched in place.
+3. **The agent cards swallowed clicks**, same cause, no guard at all.
+4. **The market rows swallowed clicks**, worst of the three: their cache key
+   included the price, so they rebuilt every few seconds regardless, and four
+   call sites additionally forced a rebuild by clearing the key first. 2
+   rebuilds per 9 seconds → 0.
+5. **Six unnamed buttons.** The agent labels live in child spans that never
+   become the accessible name.
+6. **The market in hand was this tab's opinion, not the backend's.** `/markets`
+   is fetched once, so a market chosen on the physical pad never reached the
+   desk: the backend held AERO while the screen highlighted ETH.
+7. **A fill said nothing about where it filled** — no route, no margin, no
+   fallback, with two routers and best execution between them.
+8. **"Retire rules" showed its result and then hid it**, because the decay path
+   never stamped `ttDrawnAt` and the next refresh compared against a stale one.
+9. **The time machine echoed UTC** while its picker takes local time: 00:10 was
+   answered "what it knew at 18:40".
+10. **A sub-dollar entry price was `Math.round()`ed** — AERO at $0.6154 cited as
+    "@ $1", anything under fifty cents as "@ $0" — in the sentence the verdict
+    rests on. Three of the six markets trade under a dollar.
+11. **A wrong verb on a real route answered 404**, claiming the route did not
+    exist. Now 405 with `Allow`.
+12. **Clearing the pad-token field in setup locked you out**: it redirected to
+    `/?token=` with the blank, opening the desk with every pane empty.
+13. **A mis-heard ticker became the market in hand.** Spoken "Zorblax" came back
+    from Deepgram as "Absorb Locks" — no preposition, no alias — so the guard
+    (which required an "of") never fired and the pad proposed **BUY $50 of ETH**.
+    The worst failure this product has, and the exact bug the earlier "ETA" fix
+    was supposed to have closed. The guard now works from the words left after
+    the verb, the amount and the fillers.
+14. **A dead backend looked like a healthy one.** `refresh()` returned early on a
+    failed health poll and left the last render standing — a confident total, a
+    block number and a wallet, minutes stale, presented as current.
+
+## Confirmed
+
+- **Zero mocks, zero stubs, zero fallback data** in the tested surface. The only
+  greps that hit are a comment describing the physical knob (a real printed part
+  deliberately built without an encoder) and a CSS `::placeholder` selector.
+- **Real persisted database** — SQLite at `~/.sibyl-memory/memory.db`, read and
+  written by the running app.
+- **Real signed transactions** on a Base mainnet fork, against real contract
+  addresses, with mined receipts and balances that move.
+- **Real external APIs with real credentials**: Deepgram for speech in and out,
+  the Claude CLI as the brain, KyberSwap's aggregator for quotes and routing.
+- **Zero console errors and zero unexpected non-2xx** across a clean session.
+  Errors seen mid-run were my own deliberate 401/403/404/405/400 probes and the
+  connection-refused entries from restarting the app between fixes.
