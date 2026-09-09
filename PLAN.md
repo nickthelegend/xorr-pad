@@ -52,7 +52,7 @@ label — see Phase 1.*
 
 ## Status after the build pass, 2026-09-09
 
-**26 of 44 tasks done.** Three of them were unblocked by re-testing an
+**27 of 44 tasks done.** Three of them were unblocked by re-testing an
 assumption rather than accepting it: aggregator routing was recorded as blocked
 on a credential because 0x wants a key and 1inch wants KYC — but **KyberSwap
 needs neither**, and it also prices the tokenized equities a direct pool cannot
@@ -60,12 +60,12 @@ reach. Read-only mainnet was recorded as needing a funded key; it needs none.
 
 | | |
 |---|---|
-| Suite | **136 passed, 0 failed**, run against the packaged `.app` |
+| Suite | **137 passed, 0 failed**, run against the packaged `.app` |
 | Load-bearing proof | PASS — 3 of 4 verdicts change on a wipe, control unchanged |
 | CI | green |
 | Real aggregator fill on the fork | 10 USDC → 16.2169 AERO via `kyberswap`, gas 243,627 |
 | Best execution | KyberSwap ahead by 0.42% / 0.023% / 0.082% on AERO / ETH / cbBTC |
-| Blocked on real money + a funded key | Phase 3 rungs (6 tasks), T7.3 |
+| Blocked on real money + a funded key | Phase 3 rungs 1-3 and their write-up (5 tasks), T7.3 |
 | Blocked on a credential that cannot be created here | T2.2b (0x), T2.3 (1inch), T4.2 (Groq) |
 | Blocked on mainnet only | T8.4 — the route now exists; B20 tokens cannot exist on a fork |
 | Blocked on hardware or the owner | Phase 6 (6 tasks), T7.2 |
@@ -273,8 +273,17 @@ key. Use a dedicated hot wallet funded with **≤ $30**.
 - **T3.5 — Rung 3: one fill per asset class.** *BLOCKED — spends real money; needs an explicit go-ahead* — ~$1 each into
   cbBTC, EURC, AERO, MORPHO, VIRTUAL.
 
-- **T3.6 — Rung 4: the refusals, on mainnet.** *BLOCKED — costs nothing to run, but still needs a funded key to boot* — thin liquidity,
-  day budget, ✓ while disarmed. Costs nothing.
+- **T3.6 — Rung 4: the refusals, on mainnet.** *DONE — 2026-09-09, and it needed no key*
+  **Verified against real Base mainnet, read-only: nothing signed, nothing
+  spent.** The backend boots as `Base MAINNET`, `/pad` reports `mode: "mainnet"`
+  with `chainOk: true` and a live ETH price (**$2,492.62**), a ✓ with nothing
+  pending is refused, and a ✓ on a live proposal is refused with *"there is no
+  signing key, so nothing can be executed"*.
+
+  That last refusal originally read **"no USDC to spend"** — true of the zero
+  address, but it names the wrong problem, and a funded `WATCH_ADDRESS` would
+  have got further than it should before anything stopped it. The read-only
+  guard now runs before the balance check, asserted as M6 rather than trusted.
 
 - **T3.7 — Gas and slippage for real conditions.** *BLOCKED — can only be measured against mainnet* — the 30% gas
   margin and 1% slippage were tuned on an uncontested fork.
