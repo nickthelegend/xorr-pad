@@ -112,10 +112,12 @@ export function stockBlocker(symbol, { isFork, hasAggregator }) {
   if (!STOCKS[symbol]) return STOCKS_UNLISTED[symbol]?.reason || `${symbol} is not a listed equity`;
   if (isFork)
     return `${symbol} is a B20 token implemented by the Base node, not as EVM bytecode — ` +
-           `a fork returns OpcodeNotFound for every call to it. Tokenized equities need CHAIN_MODE=mainnet.`;
+           `a fork returns OpcodeNotFound for every call to it, at any block. The aggregator ` +
+           `quotes it against real mainnet and would route it; only CHAIN_MODE=mainnet can fill it.`;
   if (!hasAggregator)
-    return `${symbol}'s depth is on a concentrated-liquidity pool this build cannot route to yet ` +
-           `(custom factory, plus Uniswap v4). It needs an aggregator key — set ZEROX_API_KEY or ONEINCH_API_KEY.`;
+    return `${symbol}'s depth is on a concentrated-liquidity pool a direct Uniswap V3 call ` +
+           `cannot reach (custom factory, plus Uniswap v4). It needs the aggregator router, ` +
+           `which is disabled here — unset KYBERSWAP=off.`;
   return null;
 }
 

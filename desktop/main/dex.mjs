@@ -13,9 +13,9 @@
  * The transaction is signed and mined; nothing here is simulated.
  */
 import { parseAbi, formatUnits, parseUnits, erc20Abi, maxUint256 } from "viem";
-import { pub, wallet, account, IS_FORK } from "./chain.mjs";
+import { pub, wallet, account, IS_FORK, requireSigner } from "./chain.mjs";
 import { TOKENS } from "./tokens.mjs";
-import { pick, bySpender } from "./routers/index.mjs";
+import { pick, bySpender, quoteAll, margin, byName } from "./routers/index.mjs";
 
 /**
  * The route a fill reports is derived from the router the transaction actually
@@ -89,7 +89,12 @@ export async function quote(sell, buy, amountIn) {
  */
 async function gasFor(call) {
   try {
-    return ((await pub.estimateContractGas({ ...call, account })) * 130n) / 100n;
+    // A router returns either a viem contract call or raw calldata. An
+    // aggregator has no ABI to encode against — it hands back bytes.
+    const est = call.data
+      ? await pub.estimateGas({ ...call, account })
+      : await pub.estimateContractGas({ ...call, account });
+    return (est * 130n) / 100n;
   } catch {
     return undefined;
   }
@@ -178,7 +183,8 @@ export async function spendable(sell) {
  * landed.
  */
 export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
-  const router = pick();
+  requireSigner(`a ${sell}->${buy} swap`);
+  let router = pick();
   // Memory says what you are ALLOWED to trade; the chain says what you can
   // actually afford. Check both, or the router reverts with STF.
   const have = await spendable(sell);
@@ -194,11 +200,67 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
 
   // priceImpact already quoted this exact trade; reuse it rather than asking
   // the node the same question again.
-  const q = imp.quote || await quote(sell, buy, amountIn);
+  let q = imp.quote || await quote(sell, buy, amountIn);
+
+  // Best execution, unless a router was named explicitly. Every usable router
+  // quotes the same trade and the best one wins; the losers are kept so the
+  // choice can be audited afterwards rather than taken on trust. A router that
+  // fails here is recorded with its reason and simply does not win — an
+  // unreachable aggregator degrades to the direct pool instead of failing the
+  // fill. The depth check above stays on the direct pool deliberately: it is a
+  // safety limit, and an aggregator splitting across venues would hide exactly
+  // the thinness it exists to catch.
+  let comparison = null;
+  if (!process.env.ROUTER) {
+    const ranked = await quoteAll(sell, buy, amountIn);
+    if (ranked.best && ranked.best.out > q.amountOut) { router = ranked.best.router; q = ranked.best.quote; }
+    const m = margin(ranked);
+    comparison = {
+      chose: router.name,
+      wonBy: m == null ? null : Number((m * 100).toFixed(4)),
+      quotes: ranked.all.map((x) => ({ router: x.name, out: x.quote ? x.out : null,
+                                       venues: x.quote?.venues || null, ms: x.ms, error: x.error || null })),
+    };
+  }
+
+  const via = { sell, buy, amountIn, slippagePct, comparison, fellBack: null };
+  if (router.name === "uniswap") return swapVia(router, q, via);
+
+  // An aggregator can fail in more ways than the direct pool, and none of them
+  // should cost the operator a trade the pool can still fill:
+  //
+  //   - it quotes LIVE mainnet, while a fork drifts away from mainnet the
+  //     moment it trades, so its calldata can revert against local state;
+  //   - it refuses some senders outright (anvil's default account among them);
+  //   - it is a network hop, and networks fail.
+  //
+  // So try it, and on ANY failure fall back to the direct pool — which only
+  // ever reads the chain it is about to trade on. Never silently: the fill
+  // carries what it fell back from and why.
+  try {
+    return await swapVia(router, q, via);
+  } catch (e) {
+    const direct = byName("uniswap");
+    if (!direct) throw e;
+    const why = String(e.message || e);
+    const dq = await direct.quote(sell, buy, amountIn);
+    return swapVia(direct, dq, { ...via, fellBack: { from: router.name, why: why.slice(0, 180) } });
+  }
+}
+
+/**
+ * Execute one quote through one router: approve, send, mine, and verify the
+ * balance actually moved.
+ *
+ * Separate from swap() so a route that reverts can be retried through another
+ * router without re-running the affordability and depth checks, which have not
+ * changed and cost real RPC calls.
+ */
+async function swapVia(router, q, { sell, buy, amountIn, slippagePct, comparison, fellBack }) {
   const tOut = TOKENS[buy];
   const minOut = q.amountOutRaw * BigInt(Math.floor((100 - slippagePct) * 100)) / 10000n;
-
   const steps = {};
+
   if (TOKENS[sell].native) steps.wrap = await ensureWeth(q.amountInRaw);
 
   // A JS double cannot hold an 18-decimal balance. spendable() rounds
@@ -219,10 +281,14 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
   const before = await pub.readContract({ address: outAddr, abi: erc20Abi,
     functionName: "balanceOf", args: [account.address] });
 
-  const call = router.buildSwap({ sell, buy, amountInRaw, minOut, quote: q });
+  const call = await router.buildSwap({ sell, buy, amountInRaw, minOut, quote: q });
   let hash;
   try {
-    hash = await wallet.writeContract({ ...call, gas: await gasFor(call) });
+    // Raw calldata from an aggregator goes out as a plain transaction; a
+    // contract call goes through writeContract. Same wallet, same gas margin.
+    hash = call.data
+      ? await wallet.sendTransaction({ ...call, gas: await gasFor(call) })
+      : await wallet.writeContract({ ...call, gas: await gasFor(call) });
   } catch (e) {
     // "STF" is SafeTransferFrom failing — the router could not pull the input.
     // Unexplained, it sends an operator hunting through liquidity for a problem
@@ -245,7 +311,8 @@ export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
   if (delta <= 0n) throw new Error(`swap mined but ${buy} balance did not move`);
 
   return {
-    route: routeOf(receipt.to), hash, status: receipt.status, block: Number(receipt.blockNumber),
+    route: routeOf(receipt.to), comparison, fellBack: fellBack || null,
+    hash, status: receipt.status, block: Number(receipt.blockNumber),
     gasUsed: Number(receipt.gasUsed), fee: q.fee, steps,
     sold: `${formatUnits(amountInRaw, TOKENS[sell].decimals)} ${sell}`,
     received: Number(formatUnits(delta, tOut.decimals)),

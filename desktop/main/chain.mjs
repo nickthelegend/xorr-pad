@@ -21,10 +21,35 @@ const RPC = process.env.RPC_URL || (IS_FORK ? "http://127.0.0.1:8545" : "https:/
 // anvil's first account — a well-known throwaway, only ever used on the fork.
 const ANVIL_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const KEY = process.env.AGENT_PRIVATE_KEY || (IS_FORK ? ANVIL_KEY : null);
-if (!KEY) throw new Error("AGENT_PRIVATE_KEY is required when CHAIN_MODE=mainnet");
 if (!IS_FORK && KEY === ANVIL_KEY) throw new Error("refusing to use the anvil key on mainnet");
 
-export const account = privateKeyToAccount(KEY);
+/**
+ * Mainnet with no signing key is READ-ONLY, not an error.
+ *
+ * Refusing to start at all meant the only way to look at real mainnet — real
+ * prices, real equities, the B20 behaviour that a fork cannot show — was to put
+ * a funded private key on the machine first. That is a bad trade: it forces the
+ * riskiest step to come before the safest one.
+ *
+ * So: no key on mainnet means the app runs and can read, and every path that
+ * would sign refuses by name. `WATCH_ADDRESS` gives it a wallet to read
+ * balances for without giving it the ability to spend them.
+ */
+export const READ_ONLY = !IS_FORK && !KEY;
+
+export const account = KEY ? privateKeyToAccount(KEY) : (
+  process.env.WATCH_ADDRESS
+    ? { address: process.env.WATCH_ADDRESS, readOnly: true }
+    : { address: "0x0000000000000000000000000000000000000000", readOnly: true });
+
+/** Every signing path calls this first. It never returns on a read-only chain. */
+export function requireSigner(what = "this") {
+  if (READ_ONLY)
+    throw new Error(
+      `${what} needs a signing key, and this is a read-only mainnet session. ` +
+      `Set AGENT_PRIVATE_KEY to trade — reads work without one on purpose, so ` +
+      `the chain can be inspected before a key is ever put on the machine.`);
+}
 
 // A fork answers from local state until it has to fetch an uncached slot from
 // upstream, and a rate-limited upstream turns one read into a 30s stall. Give
@@ -34,7 +59,9 @@ export const account = privateKeyToAccount(KEY);
 // a slow node has to surface as a readable error quickly, not as a hang.
 const transport = http(RPC, { timeout: 8_000, retryCount: 1, retryDelay: 300 });
 export const pub = createPublicClient({ chain: base, transport });
-export const wallet = createWalletClient({ account, chain: base, transport });
+// No key means no wallet. Anything reaching for one is a bug, and should say so
+// rather than signing with a zero address.
+export const wallet = READ_ONLY ? null : createWalletClient({ account, chain: base, transport });
 
 /** Is the node actually answering? Used to tell "no fill" from "no node". */
 export async function chainReachable() {

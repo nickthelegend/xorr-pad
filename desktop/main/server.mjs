@@ -29,9 +29,17 @@ import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
 import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
 import { STOCKS, STOCKS_UNLISTED, STOCK_SYMBOLS, isStock, stockBlocker, stockPrices } from "./stocks.mjs";
+import { usable } from "./routers/index.mjs";
 
-/** Is an aggregator configured? Equities need one; the six crypto markets do not. */
-const HAS_AGGREGATOR = Boolean(process.env.ZEROX_API_KEY || process.env.ONEINCH_API_KEY);
+/**
+ * Is an aggregator available? Equities need one; the six crypto markets do not.
+ *
+ * This used to test for an API key, and so was always false. KyberSwap's
+ * aggregator needs no key, so the honest question is whether a router that can
+ * reach concentrated-liquidity venues is built and enabled — not whether the
+ * operator has bought credentials.
+ */
+const HAS_AGGREGATOR = usable().some((r) => r.name !== "uniswap");
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "0.0.0.0";

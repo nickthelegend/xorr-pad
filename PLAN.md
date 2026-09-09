@@ -52,17 +52,22 @@ label — see Phase 1.*
 
 ## Status after the build pass, 2026-09-09
 
-**23 of 43 tasks done. Nothing is in progress, and nothing remaining can be
-started without the owner** — every open item needs real money, a credential
-that cannot be created here, or the physical board.
+**26 of 44 tasks done.** Three of them were unblocked by re-testing an
+assumption rather than accepting it: aggregator routing was recorded as blocked
+on a credential because 0x wants a key and 1inch wants KYC — but **KyberSwap
+needs neither**, and it also prices the tokenized equities a direct pool cannot
+reach. Read-only mainnet was recorded as needing a funded key; it needs none.
 
 | | |
 |---|---|
-| Suite | **129 passed, 0 failed**, run against the packaged `.app` |
+| Suite | **136 passed, 0 failed**, run against the packaged `.app` |
 | Load-bearing proof | PASS — 3 of 4 verdicts change on a wipe, control unchanged |
 | CI | green |
-| Blocked on real money + a funded key | Phase 3 (8 tasks), T7.3 |
-| Blocked on a credential that cannot be created here | T2.2, T2.3, T2.4, T4.2, T8.4 |
+| Real aggregator fill on the fork | 10 USDC → 16.2169 AERO via `kyberswap`, gas 243,627 |
+| Best execution | KyberSwap ahead by 0.42% / 0.023% / 0.082% on AERO / ETH / cbBTC |
+| Blocked on real money + a funded key | Phase 3 rungs (6 tasks), T7.3 |
+| Blocked on a credential that cannot be created here | T2.2b (0x), T2.3 (1inch), T4.2 (Groq) |
+| Blocked on mainnet only | T8.4 — the route now exists; B20 tokens cannot exist on a fork |
 | Blocked on hardware or the owner | Phase 6 (6 tasks), T7.2 |
 
 ## Phase 0 — Where it was before this pass, 2026-09-09
@@ -167,7 +172,25 @@ the same interface when the KYC'd key exists. Uniswap stays the no-key default.
   sentinel and came back "no Uniswap V3 pool for ETH->USDC" — a liquidity
   message for an address bug.
 
-- **T2.2 — 0x router.** *BLOCKED — no key exists, and one cannot be obtained here*
+- **T2.2 — An aggregator router.** *DONE — 2026-09-09, via KyberSwap*
+  **The earlier entry here was wrong, and the mistake is worth naming: 0x wants
+  a key and 1inch wants KYC, and I concluded from those two facts that
+  aggregator routing was blocked on a credential. It does not follow.**
+  KyberSwap's aggregator API needs no key and no signup, and it routes Base.
+
+  `main/routers/kyberswap.mjs`. Verified with a real signed, mined fill on the
+  fork: **10 USDC → 16.2169 AERO, route `kyberswap`, gas 243,627** — and it
+  quotes the tokenized equities a direct V3 call cannot reach ($25 →
+  0.1108 NVDAc via `aerodrome-cl-3`).
+
+  Two things it cost to learn. It **refuses anvil's default account** — the
+  address whose key is printed in anvil's own banner — so a fork that routes
+  through it needs a different wallet. And an aggregator quotes *live mainnet*
+  while a fork drifts away from mainnet as soon as it trades, so its calldata
+  can revert against local state; a reverting aggregator route now falls back to
+  the direct pool and the fill says that it did.
+
+- **T2.2b — 0x router.** *BLOCKED — no key exists, and one cannot be obtained here*
   Verified 2026-09-09: `ZEROX_API_KEY` is unset, and 0x v2 answers an
   unauthenticated quote with **401 `No API key found in request`**. Getting one
   means creating an account, which is not something to do on the owner's behalf.
@@ -184,11 +207,21 @@ the same interface when the KYC'd key exists. Uniswap stays the no-key default.
   `routers/oneinch.mjs` → `/swap/v6.1/8453/swap` plus `/approve/transaction`.
   **Done when:** same bar as T2.2 with `fill.route === "1inch"`.
 
-- **T2.4 — Best-execution comparison.** *BLOCKED — needs a second router, and neither key exists (T2.2/T2.3)* (needs T2.2 or T2.3)
+- **T2.4 — Best-execution comparison.** *DONE — 2026-09-09* (needs T2.2 or T2.3)
   Quote every configured router, route through the best, journal the losers'
   quotes so the choice is auditable.
   **Done when:** a fill's journal entry names every router quoted and the margin
   it won by.
+  **Done — `quoteAll()` and `margin()`.** Every usable router quotes the same
+  trade, the best wins, and the losers are kept on the fill so the choice can be
+  audited rather than trusted. Measured on real quotes: KyberSwap ahead by
+  **0.42% / 0.023% / 0.082%** on AERO / ETH / cbBTC. A router that throws is
+  recorded with its reason and simply does not win, so an unreachable aggregator
+  degrades to the direct pool instead of failing the fill.
+
+  The depth check deliberately stays on the direct pool: it is a safety limit,
+  and an aggregator splitting across venues would hide exactly the thinness it
+  exists to catch.
 
 - **T2.5 — Say what "1inch wallet" means here.** *DONE — 2026-09-09*
   1inch is an aggregator API *and* a self-custody wallet app. This project holds
@@ -215,10 +248,20 @@ key. Use a dedicated hot wallet funded with **≤ $30**.
   mainnet; `server.mjs` gates auto-execute on `state.armed && IS_FORK`, so
   **automation can never fire on mainnet** — only a human ✓.
 
-- **T3.2 — Read-only bring-up.** *BLOCKED — needs a funded key the owner must place in `.env`*
+- **T3.2 — Read-only bring-up.** *DONE — 2026-09-09, and it needs no key at all*
   `CHAIN_MODE=mainnet` + a real `RPC_URL`, no transaction. Confirm `/portfolio`
   reads real balances, `/pad` reports `mode: "mainnet"`, header says **Base
   MAINNET**.
+  **Done.** Mainnet without a signing key used to be a fatal error, which meant
+  the only way to look at the real chain was to put a funded key on the machine
+  first — forcing the riskiest step ahead of the safest. It is now **read-only**:
+  the app runs, reads, and every signing path refuses by name (`requireSigner`),
+  with `wallet` literally `null`. `WATCH_ADDRESS` gives it balances to read
+  without the ability to spend them.
+
+  Verified against real Base mainnet with no key: head 51,060,159, and
+  `NVDAc.symbol()` returns **"NVDAc"** where a fork reverts — the B20 finding,
+  demonstrated live rather than asserted.
 
 - **T3.3 — Rung 1: smallest signed transaction.** *BLOCKED — spends real money; needs an explicit go-ahead*
   One ~$1 USDC→ETH swap behind a human ✓. **Done when:** a Basescan link,

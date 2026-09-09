@@ -11,8 +11,10 @@
  *
  * Exits non-zero on the first section that fails.
  */
+import "./env.mjs";           // must precede every other import — see env.mjs
 import { chainInfo, balances, pub, erc20Abi, fundOnFork } from "../main/chain.mjs";
 import { quote, swap, spendable, routeOf } from "../main/dex.mjs";
+import { bySpender } from "../main/routers/index.mjs";
 import { TOKENS, UNISWAP_V3 } from "../main/tokens.mjs";
 import { Memory, DEFAULT_LIMITS, NO_MEMORY_LIMITS } from "../main/memory.mjs";
 import { tts, stt, pcmToWav, think, parseIntent, parseAmount } from "../main/voice.mjs";
@@ -29,11 +31,6 @@ import { fileURLToPath } from "node:url";
 // every spawned child would fail with ENOENT on its own cwd.
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-// The credentials live in the repo's own .env, one level above desktop/. Load it
-// here rather than making the caller remember to: a suite that reports "E crashed
-// — DEEPGRAM_API_KEY missing" reads as a broken product, when the only thing
-// missing is a shell export. Anything already in the environment wins.
-try { process.loadEnvFile(fileURLToPath(new URL("../../.env", import.meta.url))); } catch { /* no .env — the checks that need one say so */ }
 
 const B = process.env.PAD_URL || "http://localhost:8080";
 const TOKEN = process.env.PAD_TOKEN || "xorrpad-dev";
@@ -900,6 +897,67 @@ try {
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
 
+// ── A. the aggregator, and best execution ───────────────────────────────────
+section("A. the aggregator");
+try {
+  {
+    const up = await waitForNode();
+    if (!up.ok) throw new Error(`the Base node never came back (${up.why}) — a fill cannot be measured`);
+  }
+  const { quoteAll, margin, byName } = await import("../main/routers/index.mjs");
+  const { swap } = await import("../main/dex.mjs");
+  const { fundOnFork } = await import("../main/chain.mjs");
+
+  // The plan had this blocked on a credential, because 0x wants a key and
+  // 1inch wants KYC. Neither implies that every aggregator does.
+  const kyber = byName("kyberswap");
+  chk("A1 an aggregator is available with no API key at all",
+      Boolean(kyber?.available()) && !process.env.ZEROX_API_KEY && !process.env.ONEINCH_API_KEY,
+      `kyberswap usable; ZEROX_API_KEY and ONEINCH_API_KEY both unset`);
+
+  const kq = await kyber.quote("USDC", "AERO", 25);
+  chk("A2 it returns a real route across named venues",
+      kq.amountOut > 0 && (kq.venues || []).length > 0,
+      `${kq.amountOut.toFixed(4)} AERO via ${kq.venues.join(" + ")}`);
+
+  // Both routers quote the same trade, and the loser is kept.
+  const ranked = await quoteAll("USDC", "AERO", 25);
+  chk("A3 every router quotes the same trade and they are ranked",
+      ranked.all.length >= 2 && ranked.best,
+      ranked.all.map((x) => `${x.name} ${x.quote ? x.out.toFixed(4) : "failed"}`).join("  vs  "));
+
+  const m = margin(ranked);
+  chk("A4 the margin between them is real and small enough to be credible",
+      m != null && Math.abs(m) < 0.05,
+      m == null ? "only one quote" : `${(m * 100).toFixed(3)}% — ${ranked.best.name} ahead`);
+
+  // The claim that matters: a fill actually routed through the aggregator, and
+  // the receipt agrees.
+  await fundOnFork();
+  const f = await swap("USDC", "AERO", 20);
+  // The winner fills unless it failed, in which case the direct pool does and
+  // the fill says so. Both are correct; a fill that quietly reports the winner
+  // while the pool did the work is not.
+  const agreed = f.fellBack
+    ? f.route === "uniswap" && f.fellBack.from === f.comparison?.chose
+    : f.comparison?.chose === f.route;
+  chk("A5 a fill routes through the winner, or says what it fell back from",
+      Boolean(f.hash) && f.received > 0 && agreed,
+      `${f.received.toFixed(4)} AERO via ${f.route}` +
+      (f.fellBack ? ` — fell back from ${f.fellBack.from}: ${f.fellBack.why.slice(0, 60)}` : `, chose ${f.comparison?.chose}`));
+
+  chk("A6 the losing quotes are journalled, so the choice is auditable",
+      (f.comparison?.quotes || []).length >= 2 &&
+      f.comparison.quotes.every((q) => "out" in q && "router" in q),
+      `won by ${f.comparison?.wonBy}% over ${f.comparison.quotes.filter((q) => q.router !== f.route).map((q) => q.router).join(", ")}`);
+
+  // And the equities: quotable through the aggregator, still unfillable here.
+  const eq = await kyber.quote("USDC", "NVDAc", 25).catch((e) => ({ err: String(e.message) }));
+  chk("A7 the aggregator can price a tokenized equity a direct pool cannot",
+      !eq.err && eq.amountOut > 0,
+      eq.err ? eq.err.slice(0, 70) : `$25 -> ${eq.amountOut} NVDAc via ${eq.venues.join(" + ")}`);
+} catch (e) { chk("A crashed", false, String(e.message || e).slice(0, 92)); }
+
 // ── J. the setup code the pad is provisioned with ───────────────────────────
 section("J. the QR the pad is set up from");
 try {
@@ -1062,10 +1120,21 @@ try {
     } catch (e) { return String(e.stderr || e.message); }
   };
 
-  const noKey = boots({ CHAIN_MODE: "mainnet", AGENT_PRIVATE_KEY: "" });
-  chk("M1 mainnet refuses to start without a signing key",
-      /AGENT_PRIVATE_KEY is required/.test(noKey || ""),
-      noKey ? `"${(noKey.match(/Error: (.*)/) || [, noKey])[1].slice(0, 62)}"` : "IT BOOTED");
+  // Mainnet with no key is read-only rather than fatal: reads should not require
+  // putting a funded key on the machine first. What must hold is that it cannot
+  // sign — booting is fine, signing is not.
+  const ro = execFileSync(process.execPath, ["-e", `
+      const c = await import("./main/chain.mjs");
+      const { swap } = await import("./main/dex.mjs");
+      let refused = "";
+      try { await swap("USDC", "ETH", 1); } catch (e) { refused = e.message; }
+      console.log(JSON.stringify({ readOnly: c.READ_ONLY, wallet: c.wallet, refused }));`],
+    { env: { ...process.env, CHAIN_MODE: "mainnet", AGENT_PRIVATE_KEY: "" },
+      cwd: ROOT, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  const roj = JSON.parse(ro.trim().split("\n").pop());
+  chk("M1 mainnet without a key is read-only, and cannot sign",
+      roj.readOnly === true && roj.wallet === null && /needs a signing key/.test(roj.refused),
+      `READ_ONLY=${roj.readOnly}, wallet=${roj.wallet}, swap refused`);
 
   // anvil's account #0 key is published in its own README. Signing a real
   // transaction with it hands the funds to anyone watching the chain.
@@ -1204,9 +1273,14 @@ try {
     chk("Q2 the claimed route is the contract the chain actually called",
         routeOf(rc.to) === fill.route,
         `receipt.to=${rc.to} -> ${routeOf(rc.to)}, fill said ${fill.route}`);
-    chk("Q3 that contract is Uniswap's SwapRouter02, the only router built",
-        String(rc.to).toLowerCase() === UNISWAP_V3.router.toLowerCase(),
-        `${rc.to}`);
+    // There is more than one router now, so pinning this to Uniswap's address
+    // would assert the old world. What must hold is that the contract the chain
+    // called is one this build actually ships — an unknown `to` means a fill
+    // went somewhere nobody here can account for.
+    const known = bySpender();
+    chk("Q3 the contract the chain called is a router this build ships",
+        known.has(String(rc.to).toLowerCase()),
+        `${rc.to} -> ${known.get(String(rc.to).toLowerCase()) || "UNKNOWN"} (built: ${[...known.values()].join(", ")})`);
   }
 
   // The specific regression: a key nothing reads must not change what is claimed.
