@@ -12,7 +12,7 @@
     "test:loadbearing": "node test/loadbearing.test.mjs",
     "test": "node --test test/",
     "start": "electron .",
-    "backend": "node main/server.mjs",
+    "backend": "node --env-file-if-exists=../.env main/server.mjs",
     "fork": "./fork.sh",
     "shots": "electron shots.mjs",
     "verify": "node test/verify.mjs",

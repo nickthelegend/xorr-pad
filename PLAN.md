@@ -12,10 +12,21 @@ Audited against the running code on **2026-09-09**, then **executed the same
 day** — every status below was re-checked after the work, not remembered. Where
 this contradicts an older doc, this is right and the other doc is a gap.
 
-**Execution pass, 2026-09-09.** Phases 3, 4 and 5 are closed. Phases 1 and 2 are
-untouched and blocked on things no agent can supply: real money, and a board on
-the desk. Five of the eleven gaps are closed; one is met but not eliminated. The
-task-by-task detail is in place below.
+**First execution pass, 2026-09-09.** Phases 3, 4 and 5 closed. Five of the
+eleven gaps closed; one met but not eliminated.
+
+**Second execution pass, 2026-09-09.** Re-verified every status against the
+code, then pushed on the tasks marked BLOCKED to find out which were genuinely
+blocked and which had merely been assumed so. Two were assumed: **T1.7** (gas
+and slippage — reading mainnet costs nothing and signs nothing) and **T2.5**
+(the CAD toolchain could not even run, which is not the same as needing a
+printer). Both are now largely closed, and the work turned up three defects
+that were not on any list — including a slippage tolerance ~500x looser than
+the pool needs, which on mainnet is paid straight out of our own fill.
+
+What is still blocked is blocked for real: **real money** (Phase 1), **a board
+on the desk** (Phase 2), and **accounts only the owner controls** (T6.2, T6.3,
+T6.5).
 
 ---
 
@@ -66,7 +77,7 @@ pressing the same key.
 
 | | Status |
 |---|---|
-| `desktop/test/verify.mjs` | **145 passed, 0 failed, 1 skipped** |
+| `desktop/test/verify.mjs` | **145 passed, 0 failed, 1 skipped** (146 checks; M7 added this pass) |
 | `loadbearing.test.mjs` | PASS — 3 of 4 verdicts change on a wipe |
 | CI (`.github/workflows/memory.yml`) | green, last 3 runs |
 | Browser QA (`BROWSERPLAN.md`) | **68 of 68 PASS** |
@@ -75,10 +86,13 @@ pressing the same key.
 | Real fills on **mainnet** | **never attempted** |
 | Aggregator | **KyberSwap, live, no API key** |
 | Tokenized equities | listed, priced from their own pools, honestly refused |
-| Firmware | compiles at 38% of app space; **never flashed** |
+| Firmware | **re-compiled this pass**: 1,198,327 bytes = **38%** of app space, 14% of dynamic memory; **never flashed** |
 | Demo rehearsal | **twice, end to end** — 17.0 s and 16.8 s, the turn landed both times |
-| Sustained load | **30 swaps, 0 failed, 39.2 s**, slowest single swap 3.4 s |
+| Sustained load | **30 swaps, 0 failed** on both upstreams — 41.1 s / 44.1 s (`test/stress.mjs`) |
+| Real mainnet gas + slippage | **measured read-only**; 30% margin verified, mainnet slippage tightened to 0.3% |
+| CAD geometry | **32 parts watertight**, 5 print plates export deterministically |
 | Desktop packaging | `.app` builds and launches |
+| `MAINNET.md` | exists; records read-only results and states plainly that **no mainnet transaction has ever been signed** |
 
 ---
 
@@ -121,16 +135,50 @@ wallet funded with **≤ $30**.
   demonstrated without mainnet. **Done when:** a real equity fill mines and the
   balance moves.
 
-- **T1.7 — Gas and slippage for real conditions.** *BLOCKED — measurable only on mainnet*
-  The 30% gas margin and 1% slippage were tuned on an uncontested fork.
+- **T1.7 — Gas and slippage for real conditions.** *MOSTLY DONE — and the
+  "blocked" was wrong.* Reading mainnet costs nothing and signs nothing, so
+  most of this was never gated on spending money. Two new re-runnable probes:
 
-- **T1.8 — `MAINNET.md` run log.** *BLOCKED — nothing to log until a rung runs*
-  Every hash, what it proved, what it cost. The artifact that answers "is any of
-  this real?".
+  `test/mainnet-conditions.mjs` (reads real Base mainnet, never signs):
+  - Real SwapRouter02 swaps mined on mainnet use **86,803–239,912 gas**, a
+    2.76x spread. That spread is across *different swap shapes*, so it does
+    **not** judge our margin — but it does say a fixed gas limit would be
+    wrong, and estimating per call is right.
+  - Base fee is effectively flat: **1.00x swing over 20 blocks at 0.005 gwei**.
+    A fee spike between quote and inclusion is not a live risk on this chain.
+  - Real price impact USDC->WETH: **0.0000% at $1, 0.0002% at $100, 0.0020% at
+    $1,000**.
+
+  `test/gas-drift.mjs` (real fills, the experiment that *does* judge the margin
+  — a mined tx carries both the limit we set and the gas actually used):
+  - drift across five markets: 0.975x, 0.976x, 0.976x, **1.090x (AERO)**,
+    0.976x against a 1.30x margin. **The 30% margin held with 16.1% unused** —
+    justified by measurement, and not over-provisioned either.
+
+  **Acted on:** 1% slippage was ~500x wider than the measured pool impact. On a
+  fork that is harmless; on mainnet the whole of that gap is the sandwich
+  window, paid out of our own fill. `DEFAULT_SLIPPAGE_PCT` is now mode-aware —
+  **1% on a fork, 0.3% on mainnet** — asserted by suite check M7.
+
+  *Still genuinely blocked:* what **we** actually pay, and our realised fill vs
+  our quote under contention. Those need a signed transaction.
+
+- **T1.8 — `MAINNET.md` run log.** *DONE as far as it can be — the run log
+  itself is empty, and says so.*
+  `MAINNET.md` now exists and opens by stating plainly that **no transaction has
+  ever been signed by this project on mainnet**. Writing that down beats leaving
+  it inferred from a missing file. It carries the read-only bring-up results,
+  the real gas and fee measurements, the gas-margin verification, and the
+  slippage change those numbers forced — then four empty rung tables, each with
+  its "done when", waiting for a hash.
+  **Still open:** every row that needs a hash. Those need T6.5 and real money.
 
 ## Phase 2 — The physical pad *(G4)*
 
-- **T2.1 — Flash it.** *BLOCKED — no board attached (`/dev/cu.usb*` empty)*
+- **T2.1 — Flash it.** *BLOCKED — no board attached (`/dev/cu.usb*` empty).*
+  The build half is re-verified, not assumed: compiled this pass with the exact
+  FQBN below to **1,198,327 bytes (38% of app space)** and 14% of dynamic
+  memory. So what is missing is the board, not a working binary.
   ```
   arduino-cli upload --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi --port /dev/cu.usbmodem*
   ```
@@ -149,8 +197,17 @@ wallet funded with **≤ $30**.
 - **T2.4 — Hold-to-talk on hardware.** *BLOCKED — needs hardware*
   I2S capture to PSRAM, `POST /voice`, amp playback of the returned PCM.
 
-- **T2.5 — Print the trading keycaps.** *BLOCKED — needs the printer*
+- **T2.5 — Print the trading keycaps.** *BLOCKED — needs the printer, but
+  everything before the printer is now verified.*
   Legends are in `cad/part_caps.py`; the caps on the board are the old build's.
+  Found and fixed on the way: **the CAD toolchain could not run at all** — a
+  fresh checkout died on `import part_caps` with a missing `shapely`, and
+  nothing in the repo recorded what to install. Geometry that cannot be built
+  is indistinguishable from geometry that is wrong. `cad/requirements.txt` now
+  records it (a venv is mandatory on macOS — PEP 668).
+  With that fixed: **32 parts validated watertight** by the existing
+  `partlib.validate()`, all five print plates export, and the STLs come out
+  **byte-identical to the committed ones** — the export is deterministic.
 
 - **T2.6 — Fix the dead switch.** *BLOCKED — needs the bench*
   r2c1; row 3 unverified. `firmware/keytest` has a guided MAP mode that prints a
@@ -247,16 +304,46 @@ Docs drift faster than code here, and two are now actively wrong.
   fetch. Mitigated (pinned block, shipped warm state cache, boot warming, one
   fewer quote per swap, anvil retries) but **not removed** — it recurred twice
   during this session's testing.
-  **The bar is met:** a 30-swap run finished **30 ok / 0 failed in 39.2 s**,
-  slowest single swap 3,394 ms, no stall. Read honestly, that is the bar this
-  task set, not proof the wedge is gone — it was met on a **warm fork against a
-  pinned block**, which is exactly the demo's condition and exactly why the
-  mitigations work. A cold fork on a contested public RPC can still wedge. The
-  real fix is a credential, and it is T5.2.
+  **The bar is met, and is now re-runnable** — it lives in `test/stress.mjs`
+  instead of having been typed once into a terminal and lost. It also proves
+  the fork still answers upstream-backed reads *after* the run, because a
+  wedged fork does not always throw; it can just go quiet.
 
-- **T5.2 — A keyed RPC endpoint.** *NOT STARTED — needs a credential*
-  The single highest-leverage fix for T5.1. `FORK_RPC` already overrides the
-  upstream in `fork.sh`, so this is a credential, not a code change.
+  Measured on both surviving upstreams, warm, sharing one state cache:
+
+  | upstream | 30 swaps | slowest swap |
+  |---|---|---|
+  | `mainnet.base.org` | 41.1 s, 0 failed | 4,693 ms |
+  | `blastapi.io` | 44.1 s, 0 failed | 11,740 ms |
+
+  **A correction worth recording:** burst testing said blastapi was the safer
+  upstream — it was the only one with zero 429s at any burst depth — so it was
+  made the default. The workload test disagreed: slower, with a tail nearly
+  three times worse. The synthetic burst is not a load this app produces, since
+  anvil is throttled to 330 CU/s. `mainnet.base.org` is the default again, and
+  the ordering rationale is written into `fork.sh` so nobody re-derives the
+  wrong conclusion from the burst numbers alone.
+
+  Read honestly: this is the bar the task set, not proof the wedge is gone. It
+  is met on a **warm fork at a pinned block** — the demo's condition. A cold
+  fork on a contested public RPC can still wedge.
+
+- **T5.2 — A keyed RPC endpoint.** *BLOCKED on the credential — but the
+  credential-free half is done, and this task overstated what the credential
+  buys.*
+  No keyed endpoint exists in `.env` or anywhere else, so the literal task is
+  still blocked. What was closable without one:
+  - **Twelve keyless Base endpoints measured** against the pinned block —
+    archive reads, then 50/150/300-deep bursts. Seven cannot serve a fork at
+    all (403 archive, 429, 521/525, unreachable).
+  - `fork.sh` no longer hardcodes one upstream. It **probes each candidate for
+    real historical state at the pinned block** — storage *and* a call — and
+    only hands anvil one that answers. An endpoint having a bad day used to
+    produce a fork that came up sick, with the first symptom arriving at the
+    first trade. `FORK_RPC` is tried first but is **not** exempt from the probe.
+  - Verified by driving the real script with a stub `anvil`: the default picks
+    correctly, and `FORK_RPC=publicnode` (403s on archive at the pinned block)
+    is rejected and falls through.
   **Done when:** `FORK_RPC` points at a keyed endpoint and T5.1's run passes.
 
 - **T5.3 — Rehearse the demo end to end, twice.** *DONE*
@@ -305,12 +392,12 @@ the open ones rather than deleted, so this file records what moved.**
 |---|---|---|---|
 | **G1** | **Not one mainnet transaction has ever been signed.** Every fill is on a fork. G2's strongest claim is untested where it counts, and the tokenized equities — the most distinctive feature here — cannot be demonstrated at all without it, because a B20 token does not exist on a fork at any block. | no `MAINNET.md`; `CHAIN_MODE` defaults to fork | Phase 1 |
 | **G2** | **The firmware has never run.** It compiles at 38% of app space, is byte-identical to the `orchestrator-pad` copy, and its backend contract is covered by suite section P — but provisioning, I2S capture, amp playback, matrix scanning and NVS persistence are all unverified. | no `/dev/cu.usb*` | T2.1–T2.4 |
-| **G3** | **The fork can still wedge on a cold start.** *Downgraded, not closed.* 30 consecutive swaps now run clean in 39.2 s, so the demo's condition is covered — but that was a warm fork on a pinned block. A cold fork against a contested free public RPC has no such guarantee, and the honest fix is a keyed endpoint. | 30/30 pass warm; two wedges earlier in the session | T5.2 |
+| **G3** | **The fork can still wedge on a cold start.** *Downgraded twice, still not closed.* 30/30 swaps run clean on either surviving upstream, and `fork.sh` now refuses to hand anvil an endpoint that will not serve state at the pinned block — which removes the "came up sick, failed at the first trade" failure entirely. What remains is a genuinely cold fork against a contested public RPC, where no probe helps because the endpoint answers fine at boot and degrades under load. | `test/stress.mjs` 30/30 on both; probe verified against a stub anvil | T5.2 |
 | **G8** | **No Groq model can be called.** The key is valid; every model returns `403 model_permission_blocked_project`. Account-owner action; the app already names the cause and the console page that fixes it. | live probe of 9 models | T6.3 |
 | **G9** | **The trading keycaps are unprinted**, the board carries the previous build's caps, one switch (r2c1) is dead and row 3 is unverified. | `cad/part_caps.py` | T2.5, T2.6 |
 | **G10** | **Exposed credentials not rotated.** Not in git, but in a transcript. | T6.1 verification | T6.2 |
 
-### Closed on 2026-09-09
+### Closed on 2026-09-09 — first execution pass
 
 | # | Gap | How it was closed |
 |---|---|---|
@@ -319,6 +406,21 @@ the open ones rather than deleted, so this file records what moved.**
 | **G6** | Archived positions stored and not shown | They *were* rendered, just illegibly; closed positions now have their own block, and — the real defect — the **spoken brain could not reach the archive at all**, because it sits outside Sibyl's FTS index. **T3.2, T3.4** |
 | **G7** | The demo had never been rehearsed end to end | Twice, 17.0 s and 16.8 s, the turn landing both times. **T5.3** |
 | **G11** | `TESTPLAN.md` / `PADPLAN.md` described an older run | Both dated and scoped to the run they describe. **T4.2** |
+
+### Closed on 2026-09-09 — second execution pass
+
+Three of these were not on the original list, because the list did not know
+about them. Two were found by pressing on tasks marked BLOCKED to see whether
+they really were.
+
+| Gap | How it was closed |
+|---|---|
+| **`fork.sh` trusted a single hardcoded upstream** — an endpoint having a bad day produced a fork that came up sick, first symptom at the first trade | Twelve keyless endpoints measured; `fork.sh` now probes each for real state at the pinned block before handing anvil to it. Verified against a stub anvil, including the failover path. **T5.2 (partial)** |
+| **Gas margin and slippage were never checked against reality** — both tuned on an uncontested fork and assumed to need mainnet to verify | Both measurable read-only. 30% gas margin verified (worst drift 1.090x of 1.30x). Slippage found ~500x looser than the pool needs and made mode-aware: 1% fork, 0.3% mainnet, asserted by M7. **T1.7** |
+| **The CAD toolchain could not run at all** — `import part_caps` died on a missing `shapely`, and nothing recorded what to install | `cad/requirements.txt` added. 32 parts then validated watertight, 5 print plates export byte-identically to the committed STLs. **T2.5 (as far as the printer allows)** |
+| **`npm run backend` did not load `.env`** — the documented way to start the server standalone generated a random `PAD_TOKEN`, so the test suite could never talk to it (37 failures that look like code regressions and are not) | Script now uses `--env-file-if-exists=../.env`. |
+| **No file recorded that mainnet had never been touched** | `MAINNET.md` says so in its first line, then carries the read-only results and four empty rung tables. **T1.8** |
+| **D5 accepted whichever rule ranked first, then tested a different one** — it took `proposals[0]`, got a rule about ETH *buys*, then pressed *sell*. A buy rule cannot veto a sell, so the check failed for a reason that had nothing to do with the feature | D5 now selects the proposal mined from the refusals it just journalled (ETH/SELL) and says what it found if that is missing. The habit loop itself was never broken. |
 
 ### Not gaps — recorded so nobody re-opens them
 
@@ -343,20 +445,25 @@ the open ones rather than deleted, so this file records what moved.**
 ## What is left
 
 Everything an agent could close on this machine is closed. What remains needs
-money, hardware, or an account the owner controls.
+money, hardware, or an account the owner controls — and the list is now shorter
+than it looked, because two items marked BLOCKED turned out to be mostly
+reachable once someone checked instead of assuming.
 
-1. **T5.2** — a keyed RPC endpoint. One credential, and G3 goes away rather than
-   being merely survivable. The code already reads `FORK_RPC`.
-2. **T6.2, T6.5** — rotate the exposed credentials; create and fund the mainnet
+1. **T6.2, T6.5** — rotate the exposed credentials; create and fund the mainnet
    hot wallet (**≤ $30**, placed in `.env` by the owner, never pasted anywhere).
    T6.5 gates all of Phase 1.
-3. **Phase 1, rungs 1–2** — the ~$1 swap and the round trip. Needs an explicit
-   go-ahead per rung. This is what separates the project from every simulated
-   trading demo, and it is the largest remaining item in the whole plan.
-4. **T1.6** — the equity fill, once mainnet is proven. The most distinctive thing
-   here and the only one that **cannot** be shown on a fork at any block.
-5. **Phase 2** — the moment a board is on the desk. T2.1's flash options are not
+2. **Phase 1, rungs 1–2** — the ~$1 swap and the round trip. Needs an explicit
+   go-ahead per rung. This is the largest remaining item in the whole plan, and
+   `MAINNET.md` is already waiting for the hashes. Note the slippage default is
+   now 0.3% on mainnet, so the first rung tests a bound that has never run.
+3. **T1.6** — the equity fill, once mainnet is proven. The most distinctive
+   thing here and the only one that **cannot** be shown on a fork at any block.
+4. **Phase 2** — the moment a board is on the desk. T2.1's flash options are not
    optional; the default FQBN gives a 4 MB scheme and no PSRAM, and the record
-   buffer is 384 KB of PSRAM.
+   buffer is 384 KB of PSRAM. The caps are print-ready and validated; they need
+   a printer, not more work.
+5. **T5.2** — a keyed RPC endpoint. Now a smaller prize than it looked: the
+   probe removed the "came up sick" failure, so a credential buys resilience
+   under sustained load, not correctness at boot.
 6. **T6.3** — grant model access in the Groq console. Not a code fault, and the
    app already reports it accurately.

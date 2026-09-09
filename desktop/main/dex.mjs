@@ -178,11 +178,29 @@ export async function spendable(sell) {
 }
 
 /**
+ * Default slippage tolerance, by where the trade is going.
+ *
+ * Measured against the real mainnet quoter on 2026-09-09
+ * (test/mainnet-conditions.mjs): USDC->WETH price impact in the 0.05% pool is
+ * 0.0000% at $1, 0.0002% at $100 and 0.0020% at $1,000. So the 1% that was
+ * used everywhere is not "about right" — it is ~500x wider than the pool
+ * needs, and on mainnet the whole of that gap is the sandwich window, paid for
+ * out of our own fill.
+ *
+ * It stays 1% on a fork, where the only thing a tight bound can do is fail a
+ * demo swap over drift that costs nobody anything. On mainnet it drops to
+ * 0.3%: still ~150x the measured impact, so it absorbs genuine price movement
+ * between quote and inclusion on a 2-second chain, while being far too tight
+ * to be worth sandwiching at these sizes.
+ */
+export const DEFAULT_SLIPPAGE_PCT = IS_FORK ? 1 : 0.3;
+
+/**
  * Execute the swap. Returns the mined transaction hash and the observed
  * balance delta — we assert the tokens actually moved, not just that a tx
  * landed.
  */
-export async function swap(sell, buy, amountIn, { slippagePct = 1 } = {}) {
+export async function swap(sell, buy, amountIn, { slippagePct = DEFAULT_SLIPPAGE_PCT } = {}) {
   requireSigner(`a ${sell}->${buy} swap`);
   let router = pick();
   // Memory says what you are ALLOWED to trade; the chain says what you can

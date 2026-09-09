@@ -224,8 +224,19 @@ try {
   chk("B14 GET /reflect", rf.s === 200 && Array.isArray(rf.b.proposals) && typeof rf.b.journalDepth === "number",
       `${rf.b?.proposals?.length} proposal(s) from ${rf.b?.journalDepth} journalled events`);
 
-  const prop = rf.b.proposals[0];
-  if (!prop) { chk("D5 a rule is proposed", false, "nothing mined from the journal"); }
+  // Take the proposal mined from the refusals THIS section just journalled —
+  // ETH sells — not whichever happens to rank first. The journal is shared, so
+  // another section (or a stress run) can leave a higher-ranked proposal about
+  // a different side entirely; accepting that one and then pressing sell tests
+  // nothing, because a buy rule cannot veto a sell. That is not a hypothetical:
+  // it accepted 'no-eth-buy-over-24' and then failed D5 for the right reason.
+  const prop = rf.b.proposals.find(
+    (p) => p.symbol === "ETH" && String(p.side).toUpperCase() === "SELL");
+  if (!prop) {
+    chk("D5 a rule is proposed", false,
+        `no ETH SELL proposal among ${rf.b.proposals.length}: ` +
+        rf.b.proposals.map((p) => `${p.symbol}/${p.side}`).join(", "));
+  }
   else {
     await j("/reflect/accept", { method: "POST", body: JSON.stringify({ proposal: prop }) });
     const rules = (await j("/memory")).b.rules;
@@ -1285,6 +1296,22 @@ try {
   chk("M1 mainnet without a key is read-only, and cannot sign",
       roj.readOnly === true && roj.wallet === null && /needs a signing key/.test(roj.refused),
       `READ_ONLY=${roj.readOnly}, wallet=${roj.wallet}, swap refused`);
+
+  // A slippage tolerance is not a safety margin on mainnet — it is the width of
+  // the window someone else is allowed to take from the fill. Measured impact
+  // at the sizes this pad trades is 0.000-0.002% (test/mainnet-conditions.mjs),
+  // so carrying the fork's forgiving 1% onto mainnet would be handing away
+  // three orders of magnitude more than the pool actually needs.
+  const slip = execFileSync(process.execPath,
+    ["--input-type=module", "-e",
+     `const d = await import("${path.join(ROOT, "main", "dex.mjs")}");
+      console.log(d.DEFAULT_SLIPPAGE_PCT);`],
+    { env: { ...process.env, CHAIN_MODE: "mainnet", AGENT_PRIVATE_KEY: "" },
+      cwd: ROOT, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  const slipMainnet = Number(slip.trim().split("\n").pop());
+  chk("M7 mainnet does not inherit the fork's loose slippage tolerance",
+      slipMainnet > 0 && slipMainnet <= 0.5,
+      `mainnet default ${slipMainnet}% (fork uses 1%; measured pool impact is under 0.01%)`);
 
   // anvil's account #0 key is published in its own README. Signing a real
   // transaction with it hands the funds to anyone watching the chain.
