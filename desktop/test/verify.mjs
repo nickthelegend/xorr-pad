@@ -19,8 +19,8 @@ import { TOKENS, UNISWAP_V3 } from "../main/tokens.mjs";
 import { Memory, DEFAULT_LIMITS, NO_MEMORY_LIMITS } from "../main/memory.mjs";
 import { tts, stt, pcmToWav, think, parseIntent, parseAmount } from "../main/voice.mjs";
 import { MARKETS, DELISTED, SYMBOLS } from "../main/markets.mjs";
-import { klines, marketUptrend, regimeOf } from "../main/candles.mjs";
-import { BOOK, runBook, ema, rsi } from "../main/strategies.mjs";
+import { klines, marketUptrend, regimeOf, closedBars } from "../main/candles.mjs";
+import { BOOK, runBook, ema, rsi, relativeVolume, atrPct, P } from "../main/strategies.mjs";
 import { priceImpact, MAX_IMPACT } from "../main/dex.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import path from "node:path";
@@ -1618,6 +1618,114 @@ section("X. the automation path");
       (quiet.signals || []).length === 0 && quiet.verdict === null && quiet.fill === null,
       `signals ${(quiet.signals || []).length}, verdict ${quiet.verdict}, fill ${quiet.fill}`);
 }
+
+section("U. the data the book stands on");
+try {
+  const HOUR = 3.6e6, DAY = 86400e3, now = Date.now();
+
+  const h = await klines("ETHUSDT", { limit: 300 });
+  let mono = true; const gaps = new Set();
+  for (let i = 1; i < h.length; i++) { if (h[i].t <= h[i - 1].t) mono = false; gaps.add(h[i].t - h[i - 1].t); }
+  chk("U1 hourly candles are real, ordered and evenly spaced",
+      h.length >= 200 && mono && [...gaps].every((g) => g === HOUR) && h.every((k) => k.high >= k.low && k.volume > 0),
+      `${h.length} bars, newest last, ${[...gaps].length} distinct gap(s)`);
+
+  const t0 = Date.now(); await klines("ETHUSDT", { limit: 300 }); const warm = Date.now() - t0;
+  const t1 = Date.now(); await klines("ETHUSDT", { limit: 298 }); const cold = Date.now() - t1;
+  chk("U2 the feed cache is keyed by its arguments", warm < 5 && cold > warm,
+      `same args ${warm}ms (cached), different limit ${cold}ms (fetched)`);
+
+  const newest = h[h.length - 1];
+  chk("U3 a candle knows when its period ends",
+      h.every((k) => Number.isFinite(k.tClose)) && newest.tClose === newest.t + HOUR - 1,
+      `newest bar closes ${new Date(newest.tClose).toISOString().slice(11, 19)}, ` +
+      `${((now - newest.t) / 60e3).toFixed(0)}min into it`);
+
+  // The whole section in one assertion: the forming bar is dropped by anything
+  // measuring a completed period, and kept by anything measuring now.
+  const daily = await klines("BTCUSDT", { interval: "1d", limit: 220 });
+  const printed = closedBars(daily);
+  const forming = daily[daily.length - 1].tClose > now;
+  chk("U4 the 200-day mean is 200 printed days",
+      printed.length === daily.length - (forming ? 1 : 0) &&
+      printed.every((c) => c.tClose <= now),
+      forming ? `today's bar dropped — ${printed.length} printed of ${daily.length} fetched`
+              : `no bar in progress — all ${printed.length} printed`);
+
+  const gate = await marketUptrend();
+  const handSma = printed.map((c) => c.close).slice(-200).reduce((a, b) => a + b, 0) / 200;
+  chk("U5 …and the live price is still the live price",
+      Math.abs(gate.sma200 - handSma) < 1e-6 && gate.px === daily[daily.length - 1].close,
+      `px $${Math.round(gate.px).toLocaleString()} (live) vs mean $${Math.round(gate.sma200).toLocaleString()} (printed)`);
+
+  // A completed hour over completed hours -- never a part-hour over whole ones.
+  const shipped = relativeVolume(h);
+  const naive = h[h.length - 1].volume / (h.slice(-21, -1).reduce((a, c) => a + c.volume, 0) / 20);
+  chk("U6 relative volume compares like with like",
+      Math.abs(shipped - relativeVolume(closedBars(h))) < 1e-9 && (!forming || Math.abs(shipped - naive) > 1e-9),
+      `${shipped.toFixed(2)} on the last completed hour · the part-hour reading would be ${naive.toFixed(2)}`);
+
+  const again = relativeVolume(await klines("ETHUSDT", { limit: 300 }));
+  chk("U7 …so the answer does not depend on the wall clock", shipped === again,
+      `two reads inside one hour agree at ${shipped.toFixed(4)}`);
+
+  // Blow up the range of the bar that is still being written. Its close is left
+  // alone, because that IS the normaliser -- the stop is a share of what we
+  // would pay now -- so any movement here would be the forming bar's range
+  // leaking into a measurement defined over completed ones.
+  const tampered = h.map((k, i) => (i === h.length - 1 ? { ...k, high: k.high * 3, low: k.low / 3 } : k));
+  chk("U8 ATR measures completed ranges",
+      atrPct(h) > 0 && (!forming || atrPct(tampered) === atrPct(h)),
+      forming
+        ? `${(atrPct(h) * 100).toFixed(3)}% of price — tripling the forming bar's range moves it by ` +
+          `${Math.abs(atrPct(tampered) - atrPct(h)).toExponential(1)}`
+        : `${(atrPct(h) * 100).toFixed(3)}% of price — no bar in progress to exclude`);
+
+  // A threshold no live input can reach is not a threshold.
+  const reach = [];
+  for (const sym of SYMBOLS) {
+    const m = MARKETS[sym]; if (!m?.binance) continue;
+    reach.push({ sym, rv: relativeVolume(await klines(m.binance)) });
+  }
+  const top = reach.reduce((a, b) => (b.rv > a.rv ? b : a));
+  chk("U9 volume_thrust is reachable on live data", top.rv >= 1.0 && reach.every((r) => Number.isFinite(r.rv)),
+      `best is ${top.sym} at ${top.rv.toFixed(2)}x — threshold ${P.thrust_volume}x, ` +
+      `${reach.filter((r) => r.rv >= P.thrust_volume).length}/${reach.length} market(s) over it now`);
+
+  const bar = (px) => ({ t: 0, open: px, high: px * 1.001, low: px * 0.999, close: px, volume: 1000 });
+  chk("U10 the regime classifier is correct at its edges",
+      regimeOf(Array.from({ length: 10 }, () => bar(100))) === "UNKNOWN" &&
+      regimeOf(Array.from({ length: 60 }, (_, i) => bar(100 + i))) === "TREND_UP" &&
+      regimeOf(Array.from({ length: 60 }, (_, i) => bar(160 - i))) === "RISK_OFF" &&
+      regimeOf(Array.from({ length: 60 }, (_, i) => bar(100 + (i % 2 ? 3 : -3)))) === "CHOP" &&
+      regimeOf(Array.from({ length: 60 }, () => bar(100))) === "CHOP",
+      "UNKNOWN · TREND_UP · RISK_OFF · CHOP · flat is CHOP, not a divide-by-zero");
+
+  const sc = await j("/scan");
+  const errored = (sc.b.markets || []).filter((m) => m.error);
+  chk("U11 a dead feed is reported, not hidden",
+      sc.s === 200 && (sc.b.markets || []).length === SYMBOLS.length &&
+      errored.every((m) => !(sc.b.signals || []).some((g) => g.symbol === m.symbol)),
+      errored.length ? `${errored.length} market(s) errored, none contributed a signal` : "every feed answered");
+
+  const live = (sc.b.markets || []).filter((m) => !m.error);
+  chk("U12 indicators never emit NaN",
+      live.length > 0 && live.every((m) => [m.rsi, m.emaGapPct, m.relVol, m.atrPct].every(Number.isFinite)),
+      `${live.length} market(s), 4 indicators each, all finite`);
+
+  chk("U13 the gate's prose matches its verdict",
+      sc.b.gate.uptrend === /is above its 200-day mean/.test(sc.b.gate.reason),
+      `${sc.b.gate.uptrend ? "above" : "below"} — "${sc.b.gate.reason.slice(0, 46)}…"`);
+
+  // A number covering two of three positions reads exactly like one covering three.
+  const padSrc = fs.readFileSync(new URL("../main/server.mjs", import.meta.url), "utf8");
+  const pd = await j("/pad");
+  chk("U14 partial P&L is not presented as whole-book P&L",
+      /priced === held/.test(padSrc) && pd.s === 200 && Number.isFinite(pd.b.unpriced) &&
+      (pd.b.unpriced === 0 || pd.b.unrealised === null),
+      pd.b.unpriced === 0 ? `all ${pd.b.positions} position(s) priced, P&L stands`
+                          : `${pd.b.unpriced} unpriced — unrealised withheld`);
+} catch (e) { chk("U crashed", false, String(e.message || e).slice(0, 92)); }
 
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             (skipped ? `   (${skipped} skipped)` : "") + "\n");

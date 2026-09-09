@@ -773,3 +773,128 @@ the network."* Re-run on the warmed fork:
 Worth writing down for anyone who re-pins before a demo: **budget a throwaway
 run.** The first pass after a fresh pin is the one that fills the cache, and it
 will look like the product is broken when it is only cold.
+
+## U. The data the book stands on — the eighth run's axis
+
+Seven runs audited what the pad *does* with its numbers and never once audited
+where the numbers come from. `candles.mjs` is 81 lines with zero plan coverage,
+and everything in section S stands on it: the trend gate that switches the whole
+book off, the regime classifier, and the four indicators every strategy reads.
+
+The question this section asks is one question in eight places: **Binance's
+newest bar is still forming — does the code know?** A measurement defined over a
+completed period (a mean volume, an average true range, a 200-day mean) must be
+computed over completed periods. A measurement of *now* (price, RSI, the
+dislocation from an EMA) should use the live bar. Confusing the two is not a
+rounding error; it silently changes what a threshold means.
+
+| # | Item | Correct means |
+|---|---|---|
+| U1 | Hourly candles are real, ordered and evenly spaced | ≥200 bars, newest last, every gap exactly 3,600,000 ms, `high >= low`, volume > 0 |
+| U2 | The feed cache is keyed by its arguments | Same args → served from cache with no HTTP call; a different `limit` → a fresh fetch |
+| U3 | A candle knows when its period ends | Every fetched bar carries a close time; the newest hourly bar's close time is in the future while the hour is running |
+| U4 | The 200-day mean is 200 **printed** days | `sma200` computed over bars whose period has elapsed — never the in-progress day. The comment claiming "no lookahead" must be true |
+| U5 | …and the live price is still the live price | `px` is the current (forming) close, so the gate compares *now* against the printed mean |
+| U6 | Relative volume compares like with like | A completed hour's volume over the mean of the 20 completed hours before it. Never a partial hour over complete ones |
+| U7 | …so the answer does not depend on the wall clock | relVol for a given hour is the same at :05 and :55. Two reads inside one hour agree |
+| U8 | ATR measures completed ranges | `atrPct` over bars whose period has elapsed; a forming bar's compressed high−low never narrows the stop |
+| U9 | `volume_thrust` can actually fire | With real feed data on a market whose completed hour exceeds 2.5× its 20-hour mean, the strategy fires. A threshold no live input can reach is not a threshold |
+| U10 | The regime classifier is correct at its edges | <49 bars → `UNKNOWN`; monotonic rise → `TREND_UP`; monotonic fall → `RISK_OFF`; alternating → `CHOP`; perfectly flat → `CHOP`, never a divide-by-zero |
+| U11 | A dead feed is reported, not hidden | A market whose Binance symbol 404s appears in `/scan` with an `error` and contributes no signal; the scan still returns 200 for the others |
+| U12 | Indicators never emit NaN | Across every market in `/scan`, `rsi`, `emaGapPct`, `relVol`, `atrPct` are all finite |
+| U13 | The gate's prose matches its verdict | `uptrend === true` iff the reason says "above"; the two can never disagree |
+| U14 | Partial P&L is not presented as whole-book P&L | If a held position has no price in the feed, `/pad`'s `unrealised` says so rather than quietly reporting a subset as the total |
+
+Constructed series with no close time (the suite builds those by hand for S3–S5)
+must keep working unchanged — the completeness rule is a no-op when a bar cannot
+say when it ends.
+
+## Eighth full run — 2026-09-09, 130 items
+
+**165 passed, 0 failed, 1 skipped** (E4 Groq, account-level). Sections A–T
+re-verified unchanged; section U is new.
+
+### The strongest strategy condition in the book could not fire — U6, U9
+
+`relativeVolume` divided **the part of the current hour that had happened so
+far** by the mean of twenty **complete** hours:
+
+```js
+const prior = candles.slice(-(window + 1), -1);   // 20 whole hours
+return candles[candles.length - 1].volume / mean; // ...over a partial one
+```
+
+Binance returns the bar it is still writing as its last row, and nothing in the
+codebase knew that. Measured across all six markets at 42 minutes past the hour
+— the *favourable* two-thirds of the window — the reading came back **3.2× to
+5.0× low**:
+
+| market | as shipped | on completed bars | understated |
+|---|---|---|---|
+| ETH | 0.633 | 3.150 | 4.98× |
+| cbBTC | 0.676 | 3.194 | 4.72× |
+| EURC | 0.914 | 3.598 | 3.94× |
+| VIRTUAL | 0.886 | 3.087 | 3.48× |
+
+`volume_thrust` needs 2.5×. Four markets were genuinely over it and the pad read
+all four as under 1.0. The one momentum condition xorr measured as positive on
+both halves of the data — `up_vol2.5`, +0.170% in-sample / +0.101% held-out —
+**could not fire in production at all**, and `stretch_capitulation`'s 1.8× gate
+was in the same position. Not a threshold that rarely triggers: a threshold no
+live input could reach, which is the same shape as `dca_last_ms` in the seventh
+run and the two self-swaps before it — a mechanism that reads as working
+precisely because silence is what a strict filter is supposed to look like.
+
+The same root cause had two more heads:
+
+- **U4** — the 200-day BTC mean averaged 199 printed days and one still being
+  written. The comment above it claimed *"entirely of bars that have already
+  printed, so there is no lookahead."* That was aspirational. It moved the mean
+  $54 (0.077%) on the day it was measured, which does not flip today's verdict
+  but silently decides the gate whenever price sits near the line.
+- **U8** — `atrPct` averaged the forming bar's compressed high−low, narrowing
+  every stop by however far into the hour the scan happened to run.
+
+**The fix is one idea in one place.** Candles now carry `tClose`, and
+`closedBars()` drops a trailing bar whose period has not elapsed. Measurements
+of a *completed period* — mean volume, true range, a 200-day mean — take it;
+measurements of *now* — price, RSI, distance from an EMA, `notFallingKnife`'s
+"is it still falling" — deliberately keep the live bar. A constructed series
+whose bars carry no close time passes through untouched, so the hand-built
+fixtures in S3–S5 still mean what they meant.
+
+Verified in the running product, not just the suite: `/scan` now returns
+`volume_thrust` on EURC at 3.6× volume, confidence 0.73, with its measured
+provenance attached — a strategy that returned nothing on every previous run.
+
+### A number covering part of the book read exactly like the whole — U14
+
+`/pad`'s `unrealised` skipped positions the candle feed could not price and
+reported the remainder as the book's P&L. The pad prints that figure flat, with
+no way to know it covered two positions of three. It now withholds the number
+when it cannot cover everything held, and says why in `unpriced` — the same
+reasoning the file already applied one line above, where a missing cost basis
+yields null "rather than a zero the pad would render as flat". Proven both ways:
+an unpriceable DEGEN position turns `unrealised` null with `unpriced: 1`, and
+archiving it brings the figure back.
+
+### My own expectation was wrong again — U8
+
+Written as "`atrPct(h)` and `atrPct(closedBars(h))` must be identical", which
+they are not and should not be: ATR is deliberately normalised by the **live**
+price, because the stop is a share of what you would pay now. The property
+actually worth asserting is that the forming bar's *range* is invisible — so U8
+now triples that bar's high−low and requires the answer to move by exactly zero.
+It does. Fifth run running that one of my expectations, not the app, was the
+thing that was wrong.
+
+### And four failures that were mine, not the code's
+
+B18, B18b, P3 and S4 failed on the first pass with empty transcripts and 0.00s
+audio. Cause: I restarted the backend as a bare `node main/server.mjs`, and the
+`.env` lives at the repo root where **`electron.mjs`** loads it — so the process
+came up with no Deepgram key. Started as `node --env-file=../.env main/server.mjs`
+they all pass. Worth knowing: the backend does not read `.env` itself, the
+desktop shell does, and a hand-started backend is a backend with no credentials
+and no pad token (it mints a random one, which is exactly what the shell's own
+comment warns about).

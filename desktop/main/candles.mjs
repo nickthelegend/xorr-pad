@@ -32,9 +32,32 @@ export async function klines(binanceSymbol, { interval = "1h", limit = 300 } = {
 
   const rows = raw.map((k) => ({
     t: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5],
+    tClose: k[6],           // when this bar's period ends — see closedBars()
   }));
   cache.set(key, { at: Date.now(), rows });
   return rows;
+}
+
+/**
+ * The bars whose period has actually elapsed.
+ *
+ * Binance always returns the bar currently being written as its last row. At
+ * five past the hour that bar holds five minutes of volume and a high-low range
+ * five minutes wide. Any measurement defined over a *completed* period — a mean
+ * volume, an average true range, a 200-day mean — has to drop it, or the
+ * threshold it feeds quietly means something different at :05 than at :55.
+ *
+ * Measurements of *now* — price, RSI, the distance from an EMA — should keep it.
+ * That is the whole distinction; everything else here follows from it.
+ *
+ * A constructed series whose bars cannot say when they end is returned
+ * untouched: the suite builds those by hand, and a bar with no close time is
+ * taken at face value.
+ */
+export function closedBars(candles, now = Date.now()) {
+  const last = candles[candles.length - 1];
+  if (!Number.isFinite(last?.tClose)) return candles;
+  return last.tClose <= now ? candles : candles.slice(0, -1);
 }
 
 /**
@@ -48,10 +71,13 @@ export async function klines(binanceSymbol, { interval = "1h", limit = 300 } = {
  */
 export async function marketUptrend() {
   const daily = await klines("BTCUSDT", { interval: "1d", limit: 220 });
-  if (daily.length < 200) return { uptrend: false, reason: "not enough BTC history" };
-  const closes = daily.map((c) => c.close);
+  // Today's bar is still being written, so it is not one of the 200 printed
+  // days the mean is defined over -- but it IS the price we are comparing.
+  const printed = closedBars(daily);
+  if (printed.length < 200) return { uptrend: false, reason: "not enough BTC history" };
+  const closes = printed.map((c) => c.close);
   const sma200 = closes.slice(-200).reduce((a, b) => a + b, 0) / 200;
-  const px = closes[closes.length - 1];
+  const px = daily[daily.length - 1].close;
   return {
     uptrend: px > sma200,
     px, sma200,

@@ -315,14 +315,22 @@ export function createServer(mem) {
         // Unrealised P&L against the entry prices the store remembers. With no
         // remembered entry there is no cost basis, and the field is null rather
         // than a zero the pad would render as "flat".
-        let unrealised = null, basis = 0, open = 0;
+        let unrealised = null, basis = 0, open = 0, held = 0, priced = 0;
         for (const [sym, pos] of Object.entries(brief?.positions || {})) {
+          if (!(pos.qty > 0)) continue;
+          held++;
           const p = sym === "USDC" ? 1 : px[sym] ?? (sym === "WETH" ? px.ETH : null);
-          if (p == null || !(pos.qty > 0)) continue;
+          if (p == null) continue;
+          priced++;
           open  += pos.qty * p;
           basis += pos.qty * Number(pos.avg_entry_usd || 0);
         }
-        if (basis > 0) unrealised = Math.round((open - basis) * 100) / 100;
+        // The pad prints this as the book's P&L, so it has to be the book's. A
+        // market whose reference feed is down drops out of `prices()` silently,
+        // and a number covering two of three positions reads exactly like a
+        // number covering three. Same reasoning as the null above: say nothing
+        // rather than something that reads as more than it is.
+        if (basis > 0 && priced === held) unrealised = Math.round((open - basis) * 100) / 100;
 
         return send(200, {
           ok: true,
@@ -340,6 +348,7 @@ export function createServer(mem) {
           spentToday: Number.isFinite(brief?.spent_today) ? brief.spent_today : null,
           dayLimit: brief?.limits?.max_day_usd ?? null,
           unrealised,
+          unpriced: held - priced,   // why `unrealised` is null, when it is
           price: px[state.market] ?? null,
         });
       }

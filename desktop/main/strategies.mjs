@@ -46,6 +46,8 @@ export const P = {
   FAST_HOLD_MIN: 300,
 };
 
+import { closedBars } from "./candles.mjs";
+
 // --- the same measurements ------------------------------------------------
 
 export function ema(values, period) {
@@ -75,21 +77,31 @@ export function rsi(closes, period = 14) {
 
 /** ATR as a share of price — stops scale to the symbol's own noise. */
 export function atrPct(candles, period = 14) {
-  if (candles.length < period + 1) return 0;
+  // The range of a bar that is still being written is only as wide as the part
+  // of the hour that has happened, so measuring it would narrow the stop for no
+  // reason other than what time it is.
+  const c = closedBars(candles);
+  if (c.length < period + 1) return 0;
   const trs = [];
-  for (let i = candles.length - period; i < candles.length; i++) {
-    const cur = candles[i], prev = candles[i - 1];
+  for (let i = c.length - period; i < c.length; i++) {
+    const cur = c[i], prev = c[i - 1];
     trs.push(Math.max(cur.high - cur.low, Math.abs(cur.high - prev.close), Math.abs(cur.low - prev.close)));
   }
+  // Normalised by the live price: the stop is a share of what we would pay now.
   const last = candles[candles.length - 1].close;
   return last > 0 ? (trs.reduce((a, b) => a + b, 0) / trs.length) / last : 0;
 }
 
 export function relativeVolume(candles, window = 20) {
-  if (candles.length < window + 1) return 1;
-  const prior = candles.slice(-(window + 1), -1);
-  const mean = prior.reduce((a, c) => a + c.volume, 0) / window;
-  return mean > 0 ? candles[candles.length - 1].volume / mean : 1;
+  // A completed hour against the twenty completed hours before it. Dividing the
+  // part of an hour that has happened so far by twenty whole ones understates
+  // this by roughly the fraction of the hour still to come -- measured at 3-5x
+  // on real feed data -- which put `thrust_volume: 2.5` out of reach entirely.
+  const c = closedBars(candles);
+  if (c.length < window + 1) return 1;
+  const prior = c.slice(-(window + 1), -1);
+  const mean = prior.reduce((a, x) => a + x.volume, 0) / window;
+  return mean > 0 ? c[c.length - 1].volume / mean : 1;
 }
 
 /**
