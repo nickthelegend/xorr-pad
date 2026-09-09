@@ -336,6 +336,10 @@ nav .dot.on{background:var(--up)}
 /* The pad's setup code. Shown on demand rather than always: it carries the pad
    token, and the desk is often on a screen other people can see. */
 #padcode{position:fixed;inset:0;background:rgba(0,0,0,.72);display:grid;place-items:center;z-index:60}
+/* An id selector outranks the UA stylesheet's [hidden]{display:none}, so the
+   display:grid above left this panel permanently open across the whole app —
+   over the portfolio, on first load, with the pad token on show. Restore it. */
+#padcode[hidden]{display:none}
 .padcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;width:330px;text-align:center}
 .padhead{font-size:15px;font-weight:600;margin-bottom:14px}
 .padsvg{background:#fff;border-radius:10px;padding:8px;display:inline-block;line-height:0}
@@ -606,16 +610,36 @@ const TABS = [
     d:`<rect x="3" y="6.5" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><path d="M16.5 15h2"/>` },
 ];
 let tab = "home";
+/**
+ * The nav is built ONCE and then patched in place.
+ *
+ * It used to re-render `#nav.innerHTML` on every 4-second refresh, which
+ * destroyed and recreated every button. A click that landed between mousedown
+ * and mouseup lost its element, so the browser never fired `click` — and the
+ * primary navigation silently ignored the press. It is the kind of fault that
+ * reads as "the app is laggy" rather than as a bug, because trying again works.
+ *
+ * Only two things actually change per tick: which tab is selected, and whether
+ * the armed dot is lit. Both are attributes.
+ */
 function drawTabs(){
-  el("nav").innerHTML = TABS.map(t =>
-    `<button role="tab" aria-selected="${t.id===tab}" onclick="pickTab('${t.id}')" title="${t.title}">` +
-    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ` +
-    `stroke-linecap="round" stroke-linejoin="round">${t.d}</svg>` +
-    `<span>${t.label}</span>` +
-    // The status dot rides the Agents row: the one always-visible signal that
-    // something is trading on the operator's behalf.
-    (t.dot ? `<span class="dot${armed?" on":""}"></span>` : ``) +
-    `</button>`).join("");
+  const nav = el("nav");
+  if (!nav.firstChild) {
+    nav.innerHTML = TABS.map(t =>
+      `<button role="tab" data-tab="${t.id}" aria-selected="${t.id===tab}" onclick="pickTab('${t.id}')" title="${t.title}">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ` +
+      `stroke-linecap="round" stroke-linejoin="round">${t.d}</svg>` +
+      `<span>${t.label}</span>` +
+      // The status dot rides the Agents row: the one always-visible signal that
+      // something is trading on the operator's behalf.
+      (t.dot ? `<span class="dot"></span>` : ``) +
+      `</button>`).join("");
+  }
+  for (const b of nav.children) {
+    b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+    const dot = b.querySelector(".dot");
+    if (dot) dot.classList.toggle("on", !!armed);
+  }
 }
 function pickTab(id, fromHistory){
   if (!TABS.some(t => t.id === id)) id = "home";
@@ -1103,32 +1127,54 @@ function drawAuthBanner(){
    Hairline rows on Markets, scrolling pills on Trade. Pills never shrink to
    fit — that is how the old market tabs broke. */
 let mktKeys = "";
+/**
+ * Market rows are built once, then updated in place.
+ *
+ * They used to be re-rendered whenever any price changed — which is every few
+ * seconds — and that destroyed the row under the operator's cursor mid-click,
+ * so choosing a market sometimes did nothing at all. The same fault the nav and
+ * the agent cards had. Prices move constantly, so a signature guard is not
+ * enough here: the markup itself has to stop being replaced.
+ *
+ * Only two things change: the price text, and which row is in hand.
+ */
 function drawMarkets(){
   const entries = Object.entries(MARKETS).filter(([k])=>!k.startsWith("__"));
-  const sig = entries.map(([k])=>k).join(",") + "|" + entries.map(([k])=>lastPrices[k]).join(",") + "|" + activeMarket;
-  if (sig === mktKeys) return;              // nothing visible changed
-  mktKeys = sig;
+  const shape = entries.map(([k])=>k).join(",");
 
-  el("mkts").innerHTML = entries.map(([sym,m])=>{
-    const px = lastPrices[sym];
-    return `<div class="lrow" role="button" tabindex="0" onclick="pickMarket('${sym}')"
-        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickMarket('${sym}')}"
-        style="cursor:pointer" title="${esc(m.label)}. Uniswap V3 ${m.fee/10000}% tier on Base.">
-      ${markHtml(sym)}
-      <div class="lmain"><span class="lp">${esc(sym)}${sym===activeMarket?` <span class="tag">in hand</span>`:``}</span>
-        <span class="ls">${esc(m.label)} · ${CLASS_LABEL[m.class]||m.class}</span></div>
-      <div class="lval"><span class="lv">${px!=null?money(px):"—"}</span>
-        <span class="ld">${m.fee/10000}% tier</span></div>
-    </div>`;
-  }).join("");
+  if (shape !== mktKeys) {                  // the set of markets changed — rebuild
+    mktKeys = shape;
+    el("mkts").innerHTML = entries.map(([sym,m])=>
+      `<div class="lrow" role="button" tabindex="0" data-sym="${sym}" onclick="pickMarket('${sym}')"
+          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickMarket('${sym}')}"
+          style="cursor:pointer" title="${esc(m.label)}. Uniswap V3 ${m.fee/10000}% tier on Base.">
+        ${markHtml(sym)}
+        <div class="lmain"><span class="lp"><span class="sym">${esc(sym)}</span><span class="hand"></span></span>
+          <span class="ls">${esc(m.label)} · ${CLASS_LABEL[m.class]||m.class}</span></div>
+        <div class="lval"><span class="lv">—</span>
+          <span class="ld">${m.fee/10000}% tier</span></div>
+      </div>`).join("");
 
-  el("tradepills").innerHTML = entries.map(([sym])=>
-    `<button class="pill" type="button" aria-pressed="${sym===activeMarket}" onclick="pickMarket('${sym}')">${esc(sym)}</button>`).join("");
+    el("tradepills").innerHTML = entries.map(([sym])=>
+      `<button class="pill" type="button" data-sym="${sym}" aria-pressed="${sym===activeMarket}" onclick="pickMarket('${sym}')">${esc(sym)}</button>`).join("");
+  }
+
+  for (const row of el("mkts").children) {
+    const sym = row.dataset.sym, px = lastPrices[sym];
+    const lv = row.querySelector(".lv");
+    const want = px != null ? money(px) : "—";
+    if (lv.textContent !== want) lv.textContent = want;
+    const hand = row.querySelector(".hand");
+    const on = sym === activeMarket;
+    if (on !== (hand.childNodes.length > 0)) hand.innerHTML = on ? ` <span class="tag">in hand</span>` : ``;
+  }
+  for (const pill of el("tradepills").children)
+    pill.setAttribute("aria-pressed", String(pill.dataset.sym === activeMarket));
 }
 async function pickMarket(sym){
   const r = await fetch("/key",{method:"POST",headers:H,body:JSON.stringify({id:sym})}).then(r=>r.json());
   if(r.ok===false){ el("sig").innerHTML = note("block", esc(r.error)); return; }
-  activeMarket = sym; mktKeys = ""; drawMarkets(); await refresh();
+  activeMarket = sym; drawMarkets(); await refresh();
 }
 
 /**
@@ -1166,7 +1212,7 @@ function drawEquities(mk){
 function drawScan(r){
   if(!r || !r.markets){ el("scanhead").textContent="scan returned nothing"; return; }
   for (const m of r.markets) if (m.price!=null) lastPrices[m.symbol]=m.price;
-  mktKeys = ""; drawMarkets();
+  drawMarkets();
   // Stamp the run. The summary says what is true "right now", and a scan from
   // seven minutes ago saying that is simply wrong.
   el("scanhead").innerHTML = `<b style="color:${r.signals.length?'var(--up)':'var(--ink70)'};font-weight:600">${esc(r.summary)}</b>`
@@ -1331,10 +1377,21 @@ function drawInHand(mem){
   box.innerHTML = `<div class="eyebrow" style="margin-bottom:8px">What it remembers</div>` + rows.join("");
 }
 
+let agentKey = "";
 function drawAgents(active){
+  // Rebuilt only when the active agent actually changes. Replacing this markup
+  // on every refresh destroyed the card under the cursor mid-click, so pressing
+  // an agent sometimes did nothing at all — the same fault the nav had.
+  if (active === agentKey) return;
+  agentKey = active;
   const cards = AGENTS.map(a => {
     const on = a.id === active;
-    return `<button class="agentcard" type="button" aria-pressed="${on}" onclick="pickAgent('${a.id}')">
+    // Named, because the label lives in child spans that never become the
+    // button's accessible name — six identical "button"s to a screen reader,
+    // and nothing any tool can address by name either.
+    return `<button class="agentcard" type="button" aria-pressed="${on}" ` +
+      `aria-label="${esc(a.name)} — ${on ? "active" : "paused"}" ` +
+      `title="${esc(a.name)}" onclick="pickAgent('${a.id}')">
       <div class="orbwrap">${orb(a, 56, {bloom:on})}
         <span class="orbname">${esc(a.name)}</span>
         <span class="orbstatus ${on?"active":"paused"}">${on?"Active":"Paused"}</span></div></button>`;
@@ -1377,7 +1434,7 @@ async function refresh(){
   if (Number.isFinite(h.sizeUsd)) drawSizes(h.sizeUsd);
 
   const p = await get("/portfolio");
-  if (p?.prices) { lastPrices = { ...lastPrices, ...p.prices }; mktKeys = ""; drawMarkets(); }
+  if (p?.prices) { lastPrices = { ...lastPrices, ...p.prices }; drawMarkets(); }
   el("railblock").textContent = p?.chain?.block ?? "—";
   el("railaddr").textContent = p?.chain?.address
     ? p.chain.address.slice(0, 6) + "…" + p.chain.address.slice(-4) : "—";
@@ -1392,7 +1449,7 @@ async function refresh(){
       const d = Object.entries(mk.delisted);
       el("delisted").innerHTML = `<b>Delisted for thin liquidity.</b> ` +
         d.map(([k,v])=>`${esc(k)} <span class="dim">(${esc(v.reason)})</span>`).join("; ") + `.`;
-      mktKeys = ""; drawMarkets(); }
+      drawMarkets(); }
   }
 
   // Restore a decision that is still live server-side (after a refresh, or one
