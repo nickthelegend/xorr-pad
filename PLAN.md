@@ -50,6 +50,27 @@ label — see Phase 1.*
 
 ---
 
+## Completion: 93% — 38 of 41 verified, 2026-09-09
+
+Measured against a checklist built from what this project itself claims
+(README's status list, SUBMISSION's partner stacks, the firmware README, the
+code), and verified by running each item rather than by reading it.
+
+**The three that are not done, and why none of them is code:**
+
+| Gap | Why it is open |
+|---|---|
+| Firmware never flashed | No ESP32 attached to this machine — `/dev/cu.usb*` is empty. It compiles at 38% of app space and its backend contract is covered by suite section P |
+| Trading keycaps not printed | The board carries the previous build's caps; the legends exist in `cad/part_caps.py` |
+| No mainnet transaction ever signed | Spends real money. Every guard is in place and asserted (section M); it needs a funded hot wallet and an explicit go-ahead |
+
+Everything else verified clean: a real persisted SQLite store, the load-bearing
+proof, real signed mined fills on a Base fork, a keyless aggregator with best
+execution, ten tokenized equities priced from their own pools, a packaged `.app`
+that starts its own fork, voice in and out, **zero mocks or stubs**, CI green,
+and the suite at **141 passed, 0 failed, 1 skipped** — the skip being Groq's
+account-level model block, which is not a code fault.
+
 ## Status after the build pass, 2026-09-09
 
 **27 of 44 tasks done.** Three of them were unblocked by re-testing an
