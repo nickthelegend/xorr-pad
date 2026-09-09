@@ -170,7 +170,42 @@ the correct behaviour; the item fails if it succeeds instead.
 
 **Total: 68 items.**
 
-## Results — 61 of 61 PASS
+## Second full run — 68 of 68 PASS, 2026-09-09
+
+The plan was re-executed end to end after the aggregator, best execution and
+read-only mainnet landed, with seven new items (section N) covering that
+surface. Every item re-verified; three new defects found and fixed, all of them
+in the **test harness rather than the product** — which is its own finding, and
+the same class of fault the product's own standards reject:
+
+1. **Two SKIP lines printed unconditionally** and the footer carried a
+   hardcoded `(2 skipped: credentials unavailable)`. One still claimed "route
+   falls back to Uniswap V3", written before an aggregator existed. E4 now
+   really calls Groq; E5 became a real check and passes. The count is counted.
+2. **`chk()`'s message is evaluated before the assertion**, so a momentarily
+   bad response threw inside a template literal and aborted a whole section —
+   "R crashed" with nine unrelated checks never run. Eleven such expressions
+   now read the response optionally; the assertions stay strict.
+3. **The habit-loop section inherited its precondition.** Reflection mines
+   operator refusals, and a sell only reaches the operator if it clears the
+   gate — with no remembered position there was nothing minable, and the
+   section had four journalled events instead of twelve. It now establishes
+   its own position first.
+
+**On the browser.** Claude in Chrome still cannot drive this environment, and
+this run proved it is not the app: on a **trivial page** — one button, a
+document-level capture listener, nothing else — its click produced "never
+clicked". The run was completed in the in-app Chromium browser, which delivers
+input to the same pages at the same coordinates.
+
+**Confirmed at the end of this run:** suite **141 passed, 0 failed, 1 skipped**
+(the skip being Groq's account-level model block, measured and reported rather
+than assumed); load-bearing proof PASS; **zero mocks, stubs, fakes, TODOs,
+fixtures or canned data** anywhere in `main/`, `renderer/` or the firmware; and
+a clean browser session across all five screens with **zero console errors and
+60+ network requests all 200**.
+
+## First full run — 61 of 61 PASS
 
 Run against the packaged `xorr-pad.app` in a real Chromium browser on
 2026-09-09. Every item was executed, every failure fixed at the root, and the
