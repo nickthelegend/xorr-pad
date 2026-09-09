@@ -124,15 +124,25 @@ conflates them.
 
 ## Partner stacks
 
-- **Base** — trades execute on Base through Uniswap V3 `exactInputSingle`.
+- **Base** — trades execute on Base through Uniswap V3 `exactInputSingle` or the
+  KyberSwap aggregator, whichever quotes better.
   Development runs against a local **anvil fork of Base mainnet**, so fills use
   real contracts and real liquidity without spending real money. Every fill is a
   signed, mined transaction; the route a fill reports is read back off the mined
   receipt's `to`, so it cannot claim a router it did not use.
 - **Coinbase tokenized equities** — ten are listed and verified on real mainnet,
   and honestly refused rather than faked. See below.
-- **1inch** — **not integrated.** There is no 1inch call in this codebase. An
-  aggregator is the next phase and the only route to the equities.
+- **KyberSwap** — a real DEX aggregator, integrated and routing, with **no API
+  key and no signup**. It was written after noticing that "0x needs a key and
+  1inch needs KYC" does not imply that *every* aggregator does. Every fill
+  quotes both routers and takes the better one, keeping the loser's quote so the
+  choice is auditable: KyberSwap led by 0.42% / 0.023% / 0.082% on AERO / ETH /
+  cbBTC. It is also the only thing that can price the tokenized equities, whose
+  depth sits on a concentrated-liquidity pool a direct V3 call cannot reach.
+  When it fails — it refuses some senders, and it quotes live mainnet while a
+  fork drifts from it — the fill falls back to the direct pool and says so.
+- **1inch** — **not integrated.** There is no 1inch call in this codebase. Their
+  API needs KYC/KYB; KyberSwap did the same job without it.
 - **Virtuals** — VIRTUAL is one of the six tradeable markets; nothing deeper.
 
 ## Honest limits

@@ -36,7 +36,12 @@ const B = process.env.PAD_URL || "http://localhost:8080";
 const TOKEN = process.env.PAD_TOKEN || "xorrpad-dev";
 const H = { "content-type": "application/json", authorization: "Bearer " + TOKEN };
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0, skipped = 0;
+/** A check that could not run, with the reason. Counted, never assumed. */
+function skip(name, why) {
+  skipped++;
+  console.log(`  \x1b[33mSKIP\x1b[0m  ${name.padEnd(32)} ${why}`);
+}
 const chk = (id, ok, detail) => {
   ok ? pass++ : fail++;
   console.log(`  ${ok ? "\x1b[32mPASS\x1b[0m" : "\x1b[31mFAIL\x1b[0m"}  ${id.padEnd(34)} ${detail}`);
@@ -615,8 +620,38 @@ try {
       `"${decodeURIComponent(ask.headers.get("x-reply") || "").slice(0, 70)}"`);
   await j("/panic", { method: "POST" }); await j("/arm", { method: "POST" });
 
-  console.log("  \x1b[33mSKIP\x1b[0m  E4 Groq                          every model returns model_permission_blocked_project");
-  console.log("  \x1b[33mSKIP\x1b[0m  E5 1inch                         no ONEINCH_API_KEY; route falls back to Uniswap V3");
+  // These were two hardcoded SKIP lines that printed whatever the truth was —
+  // one of them still claimed "route falls back to Uniswap V3", written before
+  // an aggregator existed. A line in a test report that measures nothing is the
+  // same defect as a route label that cannot disagree with the receipt.
+  {
+    const key = process.env.GROQ_API_KEY;
+    if (!key) skip("E4 Groq", "no GROQ_API_KEY set");
+    else {
+      const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({ model: "openai/gpt-oss-20b", max_tokens: 5,
+                               messages: [{ role: "user", content: "Say OK" }] }),
+        signal: AbortSignal.timeout(15_000),
+      }).catch(() => null);
+      const jr = r ? await r.json().catch(() => ({})) : {};
+      if (r?.ok) chk("E4 Groq answers", Boolean(jr.choices?.[0]?.message?.content), "a Groq model replied");
+      else skip("E4 Groq", `${jr?.error?.code || "unreachable"} — account-level, not a code fault`);
+    }
+  }
+  {
+    // The honest question is not "is 1inch configured" but "does an aggregator
+    // actually route", and one does — without any key.
+    const { byName } = await import("../main/routers/index.mjs");
+    const agg = byName("kyberswap");
+    if (!agg?.available()) skip("E5 aggregator", "KYBERSWAP=off");
+    else {
+      const q = await agg.quote("USDC", "AERO", 25).catch((e) => ({ err: String(e.message) }));
+      chk("E5 an aggregator routes with no API key",
+          !q.err && q.amountOut > 0 && (q.venues || []).length > 0,
+          q.err ? q.err.slice(0, 70) : `${q.amountOut.toFixed(4)} AERO via ${q.venues.join(" + ")}`);
+    }
+  }
 } catch (e) { chk("E crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── N. the bugs found by running it, locked shut ────────────────────────────
@@ -1347,6 +1382,8 @@ try {
       withKey === "uniswap", `ROUTE with the key set = "${withKey}"`);
 } catch (e) { chk("Q crashed", false, String(e.message || e).slice(0, 92)); }
 
+// The tally is counted, not asserted. It used to end "(2 skipped: credentials
+// unavailable)" as a fixed string, which stayed true only by coincidence.
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
-            "   (2 skipped: credentials unavailable)\n");
+            (skipped ? `   (${skipped} skipped)` : "") + "\n");
 process.exit(fail ? 1 : 0);

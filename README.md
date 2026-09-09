@@ -149,19 +149,29 @@ recall     real        propose        the gate      real signed tx     writeback
 vetoes anything matching a rule you accepted, refuses to sell a position it
 cannot see, and subtracts today's spend from the journal.
 
-**On how it holds keys, and on 1inch.** "1inch" names three different things
-and only one of them is relevant here: a **DEX aggregator API**, a
-**self-custody wallet app**, and a governance token. This project uses **none of
-them**. There is no 1inch call in the codebase, no wallet app, and no
-WalletConnect: the agent holds a private key from the environment and signs
-with viem directly, because a pad that needs a human to approve a wallet popup
-for every fill is not an agent. An aggregator — 0x first, then 1inch — is the
-next phase and the only route to the equities above; `main/routers/` is the seam
-it plugs into.
+**On routing, and on 1inch.** Two routers are built. **Uniswap V3** is a direct
+`exactInputSingle` and needs nothing but an RPC. **KyberSwap** is a real DEX
+aggregator that needs **no API key and no signup** — it splits across venues and
+reaches the concentrated-liquidity pools a direct V3 call cannot, which is the
+only way this project can price the tokenized equities at all.
+
+Every fill quotes both and takes the better one, keeping the loser's quote on
+the fill so the choice is auditable rather than trusted. Measured on real
+quotes, KyberSwap led by 0.42% / 0.023% / 0.082% on AERO / ETH / cbBTC. If the
+aggregator fails — it refuses some senders, and it quotes live mainnet while a
+fork drifts away from it — the fill falls back to the direct pool and *says so*
+on the card.
+
+**1inch is not used.** The name covers three things: an aggregator API, a
+self-custody wallet app, and a token. None of them are here. There is no 1inch
+call in the codebase, no wallet app and no WalletConnect — the agent holds a key
+from the environment and signs with viem, because a pad that needs a human to
+approve a wallet popup for every fill is not an agent. 1inch's API needs KYC;
+KyberSwap did the job without it.
 
 The route a fill reports is read back off the mined receipt's `to`, so it can
-never claim a venue it did not use. Setting `ONEINCH_API_KEY` today changes
-nothing, and the suite asserts that.
+never claim a venue it did not use. Setting `ONEINCH_API_KEY` changes nothing,
+and the suite asserts that.
 
 ## What's in here
 
@@ -198,9 +208,13 @@ can hear a dead switch.
 - [x] firmware rewritten for xorr-pad — compiles for the S3, backend contract
       covered by the suite; **not yet flashed** (no board on this machine)
 - [ ] finish the key sweep (one dead switch, row 3 unswept)
-- [ ] an aggregator route (0x, then 1inch) — the only path to trading the
-      equities above; needs a key
-- [ ] Virtuals
+- [x] an aggregator route — **KyberSwap**, which needs no API key at all. It
+      reaches the concentrated-liquidity venues a direct V3 call cannot, prices
+      every tokenized equity, and every fill picks the better of the two routers
+      and records the loser's quote
+- [ ] trade the equities for real — the route exists; a B20 token cannot exist
+      on a fork, so this needs mainnet
+- [ ] Virtuals beyond trading VIRTUAL (no agent-registry integration)
 
 MIT. See [`PLAN.md`](PLAN.md) for the full build plan and
 [`SUBMISSION.md`](SUBMISSION.md) for the memory writeup.
