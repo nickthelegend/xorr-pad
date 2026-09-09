@@ -200,6 +200,16 @@ try {
   // intermittent failures.
   await j("/memory/seed", { method: "POST", body: "{}" });
   await j("/arm", { method: "POST" });
+  // /memory/seed re-teaches the LIMITS only — it does not clear learned rules.
+  // A rule left behind by an earlier section vetoes these sells at the gate, so
+  // they journal as "vetoed by rule" rather than as operator refusals, and
+  // reflection has nothing of the right shape to mine. Retire them first.
+  {
+    const mem3 = new Memory({ db: (await j("/health")).b?.memoryDb || process.env.SIBYL_DB });
+    for (const r of (await mem3.recallBrief().catch(() => ({}))).rules || [])
+      await mem3.archiveEntity("rule", r.id, "cleared for the habit-loop check").catch(() => {});
+    mem3.stop();
+  }
   await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
   await j("/size", { method: "POST", body: JSON.stringify({ usd: 25 }) });
   if (!(await j("/memory")).b?.positions?.ETH) {
@@ -958,6 +968,48 @@ try {
                    : `${cases.length}/${cases.length} — ETA resolves to ETH, unknown names are refused`);
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
+
+// ── W. the archive is reachable, not just written ───────────────────────────
+section("W. what it used to hold");
+try {
+  const DB = (await j("/health")).b?.memoryDb || process.env.SIBYL_DB;
+  const mem2 = new Memory({ db: DB });
+
+  // listArchived takes an options object like every other search on the client.
+  // It used to take a bare positional number, so calling it the way its
+  // siblings are called threw a TypeError from the bridge — dead code hiding a
+  // real defect.
+  const forms = await Promise.all([mem2.listArchived(), mem2.listArchived(5), mem2.listArchived({ limit: 5 })]
+    .map((p) => p.then((r) => Array.isArray(r)).catch(() => false)));
+  chk("W1 listArchived accepts an options object, a number, or nothing",
+      forms.every(Boolean), `three call forms -> ${forms.join(", ")}`);
+
+  // Close a position, then ask about it. Archived entities live in their own
+  // table and are NOT in Sibyl's FTS index, so searching the tiers finds the
+  // journal and the baton and misses the one row that says what was held.
+  await mem2.setEntity("position", "ZZTEST", { qty: 1.5, avg_entry_usd: 4.25, updated: new Date().toISOString() });
+  await mem2.archiveEntity("position", "ZZTEST", "closed at $4.30 (was 1.500000 @ $4.2500)");
+  const rows = await mem2.listArchived({ limit: 50 });
+  const found = (rows || []).some((r) => r.category === "position" && r.name === "ZZTEST");
+  chk("W2 a closed position is archived, not destroyed", found,
+      found ? `${rows.length} archived row(s), ZZTEST among them` : "ZZTEST not in the archive");
+
+  // And the FTS index genuinely does NOT cover it — which is why W4 matters.
+  const st = await mem2.searchTiers("ZZTEST", { limit: 10 });
+  chk("W3 the archive is outside the search index, as assumed",
+      !(st?.hits || []).some((h) => JSON.stringify(h).includes("ZZTEST")),
+      `searchTiers found ${(st?.hits || []).length} hit(s), none archived`);
+
+  const { think } = await import("../main/voice.mjs");
+  const brief = await mem2.recallBrief();
+  const ans = await think("have I ever held ZZTEST?", brief, { prices: {} }, mem2);
+  chk("W4 the brain can answer about a position it no longer holds",
+      /1\.5|4\.2|4\.3|held|closed/i.test(ans.text) && !/never|no record/i.test(ans.text),
+      `[${ans.brain}] "${ans.text.slice(0, 84)}"`);
+
+  await mem2.archiveEntity("position", "ZZTEST", "test cleanup").catch(() => {});
+  mem2.stop();
+} catch (e) { chk("W crashed", false, String(e.message || e).slice(0, 92)); }
 
 // ── V. numbers the operator can check against the screen ────────────────────
 section("V. displayed prices");

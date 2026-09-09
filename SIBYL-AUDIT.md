@@ -73,24 +73,32 @@ gone the agent must visibly degrade, because that is the product claim.
 | `free_tier_status()` | **GENUINELY USED** | rendered in the store browser: bytes + tier |
 | wipe (the demo) | **GENUINELY USED** | removes db + `-wal` + `-shm`; a fresh process finds nothing |
 
-### Not used
+### Since first written — six of these now ship
+
+This table listed the following as MISSING. They are live, and the evidence is
+in the code rather than in this document:
+
+| capability | status | evidence |
+|---|---|---|
+| `archive_entity()` | **GENUINELY USED** | closing a position archives it (`trader.mjs`), and decay retires a rule instead of destroying it (`reflect.mjs`). Three call sites |
+| `read_events(since/until)` | **GENUINELY USED** | `eventsBetween()` gives decay a real window instead of "the last N and hope" |
+| `set_entity(status=…)` | **GENUINELY USED** | a rule is `active` or `rejected` on Sibyl's own status column, not a flag inside its JSON, and the store browser shows it |
+| `search(tiers=…)` filter | **GENUINELY USED** | `searchTiers(q, { tiers })` scopes the search |
+| `VerdictCode` / `explain()` | **GENUINELY USED** | the spoken brain reads it: `EMPTY_STORE` produces "nothing has ever been recorded", `NO_MATCH` produces "no record of that" — two different sentences |
+| MCP server (8 tools) | **GENUINELY USED** | wired in `.mcp.json`; the suite starts it over stdio, lists its 8 tools, and reads back an entity the pad wrote |
+
+### Still not used
 
 | capability | status | why |
 |---|---|---|
 | `learn()` | **BLOCKED, not faked** | `TierGateError: self-learning requires a paid tier`. Called, its report surfaced honestly, and journal-mined reflection ships instead |
 | `lint()` / `Linter` | **MISSING** | tier-gated; never called |
 | `list/accept/reject_skill_proposal` | **MISSING** | tier-gated. **We reimplemented this** in `reflect.mjs` rather than use the SDK's own proposal store |
-| `archive_entity()` | **MISSING** | works on free tier, never called. We hard-delete instead, losing the audit trail |
-| `search_entities()` | **IMPORTED BUT UNUSED** | exposed in the bridge, zero call sites |
-| `search(tiers=…)` filter | **MISSING** | we always search all four tiers |
-| `write_event(ts=…)` backdating | **MISSING** | never used |
-| `read_events(since/until)` | **MISSING** | we only pass `limit` |
-| `set_entity(status=…)` | **MISSING** | status field never set |
-| Multi-tenant (`set_tenant`) | **MISSING** | single default tenant |
-| `VerdictCode` / `explain()` | **MISSING** | we cannot distinguish "never knew" from "knows, answer is no" |
-| MCP server (8 tools) | **MISSING** | installed, never wired. The pad has its own bridge instead |
+| `search_entities()` | **DELIBERATELY DROPPED** | the client wrapped it with zero call sites, and `search_tiers` already searches entities *and* returns the verdict. An unused wrapper reads as integration that is not there, so it was removed rather than left to imply depth |
+| `write_event(ts=…)` backdating | **MISSING** | never used. The suite backdates rules through `set_entity` instead |
+| Multi-tenant (`set_tenant`) | **DELIBERATELY ABSENT** | one pad, one operator. Adding tenancy would be using the sponsor's API to look busy |
 | Hermes `SibylMemoryProvider` | **MISSING** | installed, never imported |
-| `sibyl` CLI | **MISSING** | never invoked |
+| `sibyl` CLI | **MISSING** | never invoked by the app |
 
 **Nothing is faked.** There is no mocked Sibyl response anywhere: the one
 capability that cannot run (`learn()`) reports its real `TierGateError` to the
@@ -98,18 +106,27 @@ UI rather than pretending to have learned something.
 
 ### The honest weakness
 
-The integration is **broad on the four writable tiers and shallow on
-everything else**. Three specific things a judge could fairly criticise:
+The integration is **broad on the four writable tiers and shallow on the
+paid-gated ones**. Two of the three weaknesses this section originally listed
+have since been closed; the honest remainder is:
 
 1. **We reimplemented Sibyl's own skill-proposal system.** `reflect.mjs` mines
    the journal for rules because `learn()` is paid-gated — defensible, but it
    means the SDK's `skill_proposals` table sits empty while we keep rules in
-   `entity:rule/*`.
-2. **`archive_entity()` is free and unused.** Closing a position hard-deletes
-   it, so the store cannot answer "what did I used to hold?" — for a trading
-   agent that is a real loss, not a theoretical one.
-3. **The MCP server is installed and unused.** The most judge-legible artifact
-   the sponsor ships is one config file away and not wired.
+   `entity:rule/*`. This is the one that stands.
+2. **The archive is outside the FTS index.** Closed positions are archived
+   rather than destroyed (fixed), but `archived_entities` is a separate table,
+   so `search()` cannot reach it. The spoken brain reads the archive directly
+   for exactly this reason — a workaround, not a use of the search tier.
+3. **Two shipped artifacts remain unimported** — the Hermes
+   `SibylMemoryProvider` and the `sibyl` CLI. Neither has an obvious job here,
+   but "installed and unused" is still a fair criticism.
+
+**Closed since first written:** `archive_entity()` is now used — a closed
+position is archived with what it was and what it closed at, the desk shows a
+"closed positions" block, and the spoken brain can answer "have I ever held
+AERO?" from it. And the MCP server is wired in `.mcp.json`, with the suite
+starting it over stdio and reading back an entity the pad wrote.
 
 ---
 

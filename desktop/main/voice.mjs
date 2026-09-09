@@ -214,6 +214,37 @@ const STOP = new Set(["what","when","where","which","have","has","did","do","doe
   "the","a","an","my","me","i","you","of","in","on","at","to","for","and","or","how","much","many",
   "ever","before","again","any","it","that","this","tell","show","about","with"]);
 
+/**
+ * Positions the operator used to hold, read from the archive.
+ *
+ * Closed positions are archived rather than deleted, but `archived_entities` is
+ * a separate table and is NOT in Sibyl's FTS index — so searching the tiers for
+ * "AERO" finds the journal entries and the baton and misses the one record that
+ * actually says what was held and what it closed at. Without this the agent
+ * answers "no record" to "have I ever held AERO?" while holding exactly that
+ * record.
+ */
+async function closedPositions(mem, terms) {
+  if (!mem?.listArchived || !terms?.length) return "";
+  try {
+    const rows = await mem.listArchived({ limit: 50 });
+    // Match on what the ARCHIVE holds, not on the alias table. Filtering by
+    // known tickers meant a closed position could only be recalled if its
+    // symbol was also a configured market — so anything delisted, renamed, or
+    // simply not in ALIASES became unrecallable the moment it closed, which is
+    // exactly the history the archive exists to keep.
+    const want = new Set(terms.map((t) => String(t).toUpperCase()));
+    const mine = (rows || []).filter(
+      (r) => r.category === "position" && want.has(String(r.name).toUpperCase()));
+    if (!mine.length) return "";
+    const lines = mine.map((r) => {
+      const when = r.archived_at ? String(r.archived_at).slice(0, 16).replace("T", " ") : "";
+      return `- ${r.name} — ${r.reason || "closed"}${when ? ` (${when})` : ""}`;
+    });
+    return `\nPositions you USED to hold, from the archive (these are closed, not open):\n${lines.join("\n")}`;
+  } catch { return ""; }
+}
+
 async function recallHistory(mem, question) {
   if (!mem) return "";
   const raw = String(question).toLowerCase();
@@ -233,6 +264,10 @@ async function recallHistory(mem, question) {
     const hits = res?.hits || [];
     const code = res?.verdict?.code;
     if (!hits.length) {
+      // The archive is NOT in the FTS index — closed positions live in their own
+      // table — so a miss here does not mean the operator never held it.
+      const closed = await closedPositions(mem, terms);
+      if (closed) return closed;
       if (code === "EMPTY_STORE")
         return "\nYour memory is EMPTY — nothing has ever been recorded. Say so plainly; do not imply you checked a history that does not exist.";
       if (code === "NO_MATCH")
@@ -247,7 +282,7 @@ async function recallHistory(mem, question) {
     const note = tickers.length
       ? `\nThe operator may have said a ticker the transcriber garbled; it resolves to ${tickers.join(", ")}. Answer about that ticker.`
       : "";
-    return `${note}\nFrom your own history (searched for "${terms.join(" ")}"):\n${lines.join("\n")}`;
+    return `${note}\nFrom your own history (searched for "${terms.join(" ")}"):\n${lines.join("\n")}${await closedPositions(mem, terms)}`;
   } catch { return ""; }
 }
 

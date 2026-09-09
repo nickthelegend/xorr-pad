@@ -1,5 +1,11 @@
 # PADPLAN.md — the physical pad, end to end
 
+> **This is the record of the firmware rewrite, not a live status.** Its backend
+> contract (section A) is now covered by `desktop/test/verify.mjs` section P,
+> which runs on every pass; its hardware items (section D) are still untested
+> because no board has been attached. `PLAN.md` Phase 2 carries the current
+> status.
+
 The desk app is only half the product. The other half is a real ESP32-S3 macropad
 on the desk that provisions its own Wi-Fi, finds the xorr-pad backend, and drives
 the same gated trading loop by hand and by voice.

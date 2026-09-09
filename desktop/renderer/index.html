@@ -916,7 +916,11 @@ function drawStore(st){
       const detail = cat === "position" ? `${qty(b.qty)} @ ${money(b.avg_entry_usd)}`
         : cat === "rule" ? esc(b.text || b.id || "")
         : esc(JSON.stringify(b).slice(0, 90));
-      return `<div class="krow"><span class="k">${esc(it.name)}</span><span class="v">${detail}</span></div>`;
+      // Sibyl carries a lifecycle status on the entity itself. Showing it means
+      // a rule the store is holding but not enforcing is visible as such,
+      // instead of looking identical to one that is live.
+      const st = it.status ? ` <span class="tag">${esc(it.status)}</span>` : ``;
+      return `<div class="krow"><span class="k">${esc(it.name)}${st}</span><span class="v">${detail}</span></div>`;
     }).join("")));
   }
   for (const [k, v] of Object.entries(st.references || {})) {
@@ -927,8 +931,27 @@ function drawStore(st){
   for (const [k, v] of Object.entries(st.state || {})) {
     parts.push(group(`state / ${esc(k)}`, Object.entries(v).map(([kk,vv]) => kv(kk, String(vv))).join("")));
   }
+  // Closed positions get their own block, ahead of the general archive. They
+  // are the only record that a trade ever happened — the store archives them
+  // instead of deleting them precisely so the agent can answer "what did I used
+  // to hold?", and burying them in a mixed list with retired rules made that
+  // answer hard to find on the one screen that exists to show what it knows.
   const arch = st.archived || [];
-  if (arch.length) parts.push(group(`archived — ${arch.length}`, arch.map(a =>
+  const closed = arch.filter(a => a.category === "position");
+  const otherArch = arch.filter(a => a.category !== "position");
+
+  if (closed.length) parts.push(group(`closed positions — ${closed.length}`, closed.map(a => {
+    const b = a.body || {};
+    const when = a.archived_at
+      ? new Date(a.archived_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+      : "";
+    const held = Number.isFinite(b.qty) && Number.isFinite(b.avg_entry_usd)
+      ? `${qty(b.qty)} @ ${money(b.avg_entry_usd)}` : esc(a.reason || "closed");
+    return `<div class="krow"><span class="k">${esc(a.name)} <span class="dim">${esc(when)}</span></span>` +
+           `<span class="v">${held}</span></div>`;
+  }).join("")));
+
+  if (otherArch.length) parts.push(group(`archived — ${otherArch.length}`, otherArch.map(a =>
     `<div class="krow"><span class="k">${esc(a.category)}/${esc(a.name)}</span>` +
     `<span class="v dim" style="font-weight:400">${esc(a.reason || "")}</span></div>`).join("")));
 

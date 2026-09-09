@@ -67,15 +67,25 @@ export async function reflect(mem) {
   return { proposals, sibylLearner: learned, journalDepth: events.length };
 }
 
-/** Accept a proposal: it becomes a rule decide() enforces from now on. */
+/**
+ * Accept a proposal: it becomes a rule decide() enforces from now on.
+ *
+ * The lifecycle is written to Sibyl's own `status` column as well as to the
+ * body. The body flag is what `recallBrief()` filters on and stays; the status
+ * makes "active" vs "rejected" a first-class property of the entity rather
+ * than a convention buried in its JSON, so the store can be asked for one
+ * without reading every rule and interpreting it.
+ */
 export async function acceptRule(mem, proposal) {
-  await mem.setEntity("rule", proposal.id, { ...proposal, accepted: true, accepted_at: new Date().toISOString() });
+  const body = { ...proposal, accepted: true, accepted_at: new Date().toISOString() };
+  await mem.setEntityStatus("rule", proposal.id, body, "active");
   await mem.journal({ evaluated: { proposal }, acted: { action: "RULE_ACCEPTED", executed: false } });
   return proposal;
 }
 
 export async function rejectRule(mem, proposal) {
-  await mem.setEntity("rule", proposal.id, { ...proposal, accepted: false, rejected_at: new Date().toISOString() });
+  const body = { ...proposal, accepted: false, rejected_at: new Date().toISOString() };
+  await mem.setEntityStatus("rule", proposal.id, body, "rejected");
   return proposal;
 }
 

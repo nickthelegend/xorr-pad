@@ -96,21 +96,38 @@ export class Memory {
   recallBrief()              { return this.call("recall_brief"); }
   fullStore(limit = 60)      { return this.call("full_store", { limit }); }
   archiveEntity(category, name, reason) { return this.call("archive_entity", { category, name, reason }); }
-  listArchived(limit = 50)   { return this.call("list_archived", { limit }); }
+  /**
+   * Everything retired rather than destroyed, newest first.
+   *
+   * Takes an options object like every other search on this client. It used to
+   * take a bare positional number, so calling it the way its siblings are
+   * called — `listArchived({ limit: 10 })` — passed a dict where the bridge
+   * wanted an int and threw a TypeError. A number still works.
+   */
+  listArchived(opts = {}) {
+    const limit = typeof opts === "number" ? opts : (opts.limit ?? 50);
+    return this.call("list_archived", { limit });
+  }
   /** FTS5 with Sibyl's verdict attached: NO_MATCH and EMPTY_STORE are not the same answer. */
   searchTiers(query, { tiers = null, limit = 20 } = {}) { return this.call("search_tiers", { query, tiers, limit }); }
-  searchEntities(query, { category = null, limit = 20 } = {}) { return this.call("search_entities", { query, category, limit }); }
   /** The journal over a real time range, rather than "the last N and hope". */
   eventsBetween({ since = null, until = null, limit = 500 } = {}) { return this.call("events_between", { since, until, limit }); }
+  /** Sibyl's own lifecycle column: a rule is `active` or `rejected`, not a flag in its JSON. */
   setEntityStatus(category, name, body, status) { return this.call("set_entity_status", { category, name, body, status }); }
-  getState(key)              { return this.call("get_state", { key }); }
   setState(key, body)        { return this.call("set_state", { key, body }); }
   setEntity(category, name, body) { return this.call("set_entity", { category, name, body }); }
   getEntity(category, name)  { return this.call("get_entity", { category, name }); }
-  listEntities(category)     { return this.call("list_entities", { category }); }
-  deleteEntity(category, name) { return this.call("delete_entity", { category, name }); }
-  getReference(key)          { return this.call("get_reference", { key }); }
   setReference(key, body)    { return this.call("set_reference", { key, body }); }
+
+  // Deliberately NOT wrapped: get_state, get_reference, list_entities,
+  // delete_entity and search_entities. The bridge still exposes all five, but
+  // this client had wrappers for them with zero call sites, and on a project
+  // judged for depth of integration an unused wrapper reads as integration
+  // that is not there. Each is redundant against something real:
+  // recallBrief() already returns the baton and the limits, fullStore() already
+  // lists every entity, searchTiers() already searches entities AND carries the
+  // verdict, and nothing deletes an entity any more — closing a position
+  // archives it so the history survives.
   journal(e)                 { return this.call("write_event", e); }
   events(limit = 50)         { return this.call("read_events", { limit }); }
   search(query, limit = 20)  { return this.call("search", { query, limit }); }

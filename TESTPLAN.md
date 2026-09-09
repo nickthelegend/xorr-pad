@@ -1,5 +1,12 @@
 # xorr-pad — test plan
 
+> **This is the record of one run, not the current numbers.** It reports a
+> 97-check suite. The suite has grown since; for the current tally run
+> `node desktop/test/verify.mjs`, and see `BROWSERPLAN.md` for the browser QA
+> that superseded the browser sections here. The defects and their fixes below
+> are still accurate and worth reading — they are why several of those checks
+> exist at all.
+
 Every component and every flow, each with an explicit definition of *correct*.
 Executed against the running product: real backend, real anvil fork of Base
 mainnet, real SQLite store on disk, real Deepgram and Claude Code calls, driven
