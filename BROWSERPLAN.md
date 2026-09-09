@@ -724,3 +724,52 @@ back: an unverifiable change to the trading brain is exactly the one not to
 ship, and an earlier fix this session would have liquidated the book had it gone
 out untested. Space was reclaimed by truncating this session's own log, and the
 fix was then verified against a real mined fill before being committed.
+
+### A4 failed, and the fork was the reason — not the code
+
+The first full re-run after the DCA fix came back **150 passed, 1 failed**: A4,
+which requires the two routers to agree within 5%, measured **8.044%**.
+
+Nothing in the DCA change touches quoting, so the cause was established before
+anything was altered:
+
+| | |
+|---|---|
+| fork pinned at | block 51,060,818 |
+| live mainnet head | block 51,088,331 |
+| behind by | **27,513 blocks ≈ 15 hours** |
+| AERO on the fork | $0.6160 (frozen at the pin) |
+| AERO live | $0.5701 |
+
+Uniswap quotes the **frozen** pool; KyberSwap quotes **live mainnet**. AERO fell
+7.45% during those fifteen hours, so the two necessarily diverged by ~8%. A4 was
+reporting the age of the fork, not a fault in the router.
+
+Fixed the condition rather than the threshold: the pin and the state cache were
+cleared — the cache belongs to the old block and is worthless against a new one
+— and the fork re-pinned at 51,088,348. The same quote then came back
+**uniswap 43.8126 vs kyberswap 43.8205, a margin of 0.018%**.
+
+Worth keeping in mind for the demo: a fork left running overnight will drift
+away from live prices, and the aggregator comparison is the first thing to show
+it. Re-pin before showing anyone.
+
+### Re-pinning traded one hazard for another — and the second run is the fix
+
+Clearing the state cache was necessary (a cache built at the old block is
+worthless against a new one) but it left the fork **cold**, and `npm run warm`
+only primes thirteen reads. The suite then made hundreds of distinct reads
+against a rate-limited public RPC, and G3 arrived on cue: five sections crashed
+with *"the Base node never came back"*, plus one of the new 90-second deadlines
+firing on a stalled `/key`. **116 passed, 6 failed** — not one of them an
+assertion about behaviour.
+
+That run doubled the state cache on its way through, 2.1 MB → 3.96 MB, which is
+exactly what `fork.sh` predicts: *"the second run starts warm and barely touches
+the network."* Re-run on the warmed fork:
+
+**151 passed, 0 failed, 1 skipped.** A4 at 1.848%, all six X checks green.
+
+Worth writing down for anyone who re-pins before a demo: **budget a throwaway
+run.** The first pass after a fresh pin is the one that fills the cache, and it
+will look like the product is broken when it is only cold.
