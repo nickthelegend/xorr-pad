@@ -1484,6 +1484,45 @@ try {
 
 // The tally is counted, not asserted. It used to end "(2 skipped: credentials
 // unavailable)" as a fixed string, which stayed true only by coincidence.
+// ── X. the automation path ──────────────────────────────────────────────────
+// The tick is the only route that can trade without a human ✓, and for three
+// full QA runs nothing here exercised it. It was answering 500 on every armed
+// call: the rebalance agent emitted BUY USDC — the quote asset — which becomes
+// swap("USDC","USDC"), a self-swap with no pool, and runOnce takes signals[0]
+// blindly so it was always the first thing tried.
+section("X. the automation path");
+{
+  const { runOnce } = await import("../main/trader.mjs");
+  const { evaluateAll } = await import("../main/agents.mjs");
+  const mem = new Memory();
+  await mem.ping();
+
+  // No strategy may name the asset everything settles in. A signal to "buy
+  // USDC" cannot be expressed as a trade at all.
+  const brief = await mem.recallBrief();
+  const mkt = { prices: { ETH: 2500, cbBTC: 79000, EURC: 1.16, AERO: 0.61, MORPHO: 2.35, VIRTUAL: 0.7 } };
+  const selfSwaps = evaluateAll(mkt, brief).filter((sig) => sig.symbol === "USDC");
+  chk("X1 no strategy proposes trading the quote asset against itself",
+      selfSwaps.length === 0,
+      selfSwaps.length ? `${selfSwaps.length}: ${selfSwaps.map((x) => `${x.agent} ${x.side} ${x.symbol}`).join(", ")}` : "none of the six");
+
+  // A tick that is allowed to trade must not throw. Whether it finds anything
+  // is the book's business; answering 500 is not.
+  let tickErr = null, tick = null;
+  try { tick = await runOnce(mem, { execute: false }); }
+  catch (e) { tickErr = e.message; }
+  chk("X2 a tick completes rather than throwing", tickErr === null,
+      tickErr ? `threw: ${String(tickErr).slice(0, 80)}` : `${(tick?.signals || []).length} signal(s), verdict ${tick?.verdict?.action ?? "none"}`);
+
+  // Nothing to do must look like nothing to do, even when execution is allowed.
+  const quiet = await runOnce(mem, { execute: true, cfgs: {
+    dca: { everyMs: 1e15 }, rebalance: { bandPct: 1e9 }, grid: { stepPct: 1e9 },
+    momentum: { thresholdPct: 1e9 }, yield: { bufferUsd: 1e12 }, risk: { drawdownPct: 1e9 } } });
+  chk("X3 a quiet book invents nothing, even when allowed to trade",
+      (quiet.signals || []).length === 0 && quiet.verdict === null && quiet.fill === null,
+      `signals ${(quiet.signals || []).length}, verdict ${quiet.verdict}, fill ${quiet.fill}`);
+}
+
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             (skipped ? `   (${skipped} skipped)` : "") + "\n");
 process.exit(fail ? 1 : 0);

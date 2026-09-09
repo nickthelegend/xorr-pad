@@ -173,7 +173,31 @@ above: so nothing here is shaped by what happens to pass.
 | O6 | Mainnet slippage is not the fork's | With `CHAIN_MODE=mainnet`, the default tolerance is 0.3%, not the fork's 1% |
 | O7 | The fork refuses a bad upstream | `fork.sh` rejects an upstream that cannot serve state at the pinned block and falls through to one that can, rather than handing anvil a node that fails at the first trade |
 
-**Total with section O: 85 items.**
+**Total with sections O and P: 95 items.**
+
+## P. The routes and flows the plan never covered
+
+Added on the fourth run. Phase 1 says "every API endpoint and every distinct
+flow"; a route-by-route diff of `server.mjs` against this file found that three
+real flows had **no item at all** across three full runs — the book scan, the
+panic key, and the automation tick. The tick is the most safety-critical path
+in the product: it is the only one that can trade **without a human ✓**, and
+until now the browser plan never exercised it live.
+
+| # | Item | Correct means |
+|---|---|---|
+| P1 | The book actually runs | `GET /scan` returns 200 having considered **all six** crypto markets, with a `summary` string. It is honest when it finds nothing — a scan with no signal says so rather than inventing one |
+| P2 | The scan is remembered | `GET /scan/last` returns the result of the run just performed, without re-running the book |
+| P3 | The SCAN control reports it | Pressing SCAN in the UI runs the book and shows its result on screen — the desk never silently swallows a scan |
+| P4 | Panic disarms in one action | `POST /panic` sets `armed:false` **and** clears any pending decision in the same call, and the log records `PANIC` |
+| P5 | Panic never re-arms | Calling `/panic` twice leaves it disarmed. Re-arming is a separate deliberate act via `/arm` — mashing the kill key can never re-enable trading |
+| P6 | Automation executes only when armed | `POST /tick` with `armed:true` on a fork may execute and, if it does, returns a real `fill` with a mined hash. With `armed:false` it **must not** execute, no matter what the book says |
+| P7 | Automation can never fire on mainnet | The execute gate is `state.armed && IS_FORK`. With `CHAIN_MODE=mainnet` a tick must not sign, even armed — this is the single property that keeps the pad from trading real money unattended |
+| P8 | A tick is honest about doing nothing | When the book finds no signal, `/tick` returns `signals: []`, `verdict: null`, `fill: null` — not a fabricated trade |
+| P9 | The log is a real journal | `GET /log` shows the actual sequence of what the pad did — a fill, a baton change and a panic all appear, timestamped, in order |
+| P10 | One source of truth for the briefing | `GET /briefing` and the briefing strip on screen say the same thing; the UI never renders a briefing the backend would not give |
+
+**Section P: 10 items.**
 
 ## M. Cleanliness
 
@@ -401,3 +425,57 @@ with the token applied and authenticating.
 - **The equity price cross-checks two independent paths**: the displayed $225.80
   (from the pool's own `slot0`) against a live KyberSwap quote of 0.110538 NVDAc
   for $25 — 0.16% apart.
+
+---
+
+## Fourth full run — 2026-09-09, 95 items
+
+Phase 1 says *every API endpoint and every distinct flow*. So this run began by
+diffing `ROUTE_METHODS` in `server.mjs` against this file rather than re-reading
+the checklist — and found the checklist was **incomplete**, not merely
+miscounted. Three real flows had no item at all across three full runs: the book
+scan, the panic key, and the automation tick. Section P covers them.
+
+The tick is the one that mattered. It is **the only route that can trade without
+a human ✓**, and nothing in three QA passes had ever pressed it.
+
+### The defect that had been hiding behind the gap — **P6**
+
+`POST /tick` answered **500 on every armed call**. The rebalance agent's default
+target is `{ ETH: 0.5, USDC: 0.5 }` and it measures each symbol's share of
+*remembered positions*. USDC is never a position — it is the cash you buy with —
+so its share was permanently 0, its drift permanently −50%, and it emitted
+`BUY USDC` forever. Since everything settles against USDC, that became
+`swap("USDC","USDC")`: a self-swap with no pool. `runOnce` takes `signals[0]`
+without looking, so this was the **first** thing every armed tick tried.
+
+It hid this long because the failure is invisible unless you actually press it:
+a *disarmed* tick returns a clean 200, because `execute:false` never reaches the
+swap. The bug only exists on the path that trades unattended.
+
+Two category errors, both fixed at the root:
+
+1. The quote asset can never be the thing a signal names. `rebalance()` now
+   skips it, and `runOnce` drops any such signal before the gate so no future
+   strategy can take the automation route down the same way.
+2. Wanting more cash is **a sale, not a purchase**. The cash leg now sells the
+   largest over-weight holding: `AERO SELL — "cash is 0.00 vs target 0.5 —
+   selling AERO, the largest holding, to raise it"`.
+
+Re-verified: an armed tick now returns 200 and mines a real fill —
+`0x1b026ca4…517b`, status `0x1`, block 51060692, to `0x6131b5fa…37b5`
+(KyberSwap MetaAggregationRouterV2), 19 events, 24.977947 USDC received. That is
+the automation path trading correctly, end to end, for the first time in testing.
+
+Suite section **X** was added so this cannot come back: no strategy may name the
+quote asset, a tick must complete rather than throw, and a quiet book must
+invent nothing even when it is allowed to trade.
+
+### The safety property, now actually exercised
+
+`P7` was the reason to care. The execute gate is `state.armed && IS_FORK`, and
+it holds twice over: with `CHAIN_MODE=mainnet` and execution forced, `runOnce`
+refuses with *"refusing to auto-execute on mainnet — needs explicit
+confirmation"* and returns no fill. Disarmed on a fork, it computes the verdict
+and still does not execute. Both were verified live rather than by reading the
+source.

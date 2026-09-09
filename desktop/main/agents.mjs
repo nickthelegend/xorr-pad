@@ -54,6 +54,10 @@ function momentum(market, brief, cfg = {}) {
   return null;
 }
 
+// Everything is bought and sold against this, so it can never be the asset a
+// signal names. See rebalance().
+const QUOTE = "USDC";
+
 /** Drift the book back toward the remembered target weights. */
 function rebalance(market, brief, cfg = {}) {
   const target = cfg.target || { ETH: 0.5, USDC: 0.5 };
@@ -67,7 +71,16 @@ function rebalance(market, brief, cfg = {}) {
     total += val[sym];
   }
   if (total <= 0) return null;
+  // USDC is the quote asset: every trade is priced and settled in it, so it is
+  // never a *position* and its share of the book here is always 0. Left in the
+  // loop it drifted -50% forever and asked to BUY USDC — which becomes
+  // swap("USDC","USDC"), a self-swap with no pool, and it took the automation
+  // route down with an unhandled 500 every time a tick ran armed.
+  //
+  // Wanting more cash is not a purchase, it is a sale: the corrective trade is
+  // to SELL whatever is over its weight, not to buy the thing you buy with.
   for (const [sym, w] of Object.entries(target)) {
+    if (sym === QUOTE) continue;
     const actual = (val[sym] || 0) / total;
     const drift = (actual - w) * 100;
     if (Math.abs(drift) >= band) {
@@ -75,6 +88,31 @@ function rebalance(market, brief, cfg = {}) {
       return { agent: "rebalance", side: drift > 0 ? "SELL" : "BUY", symbol: sym,
                sizeUsd: Math.round(usd), confidence: 0.65,
                reason: `${sym} is ${actual.toFixed(2)} vs target ${w} (drift ${drift.toFixed(1)}%)` };
+    }
+  }
+  // The cash leg, expressed the only way it can actually be traded: if the quote
+  // asset is under its target weight, sell the most over-weight holding.
+  //
+  // It fires ONLY when cash is actually tracked. `val` is built from remembered
+  // positions, and USDC is normally not one — so an absent entry means "this
+  // book does not know its cash weight", not "cash is zero". Reading it as zero
+  // makes the target permanently unreachable: every tick sees a 50% shortfall,
+  // sells the largest holding, and the next tick sees the same shortfall again,
+  // liquidating the book one tick at a time while believing it is rebalancing.
+  // A strategy with no view of half its inputs should not trade on them.
+  const cashTarget = target[QUOTE];
+  if (cashTarget != null && val[QUOTE] != null) {
+    const cashActual = val[QUOTE] / total;
+    if ((cashTarget - cashActual) * 100 >= band) {
+      const over = Object.entries(val)
+        .filter(([sym]) => sym !== QUOTE)
+        .sort((a, b) => b[1] - a[1])[0];
+      if (over) {
+        const usd = Math.min(over[1], (cashTarget - cashActual) * total);
+        return { agent: "rebalance", side: "SELL", symbol: over[0],
+                 sizeUsd: Math.round(usd), confidence: 0.65,
+                 reason: `cash is ${cashActual.toFixed(2)} vs target ${cashTarget} — selling ${over[0]}, the largest holding, to raise it` };
+      }
     }
   }
   return null;

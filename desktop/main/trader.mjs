@@ -88,7 +88,14 @@ export async function applyFill(mem, { symbol, side, usd, price }) {
 export async function runOnce(mem, { execute = IS_FORK, cfgs = {}, market } = {}) {
   const brief = await mem.recallBrief();
   const mkt = market || await getMarket();
-  const signals = evaluateAll(mkt, brief, cfgs);
+  // Everything settles against USDC, so a signal naming USDC as the asset to
+  // trade would become swap("USDC","USDC") — a self-swap with no pool. The
+  // rebalance agent used to emit exactly that, and because runOnce takes
+  // signals[0] blindly it was the FIRST thing every armed tick tried, so the
+  // whole automation route answered 500. Dropping them here means no future
+  // strategy can take the tick down the same way, and a signal that cannot be
+  // expressed as a trade never reaches the gate pretending it is one.
+  const signals = evaluateAll(mkt, brief, cfgs).filter((s) => s.symbol !== "USDC");
   if (!signals.length) return { signals: [], verdict: null, fill: null, market: mkt };
 
   const signal = signals[0];
