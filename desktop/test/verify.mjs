@@ -191,6 +191,21 @@ try {
 // ── reflection: journal → proposal → accepted rule → veto ───────────────────
 section("B14–B15 · D5 · F8. the habit loop");
 try {
+  // Establish the precondition rather than inheriting it. Reflection mines
+  // refusals of the SAME SHAPE, and a sell is only refused BY THE OPERATOR if
+  // it got past the gate first — with no remembered position the gate rejects
+  // it, nothing minable is journalled, and this section failed with "nothing
+  // mined from the journal" for a reason that had nothing to do with
+  // reflection. Depending on whatever ran before is how a suite acquires
+  // intermittent failures.
+  await j("/memory/seed", { method: "POST", body: "{}" });
+  await j("/arm", { method: "POST" });
+  await j("/key", { method: "POST", body: JSON.stringify({ id: "ETH" }) });
+  await j("/size", { method: "POST", body: JSON.stringify({ usd: 25 }) });
+  if (!(await j("/memory")).b?.positions?.ETH) {
+    await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+    await j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) });
+  }
   for (let i = 0; i < 3; i++) {
     await j("/key", { method: "POST", body: JSON.stringify({ id: "sell" }) });
     await j("/key", { method: "POST", body: JSON.stringify({ id: "no" }) });
