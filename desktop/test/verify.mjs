@@ -1578,6 +1578,20 @@ section("X. the automation path");
   const quiet = await runOnce(mem, { execute: true, cfgs: {
     dca: { everyMs: 1e15 }, rebalance: { bandPct: 1e9 }, grid: { stepPct: 1e9 },
     momentum: { thresholdPct: 1e9 }, yield: { bufferUsd: 1e12 }, risk: { drawdownPct: 1e9 } } });
+  // The time-machine panel is hidden by the refresh whenever the last wipe is
+  // newer than `ttDrawnAt`. Anything written into it without stamping that
+  // clock is erased a few seconds later — which is what happened to "Pick a
+  // time first.": the operator is told what to do and the instruction deletes
+  // itself while they read it. Every write to that panel must stamp.
+  const rendererSrc = fs.readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
+  const writesToPanel = [...rendererSrc.matchAll(/el\("ttout"\)\.innerHTML\s*=|box\.innerHTML\s*=\s*ttHead/g)].length;
+  const stamps = [...rendererSrc.matchAll(/ttDrawnAt\s*=\s*Date\.now\(\)/g)].length;
+  const unstampedWrite = /el\("ttout"\)\.hidden\s*=\s*false;\s*el\("ttout"\)\.innerHTML/.test(rendererSrc);
+  chk("X4 nothing writes to the time-machine panel without stamping the refresh clock",
+      !unstampedWrite && stamps >= 3,
+      unstampedWrite ? "a write sets hidden=false then innerHTML without ttDrawnAt — the refresh will erase it"
+                     : `${writesToPanel} panel write(s), ${stamps} stamp(s)`);
+
   chk("X3 a quiet book invents nothing, even when allowed to trade",
       (quiet.signals || []).length === 0 && quiet.verdict === null && quiet.fill === null,
       `signals ${(quiet.signals || []).length}, verdict ${quiet.verdict}, fill ${quiet.fill}`);

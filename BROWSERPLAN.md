@@ -173,7 +173,7 @@ above: so nothing here is shaped by what happens to pass.
 | O6 | Mainnet slippage is not the fork's | With `CHAIN_MODE=mainnet`, the default tolerance is 0.3%, not the fork's 1% |
 | O7 | The fork refuses a bad upstream | `fork.sh` rejects an upstream that cannot serve state at the pinned block and falls through to one that can, rather than handing anvil a node that fails at the first trade |
 
-**Total with sections O, P and Q: 101 items.**
+**Total with sections O, P, Q and R: 110 items.**
 
 ## P. The routes and flows the plan never covered
 
@@ -220,6 +220,29 @@ holds cash** — the state that hid the yield bug.
 | Q6 | A reason never claims more than the build does | No agent's text implies a capability the build lacks — there is no lending venue here, so nothing may describe itself as earning yield |
 
 **Section Q: 6 items.**
+
+## R. The controls no item ever touched
+
+Added on the sixth run. Every previous section tested the controls it happened
+to name. Enumerating the live DOM across all five panes found **47 distinct
+interactive controls**, and six of them had no item at all — including three
+that are the only UI path to features the plan otherwise tested solely through
+the API.
+
+| # | Item | Correct means |
+|---|---|---|
+| R1 | The activity expander goes somewhere | The `and N more ›` link under the Portfolio activity list opens the **Agents** pane, where the full list lives — it is a navigation link, not a dead label, and N matches the number of events not shown |
+| R2 | Retire-rules is reachable from the desk | Pressing **Retire rules nothing has needed** runs the same decay the API does (14-day window) and renders a result panel on screen — the operator never has to call an endpoint to use it |
+| R3 | Retiring nothing says so sensibly | With no rules in the store the panel must **not** read "Checked 0 rules. Every rule has either fired or is younger than the window." An empty store and a store with nothing to retire are different facts and must read differently |
+| R4 | Replay refuses an empty time | Pressing **Replay** with the picker empty shows "Pick a time first." and makes **no** request — an empty input is the operator's slip, not a reason to query |
+| R5 | Replay echoes the operator's own clock | Replaying a chosen local time shows that same wall-clock time back. The picker takes local time and the API takes UTC, so a correct replay of 09:15 says 09:15 — never the UTC-shifted hour |
+| R6 | **Now** replays the present | Pressing **Now** replays the current instant and shows state consistent with what the store holds right now |
+| R7 | The journal collapses and returns | The **hide** / **show** toggle sits in the `journal — N events` heading and gates **the journal entry list only**, not the tier browser. Collapsed, the entries go and the heading keeps its count so you still know what is hidden; expanded, every row returns intact. Not one-way. *(Corrected during the sixth run: this first said it toggles the tier-by-tier browser. It does not — `storeOpen` gates only the journal rows.)* |
+
+| R8 | Replaying the future is refused or empty | A timestamp after now cannot describe a past the store had. It must either be refused, or replay to the present state — never invent events that have not happened |
+| R9 | Replaying before any history is honest | A timestamp older than the whole journal replays to an empty book — 0 events, flat, nothing spent — rather than showing today's positions under a past date |
+
+**Section R: 9 items.**
 
 ## M. Cleanliness
 
@@ -576,3 +599,51 @@ running" from `pgrep -f verify.mjs`, which was matching **my own polling loops**
 — their command lines contain the string. The suite had finished long before.
 The measurement was wrong, not the thing measured, which is the same mistake in
 a different coat.
+
+---
+
+## Sixth full run — 2026-09-09, 110 items
+
+The axis named at the end of the fifth run: **the renderer's interactive
+controls**. Every section before this tested the controls it happened to name.
+Enumerating the live DOM across all five panes found **47 distinct interactive
+controls**, and six had no item at all — three of them the only UI path to
+features the plan otherwise reached solely through the API.
+
+Section R covers them, plus two realistic edge cases on the control that turned
+out to be carrying a defect.
+
+### "Pick a time first." deleted itself while you read it — R4
+
+The time-machine panel is hidden by the 4-second refresh whenever the last wipe
+is newer than `ttDrawnAt`. `showAt()` and `decay()` both stamp that clock — the
+comment in `decay()` says exactly why, having been bitten once already. But
+`replay()`'s early return did not, so the one message whose entire job is to
+tell the operator what to do next appeared and then vanished a few seconds
+later, with no trace and no explanation.
+
+It had never been caught because no item pressed **Replay** with an empty
+picker, and because catching it requires waiting past the refresh — checking
+within a second shows the message sitting there looking correct.
+
+Both early returns now go through a `ttSay()` helper that stamps the clock.
+Verified the way it has to be: the message is still on screen **7.6 seconds**
+later, and still makes no request.
+
+### A future replay is now refused — R8
+
+The picker had no `max`, so a future timestamp was accepted and answered "what
+it knew at \<a date that has not happened\>". Arithmetically defensible — every
+event is before it, so it returns the present — but it reads as a claim about
+knowledge nobody has. The picker now carries a local-time `max`, and a typed
+future time is refused in the handler.
+
+### And an expectation of mine was wrong, for the fourth run running — R7
+
+R7 said the hide/show toggle collapses the tier-by-tier store browser. It does
+not: `storeOpen` gates **the journal entry list only**, and the button lives in
+that block's heading. The behaviour is right and useful — the count stays
+visible so you know what is hidden — and only my description of it was wrong.
+
+Suite check **X4** added: nothing may write to the time-machine panel without
+stamping the refresh clock, asserted against the renderer source.

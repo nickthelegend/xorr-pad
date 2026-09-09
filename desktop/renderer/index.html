@@ -493,7 +493,7 @@ nav .dot.on{background:var(--up)}
       <div class="shead" style="margin-top:0"><h2>Time machine</h2><span class="aside">replay the journal</span></div>
       <div class="card">
         <div style="display:flex;gap:8px;margin-bottom:10px">
-          <input id="ttin" type="datetime-local" step="1" aria-label="replay at">
+          <input id="ttin" type="datetime-local" step="1" aria-label="replay at" max="">
           <button class="btn secondary" style="height:44px;width:auto;padding:0 16px;flex:none" onclick="replay()">Replay</button>
           <button class="btn secondary" style="height:44px;width:auto;padding:0 16px;flex:none" onclick="replayNow()">Now</button>
         </div>
@@ -913,6 +913,16 @@ async function setSize(usd){
 
 /* ── the store, tier by tier ───────────────────────────────────────────── */
 let storeOpen = true;
+// The picker takes LOCAL time, so its max must be local too — an ISO/UTC value
+// here would let a user in a positive offset pick hours into their own future.
+function stampReplayMax(){
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  const t = el("ttin");
+  if (t) t.max = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+stampReplayMax();
+setInterval(stampReplayMax, 30_000);
+
 function toggleStore(){ storeOpen = !storeOpen; drawStore(lastStore); }
 let lastStore = null;
 function drawStore(st){
@@ -1016,10 +1026,37 @@ function drawCost(d){
 }
 
 /** The temporal tier as a time machine: what it knew, at a moment you choose. */
+/**
+ * Show a message in the time-machine panel and KEEP it there.
+ *
+ * The refresh hides that panel whenever the last wipe is newer than
+ * `ttDrawnAt` (see the redraw), so anything written without stamping the clock
+ * is erased by the next poll a few seconds later. `showAt` and `decay` both
+ * stamp it; `replay`'s early returns did not, so "Pick a time first." appeared
+ * and then quietly vanished — the operator is told what to do and the
+ * instruction deletes itself while they are reading it.
+ */
+function ttSay(head, line){
+  const box = el("ttout");
+  box.hidden = false;
+  ttDrawnAt = Date.now();
+  box.innerHTML = ttHead(head) + `<div class="krow"><span class="k">${esc(line)}</span></div>`;
+}
+
 async function replay(){
   const v = el("ttin").value;
-  if (!v) { el("ttout").hidden = false; el("ttout").innerHTML = ttHead("replay") + `<div class="krow"><span class="k">Pick a time first.</span></div>`; return; }
-  await showAt(new Date(v).toISOString());
+  if (!v) { ttSay("replay", "Pick a time first."); return; }
+  // The journal cannot describe a moment that has not happened. Replaying a
+  // future timestamp returns today's state — arithmetically right, since every
+  // event is before it — but the panel then says "what it knew at" a date in
+  // the future, which reads as a claim about knowledge nobody has. The picker
+  // carries a max so the browser refuses it, and this catches a typed one.
+  const when = new Date(v);
+  if (when.getTime() > Date.now()) {
+    ttSay("replay", "That is in the future — the journal only goes up to now.");
+    return;
+  }
+  await showAt(when.toISOString());
 }
 async function replayNow(){ await showAt(new Date().toISOString()); }
 const ttHead = (t) => `<h3 style="margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:1.32px;text-transform:uppercase;color:var(--ink45)">${esc(t)}</h3>`;
