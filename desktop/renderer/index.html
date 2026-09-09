@@ -831,11 +831,24 @@ function settle(msg, kind, hash, fill){
   // which venue took the trade — or that the aggregator failed and the direct
   // pool did the work instead. The route is read off the mined receipt, so
   // this is what the chain says, not what the app intended.
+  // A router that could not be reached is a fact about execution quality, and
+  // it used to be invisible here. `fellBack` only covers the case where a
+  // router WON and then failed to build; when one fails at the quote instead,
+  // wonBy is null and fellBack is null, so both branches below were skipped and
+  // the card said a bare "route uniswap". That reads exactly like a fair
+  // comparison uniswap won, when in truth nothing else was standing.
+  const failedQuotes = (fill?.comparison?.quotes || []).filter((q) => q.error);
+  const compared = (fill?.comparison?.quotes || []).filter((q) => !q.error).length;
   const route = fill?.route
     ? `<div class="krow"><span class="k">route</span><span class="v">${esc(fill.route)}` +
       (fill.comparison?.wonBy != null && !fill.fellBack
-        ? ` <span class="dim">· best of ${fill.comparison.quotes.length}, by ${fill.comparison.wonBy}%</span>` : ``) +
+        ? ` <span class="dim">· best of ${compared}, by ${fill.comparison.wonBy}%</span>`
+        : (compared === 1 && failedQuotes.length
+            ? ` <span class="dim">· sole quote</span>` : ``)) +
       `</span></div>` +
+      failedQuotes.map((q) =>
+        `<div class="krow"><span class="k">not quoted</span><span class="v" style="font-size:11px">` +
+        `${esc(q.router)} — ${esc(String(q.error).slice(0, 90))}</span></div>`).join("") +
       (fill.fellBack
         ? `<div class="krow"><span class="k">fell back</span><span class="v" style="font-size:11px">` +
           `from ${esc(fill.fellBack.from)} — ${esc(String(fill.fellBack.why).slice(0, 90))}</span></div>`

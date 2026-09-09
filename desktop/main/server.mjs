@@ -107,6 +107,26 @@ export function createServer(mem) {
       if (given !== TOKEN) return send(401, { error: "bad pad token" });
     }
 
+    // A known path reached with the wrong verb is 405, not 404. Answering
+    // "no such route" for `POST /pad` is a lie — the route exists — and it
+    // sends the caller looking for a missing endpoint instead of a wrong
+    // method. It misled me while testing this very server.
+    //
+    // This runs BEFORE any handler, and that placement is the whole point.
+    // The check used to sit at the bottom, after every route, so it only ever
+    // saw requests nothing had matched — and seven handlers matched on the
+    // path alone without looking at the method. `POST /markets` therefore
+    // answered 200 and quietly did a GET's work. Enforcing the table up front
+    // means a handler cannot accept a verb the table does not list, and a new
+    // route cannot reintroduce the hole by forgetting to check.
+    const allowedMethods = ROUTE_METHODS[url.pathname];
+    if (allowedMethods && !allowedMethods.includes(req.method)) {
+      res.setHeader("Allow", allowedMethods.join(", "));
+      return send(405, {
+        error: `${req.method} is not allowed on ${url.pathname} — use ${allowedMethods.join(" or ")}`,
+      });
+    }
+
     if (url.pathname === "/voice" && req.method === "POST") {
       const chunks = [];
       for await (const c of req) chunks.push(c);
@@ -184,10 +204,21 @@ export function createServer(mem) {
       }
     }
 
+    // An unparseable body used to become `{}`, so `POST /key` with broken JSON
+    // answered "unknown key ''" — a true statement about a consequence, and a
+    // useless one about the cause. An empty body is still `{}`, because several
+    // routes legitimately take none; only a non-empty body that will not parse
+    // is an error, and it says so.
     const body = await new Promise((r) => {
       const c = []; req.on("data", (d) => c.push(d));
-      req.on("end", () => { try { r(JSON.parse(Buffer.concat(c).toString() || "{}")); } catch { r({}); } });
+      req.on("end", () => {
+        const raw = Buffer.concat(c).toString().trim();
+        if (!raw) return r({});
+        try { r(JSON.parse(raw)); } catch (e) { r({ __malformed: e.message }); }
+      });
     });
+    if (body.__malformed)
+      return send(400, { error: `request body is not valid JSON: ${body.__malformed}` });
 
     try {
       // ── first run: no credentials anywhere ──────────────────────────────
@@ -543,15 +574,8 @@ export function createServer(mem) {
         return send(200, await onKey(mem, asSymbol || raw.toLowerCase()));
       }
 
-      // A known path reached with the wrong verb is 405, not 404. Answering
-      // "no such route" for `POST /pad` is a lie — the route exists — and it
-      // sends the caller looking for a missing endpoint instead of a wrong
-      // method. It misled me while testing this very server.
-      const allowed = ROUTE_METHODS[url.pathname];
-      if (allowed) {
-        res.setHeader("Allow", allowed.join(", "));
-        return send(405, { error: `${req.method} is not allowed on ${url.pathname} — use ${allowed.join(" or ")}` });
-      }
+      // Wrong-verb requests never reach here — ROUTE_METHODS is enforced
+      // before any handler runs. What is left is genuinely an unknown path.
       return send(404, { error: "no such route" });
     } catch (e) {
       console.error("[route]", url.pathname, e.message);

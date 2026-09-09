@@ -80,7 +80,7 @@ the correct behaviour; the item fails if it succeeds instead.
 | F2 | Wipe | Store empties; the diff names what was lost and its cost; loss is never negative |
 | F3 | Briefing after wipe | Says it remembers nothing, explicitly |
 | F4 | Same BUY after wipe | The identical proposal now produces a **different, more conservative** verdict |
-| F5 | Re-seed | Limits and positions return |
+| F5 | Re-seed | Limits return. **Positions do not, and must not** — a position is the record of a real fill, so seeding one would fabricate a holding no trade ever produced. Chain balances are unaffected by a wipe; remembered positions are. *(Corrected during the third run: the original expectation said "limits and positions return", which would have required the app to invent holdings.)* |
 | F6 | Reflect | Offers ≥ 1 proposal mined from journal events, naming how many it came from |
 | F7 | Accept a rule | The rule is stored, and a matching trade is vetoed citing that rule by name |
 | F8 | Reject a proposal | It is not stored |
@@ -158,6 +158,23 @@ the correct behaviour; the item fails if it succeeds instead.
 | N6 | The aggregator prices an equity | KyberSwap returns a route for USDC → NVDAc, which a direct V3 call cannot reach |
 | N7 | Read-only mainnet refuses to sign | With `CHAIN_MODE=mainnet` and no key: reads work, `wallet` is null, a confirm is refused naming the missing key — **before** any balance check |
 
+## O. Surface added after the second run — the archive, rule lifecycle, tuned execution
+
+Written before this third run, from the code, for the same reason as everything
+above: so nothing here is shaped by what happens to pass.
+
+| # | Item | Correct means |
+|---|---|---|
+| O1 | Closed positions render | The Memory screen shows a **"closed positions"** block, separate from and ahead of the general archive, with quantity, entry price and a local-time close stamp — not one terse line mixed in with retired rules |
+| O2 | Closed is not deleted | A position closed through the UI appears in that block; `/memory/full` returns it with `category: "position"` |
+| O3 | Rule status is visible | An accepted rule shows an **active** badge; a rejected one shows **rejected** — the two never look identical |
+| O4 | Status comes from Sibyl | The badge reflects the store's own `status` column, not a flag inside the rule body |
+| O5 | The brain reaches the archive | Asked about a position no longer held, the spoken/text brain answers from the archive rather than "no record" — the archive is outside the FTS index, so this cannot come from a tier search |
+| O6 | Mainnet slippage is not the fork's | With `CHAIN_MODE=mainnet`, the default tolerance is 0.3%, not the fork's 1% |
+| O7 | The fork refuses a bad upstream | `fork.sh` rejects an upstream that cannot serve state at the pinned block and falls through to one that can, rather than handing anvil a node that fails at the first trade |
+
+**Total: 75 items.**
+
 ## M. Cleanliness
 
 | # | Item | Correct means |
@@ -168,7 +185,7 @@ the correct behaviour; the item fails if it succeeds instead.
 
 ---
 
-**Total: 68 items.**
+**Total (sections A-N): 68 items.**
 
 ## Second full run — 68 of 68 PASS, 2026-09-09
 
@@ -294,3 +311,91 @@ Alongside: the automated suite is **140 passed, 0 failed** against this build.
 - **Zero console errors and zero unexpected non-2xx** across a clean session.
   Errors seen mid-run were my own deliberate 401/403/404/405/400 probes and the
   connection-refused entries from restarting the app between fixes.
+
+---
+
+## Third full run — 2026-09-09, 75 items
+
+Re-executed end to end after the archive, rule lifecycle and tuned-execution
+work landed, with seven new items (section O) written before testing.
+
+**Three defects found in the product, all fixed and re-verified.**
+
+### 1. `POST /markets` answered 200 and quietly did a GET's work — **K4**
+
+The 405 check sat at the *bottom* of the router, so it only ever saw requests
+that no handler had matched. Seven handlers matched on the path alone without
+looking at the method, so every one of them accepted any verb: `POST /pad`,
+`POST /portfolio`, `POST /health`, `POST /padqr`, `POST /scan`, `POST /pending`
+and `POST /markets` all returned 200.
+
+Fixed at the root rather than per-handler: `ROUTE_METHODS` is now enforced
+**before any handler runs**, so a handler cannot accept a verb the table does
+not list and a new route cannot reintroduce the hole by forgetting to check.
+The now-unreachable bottom check was removed rather than left as dead code.
+Verified: all ten GET-only routes return 405 with `Allow: GET`, all POST-only
+routes return 405 on GET, and every correct verb still works.
+
+### 2. A failed aggregator was invisible on the fill card — **N5**
+
+`fellBack` only covers a router that *wins* and then fails to build. When one
+fails at the **quote** instead, `wonBy` is null and `fellBack` is null, so both
+render branches were skipped and the card showed a bare `route uniswap` — which
+reads exactly like a fair comparison uniswap won, when in truth nothing else was
+standing. Execution quality had silently degraded.
+
+Proved by making the aggregator genuinely unreachable (`KYBER_TIMEOUT_MS=1`).
+The card now reads `route uniswap · sole quote` followed by
+`not quoted · kyberswap — could not reach the KyberSwap aggregator (timeout)`.
+The healthy path still shows `best of 2, by 0.9636%`, with no false failure line.
+
+### 3. A malformed body reported the wrong cause — **K6**
+
+`POST /key` with broken JSON answered `unknown key ''` — true about the
+consequence, useless about the cause. An unparseable body now returns 400 naming
+the parse error; an empty body is still `{}`, because several routes take none.
+
+### One expectation in this plan was wrong, not the app — **F5**
+
+It said a re-seed restores "limits and positions". Positions must **not** come
+back: a position is the record of a real fill, so seeding one would fabricate a
+holding no trade ever produced — the exact mock this project forbids. Chain
+balances survive a wipe; remembered positions do not, and that gap is what makes
+the demo's turn mean anything. The expectation is corrected above.
+
+### On the browser
+
+Claude in Chrome **did** deliver input this time, and drove most of this run:
+navigation, all six agents, all six markets, the size stepper, propose/confirm/
+refuse, two mined fills, the kill switch, the QR panel and the whole memory
+cycle including the wipe. It was verified with a document-level capture probe
+before being trusted, not assumed.
+
+It then became unusable partway through — tabs were recreated with `innerWidth`
+and `innerHeight` of **0**, `visibilityState: "hidden"`, and clicks delivering
+zero events (`doc: 0, btn: 0` on a capture listener). That is the same symptom
+the second run recorded, and this run isolated the discriminator: input reaches
+only the **active, non-zero-viewport** tab. It is an environment fault, not an
+app fault — the same pages, at the same coordinates, took input normally in the
+in-app Chromium browser, where the remaining items (H4, J1–J4, L2–L4, N5, O5 and
+the clean-tab console/network sweep) were completed.
+
+**H4 in particular looked like a product defect and was not:** "Save and open the
+desk" appeared dead in Chrome purely because the button's rect was at
+`x: -125, y: -183` in a 0x0 viewport. In a real viewport it redirects to the desk
+with the token applied and authenticating.
+
+### Verified, not assumed
+
+- **The QR was decoded by OpenCV**, independently of the encoder that drew it:
+  `http://192.168.1.19:8080|xorrpad-dev`, exactly `<lan-url>|<token>`.
+- **Both routers were proved on-chain.** A KyberSwap fill's receipt shows
+  `to = 0x6131b5fa…37b5` (MetaAggregationRouterV2) and a Uniswap fill's shows
+  `to = 0x2626664c…e481` (SwapRouter02). The route label is read off the receipt,
+  so it cannot lie about the venue.
+- **Best execution is real, not decorative.** KyberSwap genuinely beats the
+  direct pool on the thinner pairs — MORPHO by 1.856%, VIRTUAL by 0.944% — and
+  loses on the deep ones.
+- **The equity price cross-checks two independent paths**: the displayed $225.80
+  (from the pool's own `slot0`) against a live KyberSwap quote of 0.110538 NVDAc
+  for $25 — 0.16% apart.
