@@ -534,8 +534,15 @@ are the strongest answer to "so it trades memecoins?".
 
 - **T8.3 — Refuse precisely.** *DONE* — two refusals, never conflated.
 
-- **T8.4 — Route to them.** *BLOCKED — needs Phase 2 **and** Phase 3*
+- **T8.4 — Route to them.** *BLOCKED — mainnet only now; the route itself exists**and** Phase 3*
   **Done when:** a real equity fill mines on mainnet and the balance moves.
+  **The routing half is done.** KyberSwap reaches the concentrated-liquidity
+  venue a direct V3 call cannot and prices every ticker: $25 → 0.1108 NVDAc via
+  `aerodrome-cl-3`, asserted as A7. What remains is not a missing capability but
+  a chain: **a B20 token cannot exist on a fork at any block** — re-verified on
+  a fresh fork pinned at head, where `NVDAc` is still one byte (`0xef`) and
+  every call reverts, while real mainnet answers `symbol() -> "NVDAc"`. This is
+  the one feature that cannot be demonstrated without real money.
 
 - **T8.5 — Price them on the strip.** *DONE — 2026-09-09*
   Equity rows show "—" because `feedPrices()` is Binance-backed and these are
