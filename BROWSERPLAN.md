@@ -173,7 +173,7 @@ above: so nothing here is shaped by what happens to pass.
 | O6 | Mainnet slippage is not the fork's | With `CHAIN_MODE=mainnet`, the default tolerance is 0.3%, not the fork's 1% |
 | O7 | The fork refuses a bad upstream | `fork.sh` rejects an upstream that cannot serve state at the pinned block and falls through to one that can, rather than handing anvil a node that fails at the first trade |
 
-**Total with sections O and P: 95 items.**
+**Total with sections O, P and Q: 101 items.**
 
 ## P. The routes and flows the plan never covered
 
@@ -198,6 +198,28 @@ until now the browser plan never exercised it live.
 | P10 | One source of truth for the briefing | `GET /briefing` and the briefing strip on screen say the same thing; the UI never renders a briefing the backend would not give |
 
 **Section P: 10 items.**
+
+## Q. What each agent actually produces
+
+Added on the fifth run. Sections A–P test which agent holds the baton, never
+what any of them *emits*. The tick bug found on the fourth run lived inside an
+agent, so this is the axis that had been carrying a real defect all along — and
+it was carrying a second one.
+
+An agent's output is only correct if the pad can act on it. These are properties
+checked against book states chosen to fire each agent, **including a book that
+holds cash** — the state that hid the yield bug.
+
+| # | Item | Correct means |
+|---|---|---|
+| Q1 | No agent names the quote asset | Everything settles in USDC, so a signal naming USDC becomes `swap("USDC","USDC")` — untradeable at any size. **No agent may emit one, in any book state** |
+| Q2 | Every signal names a real market | The symbol is one of the six tradeable markets — never a delisted, unlisted or equity symbol the pad refuses anyway |
+| Q3 | Every signal is well-formed | `side` is BUY or SELL, `sizeUsd` is finite and > 0, `confidence` is within 0..1, and `reason` is non-empty — a signal the operator cannot read is not a signal |
+| Q4 | No agent sells what is not held | A SELL only ever names a symbol the book has a remembered position in |
+| Q5 | Each agent fires only on its own condition | dca on elapsed interval · grid on drift past a rung · momentum past its threshold · rebalance out of band · yield above the cash buffer · risk past the stop. On a flat, empty book the four **position-dependent** agents (grid, rebalance, yield, risk) must all stay silent — they have nothing to reason about. *(Corrected during the fifth run: this first read "none fires on a flat book", which was wrong. dca and momentum are **entry** strategies — opening a position from flat is exactly their job, and demanding silence would have been demanding a bug.)* |
+| Q6 | A reason never claims more than the build does | No agent's text implies a capability the build lacks — there is no lending venue here, so nothing may describe itself as earning yield |
+
+**Section Q: 6 items.**
 
 ## M. Cleanliness
 
@@ -479,3 +501,78 @@ refuses with *"refusing to auto-execute on mainnet — needs explicit
 confirmation"* and returns no fill. Disarmed on a fork, it computes the verdict
 and still does not execute. Both were verified live rather than by reading the
 source.
+
+---
+
+## Fifth full run — 2026-09-09, 101 items
+
+The fourth run's lesson was that the checklist itself was the defect: three
+"zero tolerance" passes all went green while the automation path was completely
+broken, because no item listed it. So Phase 1 audited coverage again, on the
+axis still unaudited — **what each agent produces**, not which one holds the
+baton. That is where the fourth run's bug had been living.
+
+It was carrying a second one.
+
+### `yield` emitted a self-swap too — **Q1**
+
+```
+yield  SELL USDC $400
+```
+
+The same defect class as the rebalance bug, in a second agent. `SELL USDC`
+becomes `swap("USDC","USDC")` — untradeable at any size.
+
+**It survived the fourth run's fix because the check written to catch that bug
+could not reach it.** X1 ran one agent sweep against whatever the live store
+held, and `yieldAgent` only fires when the book actually holds cash. The book it
+tested held none, so yield returned null and X1 passed on a state that never
+exercised the property.
+
+The fix required deciding what the agent can honestly do. There is no lending
+venue in this build — the only place a trade can go is the DEX — so "park idle
+stables" cannot mean earning protocol yield here. It now deploys the excess into
+an asset and says exactly that:
+
+```
+yield  BUY ETH $400 — "500 USDC idle above the 100 buffer — deploying the excess into ETH"
+```
+
+No text implies interest is being earned somewhere it is not (**Q6**).
+
+X1 was rewritten from a single sweep into a property driven across five book
+states chosen to fire each agent — including a book holding cash. **19 signals
+across 5 states × 6 agents, 0 malformed.**
+
+### An expectation of mine was wrong again — **Q5**
+
+Q5 first said "none fires on a flat, empty book". On a flat book `dca` and
+`momentum` fire, and they should: they are **entry** strategies, and opening a
+position from flat is exactly their job. Demanding silence would have been
+demanding a bug. Corrected to what actually matters — the four
+**position-dependent** agents (grid, rebalance, yield, risk) must stay silent
+with nothing to reason about, and all four do.
+
+That is the third run in a row where a plan expectation, not the app, was the
+thing that was wrong (F5, then Q5). Worth saying plainly: the checklist has now
+been a source of error as often as the code.
+
+### The suite could hang forever, and did
+
+Mid-run the suite stopped at 75 checks and sat there. Nothing was wrong with the
+product: the chain answered in 0.3 ms, `/portfolio` in 3.6 ms, and the very
+`/speak` call it was stuck on returned 200 in 1.0 s to twelve consecutive direct
+requests. One socket had stalled, and `fetch` has no default timeout, so the
+whole run hung with no output and no exit.
+
+"No result" is the one outcome that looks like neither a pass nor a fail, and a
+suite that can produce it cannot be trusted to report. Every request the suite
+makes now carries a 90-second deadline — far above the slowest real call here, a
+~14 s voice round trip — so a stall becomes a loud failure attributed to the
+check that caused it, rather than silence.
+
+Worth recording alongside it: while chasing that stall I twice concluded "still
+running" from `pgrep -f verify.mjs`, which was matching **my own polling loops**
+— their command lines contain the string. The suite had finished long before.
+The measurement was wrong, not the thing measured, which is the same mistake in
+a different coat.

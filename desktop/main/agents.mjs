@@ -118,13 +118,31 @@ function rebalance(market, brief, cfg = {}) {
   return null;
 }
 
-/** Park idle stables when there is more than a remembered buffer. */
+/**
+ * Put idle cash to work when there is more of it than the remembered buffer.
+ *
+ * This used to return `SELL USDC` — the quote asset, which every trade is
+ * already denominated in. That is swap("USDC","USDC"): the same self-swap the
+ * rebalance agent used to emit, and just as untradeable. It survived a run
+ * longer than that one because it only fires when the book actually HOLDS
+ * cash, and the check that caught the rebalance case was written against a
+ * book that held none.
+ *
+ * There is no lending venue in this build — the only place a trade can go is
+ * the DEX — so "keeping" idle cash cannot mean earning protocol yield here.
+ * The one thing it can honestly mean is deploying the excess into an asset,
+ * and the reason says exactly that rather than implying interest is being
+ * earned somewhere.
+ */
 function yieldAgent(market, brief, cfg = {}) {
   const buffer = cfg.bufferUsd ?? 100;
-  const usdc = brief.positions?.USDC?.qty ?? 0;
+  const symbol = cfg.symbol || "ETH";
+  const usdc = brief.positions?.[QUOTE]?.qty ?? 0;
   if (usdc <= buffer) return null;
-  return { agent: "yield", side: "SELL", symbol: "USDC", sizeUsd: Math.round(usdc - buffer),
-           reason: `${usdc} USDC idle above the ${buffer} buffer`, confidence: 0.5 };
+  if (!market.prices?.[symbol]) return null;
+  return { agent: "yield", side: "BUY", symbol, sizeUsd: Math.round(usdc - buffer),
+           reason: `${usdc} USDC idle above the ${buffer} buffer — deploying the excess into ${symbol}`,
+           confidence: 0.5 };
 }
 
 /** Protect: cut a position that has fallen past the remembered stop. */

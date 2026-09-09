@@ -53,8 +53,34 @@ const chk = (id, ok, detail) => {
   console.log(`  ${ok ? "\x1b[32mPASS\x1b[0m" : "\x1b[31mFAIL\x1b[0m"}  ${id.padEnd(34)} ${detail}`);
 };
 const section = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`);
+/**
+ * Every request this suite makes, with a deadline.
+ *
+ * `fetch` has no default timeout, so a single stuck socket hangs the whole run
+ * with no output and no exit — which is exactly what happened on the fifth run:
+ * the suite sat on one `/speak` call for a quarter of an hour while the same
+ * endpoint answered every direct request in a second. A suite that can hang
+ * forever cannot be trusted to report, and "no result" is the one outcome that
+ * looks like neither a pass nor a fail.
+ *
+ * A timeout turns that into a loud, attributable failure on the check that
+ * caused it. 90s is far above anything here — the slowest real call is a voice
+ * round trip at ~14s — so this can only fire on a genuine stall.
+ */
+const FETCH_TIMEOUT_MS = Number(process.env.VERIFY_TIMEOUT_MS || 90_000);
+const withDeadline = async (url, opts = {}) => {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), FETCH_TIMEOUT_MS);
+  try { return await fetch(url, { ...opts, signal: ctl.signal }); }
+  catch (e) {
+    if (e.name === "AbortError")
+      throw new Error(`no answer from ${url} within ${FETCH_TIMEOUT_MS / 1000}s — the request stalled, it did not fail`);
+    throw e;
+  } finally { clearTimeout(t); }
+};
+
 const j = async (p, o = {}) => {
-  const r = await fetch(B + p, { ...o, headers: o.noauth ? {} : H });
+  const r = await withDeadline(B + p, { ...o, headers: o.noauth ? {} : H });
   let b = null; try { b = await r.json(); } catch {}
   return { s: r.status, b };
 };
@@ -488,8 +514,8 @@ try {
   chk("G9 malformed bodies never 500", noId.s === 200 && noId.b?.ok === false && junk.s === 400,
       `/key {} -> "${noId.b?.error}"; junk reject -> ${junk.s}`);
 
-  const fonts = await fetch(B + "/fonts/inter-600.woff2");
-  const trav = await fetch(B + "/fonts/..%2f..%2fpackage.json");
+  const fonts = await withDeadline(B + "/fonts/inter-600.woff2");
+  const trav = await withDeadline(B + "/fonts/..%2f..%2fpackage.json");
   chk("A3/A4 fonts serve, traversal does not",
       fonts.status === 200 && fonts.headers.get("content-type") === "font/woff2" && trav.status !== 200,
       `woff2 200, traversal ${trav.status}`);
@@ -638,7 +664,7 @@ try {
       has(n1, 100) && !has(n1, 250) && has(n2, 250) && !has(n2, 100),
       `remembered 100 → "${a1.slice(0, 42)}…" · remembered 250 → "${a2.slice(0, 42)}…"`);
 
-  const r = await fetch(B + "/voice", { method: "POST",
+  const r = await withDeadline(B + "/voice", { method: "POST",
     headers: { authorization: "Bearer " + TOKEN, "content-type": "application/octet-stream" },
     body: await tts("Buy forty dollars of E T H") });
   const spoken = Buffer.from(await r.arrayBuffer());
@@ -654,7 +680,7 @@ try {
       tr.length > 0 && ["EXECUTE", "REJECT"].includes(act),
       `speech → "${tr}" → ${act} → ${spoken.length} bytes spoken back`);
 
-  const ask = await fetch(B + "/voice", { method: "POST",
+  const ask = await withDeadline(B + "/voice", { method: "POST",
     headers: { authorization: "Bearer " + TOKEN, "content-type": "application/octet-stream" },
     body: await tts("What is my per trade limit?") });
   await ask.arrayBuffer();
@@ -940,7 +966,7 @@ try {
   chk("P2 /pad is cheap enough to poll", ms < 150, `${ms}ms (budget 150)`);
 
   // Speech for the amp: raw PCM at the rate the mic records at.
-  const sp = await fetch(B + "/speak?text=" + encodeURIComponent("xorr pad connected"), { headers: H });
+  const sp = await withDeadline(B + "/speak?text=" + encodeURIComponent("xorr pad connected"), { headers: H });
   const spb = Buffer.from(await sp.arrayBuffer());
   let peak = 0;
   for (let i = 0; i + 1 < spb.length; i += 2) peak = Math.max(peak, Math.abs(spb.readInt16LE(i)));
@@ -1042,12 +1068,12 @@ try {
   // the route does not exist, which sends the caller hunting for a missing
   // endpoint — it misled me while testing this server.
   {
-    const wrong = await fetch(B + "/pad", { method: "POST", headers: H, body: "{}" });
+    const wrong = await withDeadline(B + "/pad", { method: "POST", headers: H, body: "{}" });
     const wj = await wrong.json().catch(() => ({}));
     chk("V0 a wrong method on a real route is 405 with an Allow header, not 404",
         wrong.status === 405 && (wrong.headers.get("allow") || "").includes("GET"),
         `${wrong.status} allow=${wrong.headers.get("allow")} "${String(wj.error).slice(0, 50)}"`);
-    const gone = await fetch(B + "/definitely-not-a-route", { headers: H });
+    const gone = await withDeadline(B + "/definitely-not-a-route", { headers: H });
     chk("V0b a path that really does not exist is still 404",
         gone.status === 404, `${gone.status}`);
   }
@@ -1350,7 +1376,7 @@ section("T. the packaged app's first run");
 try {
   // A packaged .app has no .env and no shell environment. Without a way to
   // supply one, the window opens onto a desk whose mic fails silently.
-  const g = await fetch(B + "/setup");
+  const g = await withDeadline(B + "/setup");
   chk("T1 /setup is reachable before any token exists",
       g.status === 200 && /text\/html/.test(g.headers.get("content-type") || ""),
       `${g.status} ${g.headers.get("content-type")}`);
@@ -1426,9 +1452,9 @@ try {
                     : `${cases.length}/${cases.length} — positions, spend, rules and price`);
 
   // And the live brain must still be named, so a degraded answer is visible.
-  const sp = await fetch(B + "/speak?text=" + encodeURIComponent("what is my per trade limit"), { headers: H });
+  const sp = await withDeadline(B + "/speak?text=" + encodeURIComponent("what is my per trade limit"), { headers: H });
   const pcm = Buffer.from(await sp.arrayBuffer());
-  const vr = await fetch(B + "/voice", { method: "POST",
+  const vr = await withDeadline(B + "/voice", { method: "POST",
     headers: { ...H, "content-type": "application/octet-stream" }, body: pcm });
   chk("S4 /voice names the brain that answered",
       vr.headers.get("x-brain") === "claude",
@@ -1497,14 +1523,48 @@ section("X. the automation path");
   const mem = new Memory();
   await mem.ping();
 
-  // No strategy may name the asset everything settles in. A signal to "buy
-  // USDC" cannot be expressed as a trade at all.
-  const brief = await mem.recallBrief();
-  const mkt = { prices: { ETH: 2500, cbBTC: 79000, EURC: 1.16, AERO: 0.61, MORPHO: 2.35, VIRTUAL: 0.7 } };
-  const selfSwaps = evaluateAll(mkt, brief).filter((sig) => sig.symbol === "USDC");
-  chk("X1 no strategy proposes trading the quote asset against itself",
-      selfSwaps.length === 0,
-      selfSwaps.length ? `${selfSwaps.length}: ${selfSwaps.map((x) => `${x.agent} ${x.side} ${x.symbol}`).join(", ")}` : "none of the six");
+  // Every signal any agent emits must be something the pad can ACTUALLY trade.
+  //
+  // The first version of this check ran one agent sweep against whatever the
+  // live store happened to hold, and passed while the yield agent was emitting
+  // `SELL USDC` — the same self-swap the rebalance agent had — because the book
+  // it tested held no cash, so yield never fired. A property is only tested by
+  // states that reach it, so this drives all six across states chosen to fire
+  // each one, including a book that holds cash.
+  const { evaluate, AGENT_KINDS } = await import("../main/agents.mjs");
+  const { SYMBOLS } = await import("../main/markets.mjs");
+  const prices = { ETH: 2500, cbBTC: 79000, EURC: 1.16, AERO: 0.61, MORPHO: 2.35, VIRTUAL: 0.7, USDC: 1 };
+  const agentMkt = { prices, change24hPct: { ETH: 5.2, AERO: -9.4 } };
+  const states = {
+    "flat":              {},
+    "cash only":         { USDC: { qty: 500, avg_entry_usd: 1 } },
+    "cash and a winner": { USDC: { qty: 500, avg_entry_usd: 1 }, ETH: { qty: 1, avg_entry_usd: 2000 } },
+    "past the stop":     { AERO: { qty: 100, avg_entry_usd: 1.0 } },
+    "one asset":         { ETH: { qty: 1, avg_entry_usd: 2400 } },
+  };
+  const malformed = [];
+  let emitted = 0;
+  for (const [label, positions] of Object.entries(states)) {
+    const b = { positions, baton: {}, limits: { max_trade_usd: 100, max_day_usd: 300, allow: SYMBOLS } };
+    for (const kind of AGENT_KINDS) {
+      const sig = evaluate(kind, agentMkt, b);
+      if (!sig) continue;
+      emitted++;
+      const why = [];
+      if (sig.symbol === "USDC") why.push("names the quote asset — a self-swap");
+      if (!SYMBOLS.includes(sig.symbol)) why.push(`'${sig.symbol}' is not a tradeable market`);
+      if (!["BUY", "SELL"].includes(sig.side)) why.push(`side '${sig.side}'`);
+      if (!(Number.isFinite(sig.sizeUsd) && sig.sizeUsd > 0)) why.push(`sizeUsd ${sig.sizeUsd}`);
+      if (!(sig.confidence >= 0 && sig.confidence <= 1)) why.push(`confidence ${sig.confidence}`);
+      if (!sig.reason?.trim()) why.push("no reason given");
+      if (sig.side === "SELL" && !positions[sig.symbol]) why.push(`SELL ${sig.symbol} with no remembered position`);
+      if (why.length) malformed.push(`${label}/${kind}: ${why.join("; ")}`);
+    }
+  }
+  chk("X1 every signal any of the six agents emits is actually tradeable",
+      malformed.length === 0,
+      malformed.length ? malformed.join(" · ").slice(0, 150)
+                       : `${emitted} signal(s) across ${Object.keys(states).length} book states x ${AGENT_KINDS.length} agents`);
 
   // A tick that is allowed to trade must not throw. Whether it finds anything
   // is the book's business; answering 500 is not.
