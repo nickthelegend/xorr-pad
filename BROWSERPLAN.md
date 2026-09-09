@@ -173,7 +173,7 @@ above: so nothing here is shaped by what happens to pass.
 | O6 | Mainnet slippage is not the fork's | With `CHAIN_MODE=mainnet`, the default tolerance is 0.3%, not the fork's 1% |
 | O7 | The fork refuses a bad upstream | `fork.sh` rejects an upstream that cannot serve state at the pinned block and falls through to one that can, rather than handing anvil a node that fails at the first trade |
 
-**Total: 75 items.**
+**Total with section O: 85 items.**
 
 ## M. Cleanliness
 
@@ -185,7 +185,9 @@ above: so nothing here is shaped by what happens to pass.
 
 ---
 
-**Total (sections A-N): 68 items.**
+**Total, sections A–N: 78 items.** *(This line read "68" for two runs. It was
+never counted — the section tables hold 78 rows. Corrected on the third run,
+which counted them.)*
 
 ## Second full run — 68 of 68 PASS, 2026-09-09
 
@@ -314,7 +316,7 @@ Alongside: the automated suite is **140 passed, 0 failed** against this build.
 
 ---
 
-## Third full run — 2026-09-09, 75 items
+## Third full run — 2026-09-09, 85 items
 
 Re-executed end to end after the archive, rule lifecycle and tuned-execution
 work landed, with seven new items (section O) written before testing.
