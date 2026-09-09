@@ -9,6 +9,25 @@ different, worse decision.* Everything else is setting that up.
 
 ---
 
+## Measured, not estimated
+
+Two full rehearsals against the running app on 2026-09-09, back to back:
+
+| beat | run 1 | run 2 |
+|---|---|---|
+| briefing | 3 ms | 2 ms |
+| BUY → verdict with reasons | 4 ms | 3 ms |
+| ✓ → real mined fill | 1,472 ms | 1,616 ms |
+| wipe → the diff | 17 ms | 17 ms |
+| briefing after the wipe | 2 ms | 3 ms |
+| **the turn — the same BUY** | 6 ms | 6 ms |
+| re-teach | 5 ms | 5 ms |
+| spoken round trip | 14,018 ms | 13,451 ms |
+| **total** | **17.0 s** | **16.8 s** |
+
+Both runs landed the turn: `EXECUTE → REJECT`. The whole script runs in under
+20 seconds of machine time — the three minutes are yours to talk in.
+
 ## Before anyone is watching
 
 ```bash
@@ -64,12 +83,13 @@ what has gone out today.
 
 Press **✓**.
 
-**521 ms** later there is a mined transaction: a hash, a block, a real balance
-movement. The route on the fill is read back off the receipt, so it cannot claim
+**About a second and a half** later there is a mined transaction: a hash, a
+block, a real balance movement. The route on the fill is read back off the receipt, so it cannot claim
 a venue it did not use.
 
-> "Real Uniswap V3 on a Base mainnet fork. Real contracts, real liquidity, real
-> signed transaction — the only thing that is not real is the money."
+> "Real contracts, real liquidity, a real signed transaction on a Base mainnet
+> fork — the only thing that is not real is the money. It quoted two routers and
+> took the better one; the card says which, and by how much."
 
 ## 1:20 — **The turn.** Delete the memory (50 seconds)
 
@@ -106,6 +126,12 @@ trade get vetoed by the rule you just accepted, cited by name.
 Hold **MIC** and say: **"Buy fifty dollars of ETH."**
 
 It comes back spoken, as a decision waiting on a ✓ — same gate as the key.
+
+> **Budget this honestly.** Rehearsed twice on 2026-09-09, the spoken round trip
+> took **13.5 s and 14.0 s** — speech out, Deepgram back, the brain, then speech
+> back again. Every other beat in this script is milliseconds; the fill is about
+> 1.5 s. So this single step is most of a 20-second slot and can overrun it.
+> Start talking while it works, or drop the beat.
 
 If the room is loud, skip this. **Never re-run a failed voice take**; move on to
 the close.
@@ -147,7 +173,8 @@ deleting it changes the verdict — which is asserted, not asserted-to.
 Ten tokenized equities are listed and priced from their own pools. It refuses to
 trade them and says exactly why: they are B20 tokens implemented by the Base
 node rather than as bytecode, so a fork answers `OpcodeNotFound` for every call
-to one. They need mainnet and an aggregator.
+to one. The route exists — KyberSwap reaches the concentrated-liquidity pool
+their depth sits on — so the only thing missing is mainnet.
 
 **"What does the pad do that the screen doesn't?"**
 Nothing — deliberately. Same backend, same gate, same refusals. The pad is where
