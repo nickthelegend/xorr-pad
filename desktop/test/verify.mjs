@@ -1150,6 +1150,19 @@ try {
       /execute:\s*state\.armed\s*&&\s*IS_FORK/.test(src),
       "runOnce is gated on state.armed && IS_FORK");
 
+  // Verified live against real Base mainnet on 2026-09-09: the backend boots
+  // read-only, /pad reports mode "mainnet" with a real ETH price, and a ✓ is
+  // refused with "there is no signing key" rather than "no USDC to spend" —
+  // which is true of the zero address but names the wrong problem, and would
+  // let a funded WATCH_ADDRESS get further than it should.
+  chk("M6 a confirm on a read-only chain is refused before the balance check",
+      (() => {
+        const i = src.indexOf("if (READ_ONLY)");
+        const j = src.indexOf("to spend`");
+        return i > 0 && j > 0 && i < j;
+      })(),
+      "the READ_ONLY guard precedes the balance guard in the confirm path");
+
   chk("M4 the fork is the default, so a mistyped mode cannot mean mainnet",
       (await j("/health")).b?.mode === "fork" && !process.env.CHAIN_MODE,
       `mode=${(await j("/health")).b?.mode}, CHAIN_MODE unset`);

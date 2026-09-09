@@ -20,7 +20,7 @@ import { runOnce, getMarket, snapshot, applyFill } from "./trader.mjs";
 import { decide } from "./decide.mjs";
 import { evaluate } from "./agents.mjs";
 import { swap, spendable } from "./dex.mjs";
-import { IS_FORK, fundOnFork, chainReachable, pub } from "./chain.mjs";
+import { IS_FORK, fundOnFork, chainReachable, pub, READ_ONLY } from "./chain.mjs";
 import { reflect, acceptRule, rejectRule, findContradictions, decayRules } from "./reflect.mjs";
 import { prices as feedPrices } from "./scan.mjs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -646,6 +646,15 @@ async function onKey(mem, id) {
     });
     if (id === "no") { note(`rejected ${p.sig.side} ${p.sig.symbol}`); return { ok: true, rejected: true }; }
     if (p.verdict.action !== "EXECUTE") return { ok: false, error: "that signal was not executable" };
+
+    // A read-only mainnet session has no wallet at all. Say that here, before
+    // the balance check below — otherwise the refusal reads "no USDC to spend",
+    // which is true of the zero address but describes the wrong problem, and
+    // would let a funded WATCH_ADDRESS get further than it should.
+    if (READ_ONLY)
+      return { ok: false, error:
+        "this is a read-only mainnet session — there is no signing key, so nothing can be executed. " +
+        "Set AGENT_PRIVATE_KEY to trade." };
 
     const px = p.market.prices[p.sig.symbol];
     const [sell, buy] = p.sig.side === "BUY" ? ["USDC", p.sig.symbol] : [p.sig.symbol, "USDC"];
