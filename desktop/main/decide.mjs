@@ -33,6 +33,22 @@ function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
  * @param brief   memory.recallBrief()
  * @returns {{action:'EXECUTE'|'REJECT', sizeUsd:number, why:string[], memoryUsed:boolean}}
  */
+/**
+ * A price the operator can check against the screen.
+ *
+ * This was `Math.round()`, which is right for BTC and wrong for half the book:
+ * AERO at $0.6154 was cited as "@ $1", and anything under 50 cents as "@ $0" —
+ * in the very sentence the verdict rests on. Three of the six markets trade
+ * under a dollar.
+ */
+function priceStr(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "$?";
+  if (n >= 1000) return "$" + Math.round(n).toLocaleString("en-US");
+  if (n >= 1) return "$" + n.toFixed(2);
+  return "$" + n.toFixed(4);
+}
+
 export function decide(signal, brief) {
   const why = [];
   let memoryUsed = false;
@@ -93,7 +109,7 @@ export function decide(signal, brief) {
     memoryUsed = true;
     // These lines get spoken aloud, so a raw float would be read out to
     // seventeen digits. Round to something a person would actually say.
-    why.push(`already holding ${Number(pos.qty).toFixed(4)} ${signal.symbol} @ $${Math.round(pos.avg_entry_usd)}`);
+    why.push(`already holding ${Number(pos.qty).toFixed(4)} ${signal.symbol} @ ${priceStr(pos.avg_entry_usd)}`);
   }
   if (signal.side === "SELL" && !pos) {
     why.push(`refusing to sell ${signal.symbol} — no remembered position`);

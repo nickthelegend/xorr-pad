@@ -701,7 +701,7 @@ async function press(id){
     if (row) row.outerHTML = note("block", esc(r.error));
     else el("sig").innerHTML += note("block", esc(r.error));
   }
-  if(r.fill) settle(`Filled ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "exec", r.fill.hash);
+  if(r.fill) settle(`Filled ${qty(r.fill.received)} ${r.fill.receivedSymbol}`, "exec", r.fill.hash, r.fill);
   else if(r.rejected) settle("Refused", "rej");
   await refresh();
 }
@@ -824,10 +824,26 @@ function playPcm(buf){
 }
 
 /* ── the verdict ───────────────────────────────────────────────────────── */
-function settle(msg, kind, hash){
+function settle(msg, kind, hash, fill){
   pending = null;
+  // WHERE it filled, not just that it did. With more than one router and best
+  // execution between them, "filled" alone leaves the operator unable to see
+  // which venue took the trade — or that the aggregator failed and the direct
+  // pool did the work instead. The route is read off the mined receipt, so
+  // this is what the chain says, not what the app intended.
+  const route = fill?.route
+    ? `<div class="krow"><span class="k">route</span><span class="v">${esc(fill.route)}` +
+      (fill.comparison?.wonBy != null && !fill.fellBack
+        ? ` <span class="dim">· best of ${fill.comparison.quotes.length}, by ${fill.comparison.wonBy}%</span>` : ``) +
+      `</span></div>` +
+      (fill.fellBack
+        ? `<div class="krow"><span class="k">fell back</span><span class="v" style="font-size:11px">` +
+          `from ${esc(fill.fellBack.from)} — ${esc(String(fill.fellBack.why).slice(0, 90))}</span></div>`
+        : ``)
+    : ``;
   el("sig").innerHTML =
     `<div class="verdict"><div class="vhead"><span class="vact ${kind}">${esc(msg)}</span></div>` +
+    route +
     (hash?`<div class="krow"><span class="k">transaction</span><span class="v" style="font-size:11px">${esc(hash)}</span></div>`:"") +
     `</div>`;
 }
@@ -978,7 +994,12 @@ async function showAt(ts){
   const box = el("ttout"); box.hidden = false; ttDrawnAt = Date.now();
   if (!r || r.error) { box.innerHTML = ttHead("replay") + `<div class="krow"><span class="k">${esc(r?.error || "could not replay")}</span></div>`; return; }
   const pos = Object.entries(r.positions || {});
-  box.innerHTML = ttHead(`what it knew at ${String(ts).slice(0,19).replace("T"," ")}`) +
+  // Echo the moment back in the operator's OWN timezone. `ts` is UTC, and the
+  // picker above it takes local time — so typing 00:10 and being told "what it
+  // knew at 18:40" reads as the app having replayed the wrong moment.
+  const shown = new Date(ts).toLocaleString(undefined,
+    { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  box.innerHTML = ttHead(`what it knew at ${shown}`) +
     `<div class="krow"><span class="k">journal events replayed</span><span class="v">${r.replayed}</span></div>` +
     `<div class="krow"><span class="k">executed by then</span><span class="v">${dollars(r.spent)}</span></div>` +
     (pos.length
@@ -990,7 +1011,11 @@ async function showAt(ts){
 /** Forget deliberately: retire rules nothing has needed. */
 async function decay(){
   const r = await (await fetch("/memory/decay",{method:"POST",headers:H,body:JSON.stringify({days:14})})).json();
-  const box = el("ttout"); box.hidden = false;
+  // Stamp it, exactly as the replay path does. Without this the next refresh
+  // compares the wipe's timestamp against a stale ttDrawnAt and hides this
+  // panel immediately — so after any wipe in the session, "Retire rules"
+  // worked and showed the operator nothing at all.
+  const box = el("ttout"); box.hidden = false; ttDrawnAt = Date.now();
   // "Checked 0 rules. Every rule has either fired or is younger than the
   // window." is nonsense when there are no rules — the same failure as not
   // telling an empty store from one that simply has no match.
@@ -1432,6 +1457,14 @@ async function refresh(){
   drawAgents(h.agent);
   drawTabs();
   if (Number.isFinite(h.sizeUsd)) drawSizes(h.sizeUsd);
+
+  // The market in hand is the BACKEND's, not this tab's. /markets is fetched
+  // once, and activeMarket was only ever changed by a click here — so a market
+  // chosen on the physical pad, or in another window, never reached the desk:
+  // the backend held AERO while the screen highlighted ETH. For a trading app
+  // that is the same failure as a route label that lies about where a fill
+  // went, and it is exactly what the pad is for.
+  if (h.market && h.market !== activeMarket) { activeMarket = h.market; drawMarkets(); }
 
   const p = await get("/portfolio");
   if (p?.prices) { lastPrices = { ...lastPrices, ...p.prices }; drawMarkets(); }

@@ -897,6 +897,28 @@ try {
   }
 } catch (e) { chk("P crashed", false, String(e.message || e).slice(0, 92)); }
 
+// ── V. numbers the operator can check against the screen ────────────────────
+section("V. displayed prices");
+try {
+  const { decide } = await import("../main/decide.mjs");
+  const cite = (sym, avg) => {
+    const v = decide({ agent: "momentum", side: "BUY", symbol: sym, sizeUsd: 25, reason: "t", confidence: 1 },
+      { limits: { max_trade_usd: 100, max_day_usd: 300, allow: [sym] },
+        positions: { [sym]: { qty: 10, avg_entry_usd: avg } }, rules: [], spent_today: 0 });
+    return (v.why.find((w) => w.includes("holding")) || "").replace(/.*@ /, "");
+  };
+  // The entry price was Math.round()ed, so AERO at $0.6154 was cited as "@ $1"
+  // and anything under fifty cents as "@ $0" — in the sentence the verdict
+  // rests on. Three of the six markets trade under a dollar.
+  const cases = [["AERO", 0.6154, "$0.6154"], ["VIRTUAL", 0.0421, "$0.0421"],
+                 ["EURC", 1.163, "$1.16"], ["cbBTC", 78723.4, "$78,723"]];
+  const wrong = cases.filter(([s, a, want]) => cite(s, a) !== want);
+  chk("V1 a sub-dollar entry price is cited at the precision it was paid at",
+      wrong.length === 0,
+      wrong.length ? wrong.map(([s, a, w]) => `${s}: got ${cite(s, a)}, want ${w}`).join("; ")
+                   : cases.map(([s, a]) => `${s} ${cite(s, a)}`).join("  "));
+} catch (e) { chk("V crashed", false, String(e.message || e).slice(0, 92)); }
+
 // ── A. the aggregator, and best execution ───────────────────────────────────
 section("A. the aggregator");
 try {
