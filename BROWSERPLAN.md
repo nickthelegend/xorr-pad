@@ -994,3 +994,87 @@ and fell through to blastapi on its own — the upstream list earning its keep.
 And the re-pin cost its throwaway run exactly as the seventh run said it would:
 **136 passed, 8 failed**, six of them `the Base node never came back`. The
 re-run on the warmed cache was clean.
+
+## Y. What the pad thinks it owns — the tenth run's axis
+
+Nine runs audited what the pad decides and how it executes. None asked whether
+the position it writes down afterwards is the position it actually has.
+
+`applyFill` derives quantity as `usd / price` — the *quoted* price — while the
+swap that just ran returns `received`, the real token delta measured from
+balances before and after. Everything downstream reads the written-down number:
+`avg_entry_usd` is computed from it, the momentum and grid agents measure drift
+against that average, the P&L on the desk and on the pad divide by it.
+
+| # | Item | Correct means |
+|---|---|---|
+| Y1 | A buy records what the chain gave | Store qty increases by exactly `fill.received`, matching the on-chain balance delta to full token precision |
+| Y2 | …and what it actually cost | Cost basis uses the amount really sent (`fill.sold`), not the size that was proposed |
+| Y3 | A clamped buy records the clamp | When a proposal is cut to the wallet balance or the day's remaining room, the recorded cost is the reduced one |
+| Y4 | Two buys average correctly | After buys of (q₁,c₁) and (q₂,c₂), `avg_entry_usd == (c₁+c₂)/(q₁+q₂)` computed from the real fills |
+| Y5 | A partial sell leaves the right quantity | Remaining store qty equals the on-chain balance after the sell |
+| Y6 | …and does not move the cost basis | Selling part of a holding leaves `avg_entry_usd` unchanged — realising a gain is not a re-pricing of what remains |
+| Y7 | A full exit archives and leaves nothing | The dust rule fires, the position is archived rather than deleted, and no phantom residual is reported |
+| Y8 | The pad never claims tokens it does not hold | For every open position, remembered qty ≤ on-chain balance for that symbol |
+| Y9 | The desk and the store agree | `/portfolio` balances and the remembered positions describe the same holding |
+
+Measured before writing this, on one real fill: the chain gave
+**45.75216105 AERO**, `fill.received` reported exactly that, and the store wrote
+down **45.80219242** — **0.109% of phantom tokens from a single trade**, with
+the correct figure available at the call site and discarded.
+
+## Tenth full run — 2026-09-10, 146 items
+
+**181 passed, 0 failed, 1 skipped** (E4 Groq, account-level). Sections A–V
+re-verified; section Y is new.
+
+### The pad wrote down a position it did not have — Y1
+
+`applyFill` derived quantity as `usd / price`: the size that was *proposed*
+divided by the price that was *quoted*. The swap that had just run returned
+`received` — a real balance delta measured either side of the transaction — and
+both call sites threw it away.
+
+Measured on one AERO buy:
+
+```
+chain actually gave    45.75216105 AERO
+fill.received          45.75216105      ← the right answer, at the call site
+store wrote down       45.80219242      ← +0.05003137, +0.109%
+```
+
+0.109% of tokens the pad did not own, from a single trade, compounding on every
+buy. And the error does not stay in the ledger: `avg_entry_usd` is computed from
+that quantity, the momentum and grid agents measure drift against that average,
+and both P&L readouts divide by it. A wrong quantity becomes a wrong cost basis
+becomes a wrong decision.
+
+The same call also passed `usd: p.verdict.sizeUsd` — the size *before* the two
+clamps just above it, to the day's remaining room and to the wallet balance. A
+trade cut from $100 to $7 recorded a $100 cost basis.
+
+**Both fixed by reading the fill instead of the proposal.** `fill.received` is
+the quantity on a buy and the proceeds on a sell; `fill.sold` is the cash on a
+buy and the quantity on a sell. The estimate survives only as a fallback for a
+caller with no transaction to read, which is the best available answer when
+there is genuinely nothing to consult. After: `chain +45.75210171 · store
++45.75210171 · drift -2.8e-14`.
+
+The arithmetic around it now has proof rather than assumption: a $25 buy of 12.5
+units followed by a $40 buy of 16 gives `$65 / 28.5 = $2.28070175` exactly; a
+partial sell removes quantity without re-pricing what remains (realising a gain
+is not a re-pricing); a full exit archives rather than deletes; and no open
+position may claim more than the chain holds.
+
+### U9 was measuring the weather — my check, not the app
+
+Written in the eighth run as `top.rv >= 1.0`, which asserts that the market is
+busy while the suite happens to run. On a quiet morning every market sat under
+1.0x and U9 failed an app that had done nothing wrong — measuring the fixture,
+exactly what the note above G6 warns about.
+
+Reachability is a property of the measurement, not of the weather, so it is now
+proved on a series built to meet every one of `volume_thrust`'s conditions:
+**fires at 3.0x, silent at 2.0x**, threshold 2.5x. The live feed is only
+required to produce finite, positive numbers. Seventh run running that one of my
+own checks, rather than the code, was the thing that was wrong.

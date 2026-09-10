@@ -1688,9 +1688,29 @@ try {
     reach.push({ sym, rv: relativeVolume(await klines(m.binance)) });
   }
   const top = reach.reduce((a, b) => (b.rv > a.rv ? b : a));
-  chk("U9 volume_thrust is reachable on live data", top.rv >= 1.0 && reach.every((r) => Number.isFinite(r.rv)),
-      `best is ${top.sym} at ${top.rv.toFixed(2)}x — threshold ${P.thrust_volume}x, ` +
-      `${reach.filter((r) => r.rv >= P.thrust_volume).length}/${reach.length} market(s) over it now`);
+
+  // The property is that the threshold is REACHABLE -- which is about the
+  // measurement, not about whether the market happens to be busy while the
+  // suite runs. Asserting a live level here failed on a quiet morning with
+  // every market under 1.0x and nothing wrong with the code: measuring the
+  // fixture again. So the reachability is proved on a series built to meet
+  // every one of volume_thrust's conditions, and the live feed is only
+  // required to produce sane numbers.
+  const vbar = (px, vol) => ({ t: 0, open: px, high: px * 1.001, low: px * 0.999, close: px, volume: vol });
+  const built = [];
+  for (let i = 0; i < 120; i++) built.push(vbar(100 + (i % 2 ? 0.05 : -0.05), 1000));
+  const loud = [...built, vbar(105, 3000)];        // +5% on 3.0x volume — fires
+  const quiet = [...built, vbar(105, 2000)];       // same move on 2.0x       — does not
+  const ctxT = { uptrend: true, regime: "TREND_UP", symbol: "ETH" };
+  const firedLoud = BOOK.volume_thrust(loud, ctxT);
+  const firedQuiet = BOOK.volume_thrust(quiet, ctxT);
+
+  chk("U9 volume_thrust is reachable, and its threshold does real work",
+      !!firedLoud && !firedQuiet &&
+      Math.abs(relativeVolume(loud) - 3) < 1e-9 &&
+      reach.every((r) => Number.isFinite(r.rv) && r.rv > 0),
+      `fires at 3.0x, silent at 2.0x (threshold ${P.thrust_volume}x) · ` +
+      `live feed sane, best is ${top.sym} at ${top.rv.toFixed(2)}x`);
 
   const bar = (px) => ({ t: 0, open: px, high: px * 1.001, low: px * 0.999, close: px, volume: 1000 });
   chk("U10 the regime classifier is correct at its edges",
@@ -1833,6 +1853,97 @@ section("V. two things at once");
   } finally {
     if (originalLimits) await memV.setReference("risk/limits", originalLimits).catch(() => {});
     memV.stop();
+  }
+}
+
+section("Y. what the pad thinks it owns");
+{
+  const { applyFill } = await import("../main/trader.mjs");
+  const memY = new Memory({ db: (await j("/health")).b?.memoryDb || process.env.SIBYL_DB });
+  memY.start();
+  const SYM = "MORPHO";                       // allowlisted, and not the market the run trades
+  const posOf = async (sym) => ((await memY.getEntity("position", sym).catch(() => null))?.body || null);
+  try {
+    // ---- Y1: a real buy, end to end, against the chain itself --------------
+    const mkt = "AERO";
+    const chainQty = async () => Number((await balances())[mkt]?.amount ?? 0);
+    await j("/key", { method: "POST", body: JSON.stringify({ id: mkt }) });
+    const c0 = await chainQty(), s0 = Number((await posOf(mkt))?.qty ?? 0);
+    await j("/key", { method: "POST", body: JSON.stringify({ id: "buy" }) });
+    const yes = await j("/key", { method: "POST", body: JSON.stringify({ id: "yes" }) });
+    if (yes.b?.fill?.hash) {
+      const c1 = await chainQty(), s1 = Number((await posOf(mkt))?.qty ?? 0);
+      const dChain = c1 - c0, dStore = s1 - s0;
+      chk("Y1 a buy records what the chain gave", Math.abs(dStore - dChain) < 1e-8,
+          `chain +${dChain.toFixed(8)} · store +${dStore.toFixed(8)} · drift ${(dStore - dChain).toExponential(1)}`);
+    } else {
+      skip("Y1 a buy records what the chain gave", `no fill: ${String(yes.b?.error || "").slice(0, 50)}`);
+    }
+
+    // ---- Y2/Y3/Y4: the arithmetic, on fills whose numbers are known --------
+    // usd and price below are deliberately wrong: they are the PROPOSAL, and a
+    // proposal is exactly what must not reach the ledger.
+    await memY.archiveEntity("position", SYM, "Y-section reset").catch(() => {});
+    const f1 = { sold: "25 USDC", received: 12.5, receivedSymbol: SYM };   // $2.00/unit
+    await applyFill(memY, { symbol: SYM, side: "BUY", usd: 30, price: 9.99, fill: f1 });
+    const y2 = await posOf(SYM);
+    chk("Y2 …and what it actually cost",
+        y2 && Math.abs(y2.qty - 12.5) < 1e-9 && Math.abs(y2.avg_entry_usd - 2) < 1e-9,
+        `${y2?.qty} @ $${y2?.avg_entry_usd?.toFixed(4)} — the proposal said $30 at $9.99, both ignored`);
+
+    // A clamp shows up as `sold` being smaller than the size that was approved.
+    await memY.archiveEntity("position", SYM, "Y3 reset").catch(() => {});
+    await applyFill(memY, { symbol: SYM, side: "BUY", usd: 100, price: 2, fill: { sold: "7 USDC", received: 3.5 } });
+    const y3 = await posOf(SYM);
+    chk("Y3 a clamped buy records the clamp",
+        y3 && Math.abs(y3.qty - 3.5) < 1e-9 && Math.abs(y3.avg_entry_usd - 2) < 1e-9,
+        `approved $100, actually sent $7 -> ${y3?.qty} @ $${y3?.avg_entry_usd?.toFixed(4)} (basis $${(y3.qty * y3.avg_entry_usd).toFixed(2)})`);
+
+    await memY.archiveEntity("position", SYM, "Y4 reset").catch(() => {});
+    await applyFill(memY, { symbol: SYM, side: "BUY", usd: 0, price: 0, fill: f1 });
+    await applyFill(memY, { symbol: SYM, side: "BUY", usd: 0, price: 0, fill: { sold: "40 USDC", received: 16 } });
+    const y4 = await posOf(SYM);
+    const wq = 12.5 + 16, wavg = (25 + 40) / wq;
+    chk("Y4 two buys average correctly",
+        y4 && Math.abs(y4.qty - wq) < 1e-9 && Math.abs(y4.avg_entry_usd - wavg) < 1e-9,
+        `${y4?.qty} @ $${y4?.avg_entry_usd?.toFixed(8)} — expected $${wavg.toFixed(8)}`);
+
+    // ---- Y5/Y6: a partial sell -------------------------------------------
+    await applyFill(memY, { symbol: SYM, side: "SELL", usd: 1, price: 3, fill: { sold: `10 ${SYM}`, received: 30 } });
+    const y5 = await posOf(SYM);
+    chk("Y5 a partial sell leaves the right quantity",
+        y5 && Math.abs(y5.qty - (wq - 10)) < 1e-9, `${wq} - 10 -> ${y5?.qty}`);
+    chk("Y6 …and does not move the cost basis",
+        y5 && Math.abs(y5.avg_entry_usd - wavg) < 1e-9,
+        `still $${y5?.avg_entry_usd?.toFixed(8)} — realising a gain is not a re-pricing`);
+
+    // ---- Y7: the full exit ------------------------------------------------
+    await applyFill(memY, { symbol: SYM, side: "SELL", usd: 1, price: 3, fill: { sold: `${wq - 10} ${SYM}`, received: 55 } });
+    const y7 = await posOf(SYM);
+    const archived = await memY.listArchived({ limit: 40 }).catch(() => []);
+    chk("Y7 a full exit archives and leaves nothing",
+        !y7 && (archived || []).some((a) => String(a.name || a.entity || "").includes(SYM)),
+        `position gone, ${(archived || []).length} archived row(s) retain the history`);
+
+    // ---- Y8/Y9: the two ledgers agree ------------------------------------
+    const bal = await balances();
+    const brief = await memY.recallBrief();
+    const open = Object.entries(brief?.positions || {}).filter(([, p]) => Number(p.qty) > 0);
+    const phantom = open.filter(([sym, p]) => Number(p.qty) - Number(bal[sym]?.amount ?? 0) > 1e-6);
+    chk("Y8 the pad never claims tokens it does not hold", phantom.length === 0,
+        phantom.length
+          ? phantom.map(([s, p]) => `${s} remembers ${Number(p.qty).toFixed(6)} vs ${Number(bal[s]?.amount ?? 0).toFixed(6)} held`).join("; ")
+          : `${open.length} open position(s), each within the on-chain balance`);
+
+    const port = await j("/portfolio");
+    chk("Y9 the desk and the store agree",
+        port.s === 200 && open.every(([sym]) => sym in (port.b.balances || {})),
+        `/portfolio lists ${Object.keys(port.b?.balances || {}).length} asset(s), covering all ${open.length} remembered position(s)`);
+  } catch (e) {
+    chk("Y crashed", false, String(e.message || e).slice(0, 92));
+  } finally {
+    await memY.archiveEntity("position", SYM, "Y-section cleanup").catch(() => {});
+    memY.stop();
   }
 }
 

@@ -46,14 +46,46 @@ export async function getMarket(symbols = SYMBOLS) {
 }
 
 /** Fold a fill back into the remembered position (average up/down honestly). */
-export async function applyFill(mem, { symbol, side, usd, price, agent }) {
+/**
+ * Write down what actually happened, not what was expected to.
+ *
+ * `usd / price` is the size that was *proposed* divided by the price that was
+ * *quoted*. The swap that just ran knows better than both: `fill.received` is a
+ * real balance delta measured either side of the transaction, and `fill.sold`
+ * is what really left the wallet after any clamp to the wallet balance or to
+ * the day's remaining room.
+ *
+ * Measured on one AERO buy before this: the chain gave 45.75216105, the store
+ * wrote 45.80219242 — 0.109% of tokens the pad did not own, from one trade.
+ * That number is not cosmetic. `avg_entry_usd` is computed from it, the
+ * momentum and grid agents measure drift against that average, and both P&L
+ * readouts divide by it, so the error propagates into decisions and not just
+ * into a display.
+ *
+ * `fill` is optional: with none, this falls back to the old estimate, which is
+ * the best available answer when there is no transaction to read.
+ */
+export async function applyFill(mem, { symbol, side, usd, price, agent, fill = null }) {
   const cur = (await mem.getEntity("position", symbol).catch(() => null))?.body || null;
-  const qty = price ? usd / price : 0;
+
+  // `sold` is "<amount> <SYMBOL>" — the amount really sent.
+  const soldAmt = fill?.sold ? Number(String(fill.sold).split(" ")[0]) : NaN;
+  const got = Number(fill?.received);
+
+  // BUY: received is the asset, sold is the USDC. SELL: the other way round.
+  const qty = side === "BUY"
+    ? (Number.isFinite(got) ? got : (price ? usd / price : 0))
+    : (Number.isFinite(soldAmt) ? soldAmt : (price ? usd / price : 0));
+  const cashUsd = side === "BUY"
+    ? (Number.isFinite(soldAmt) ? soldAmt : usd)
+    : (Number.isFinite(got) ? got : usd);
+
   if (side === "BUY") {
     const newQty = (cur?.qty || 0) + qty;
+    // Cost basis is real dollars over real tokens, both sides from the fill.
     const newAvg = cur?.qty
-      ? ((cur.qty * cur.avg_entry_usd) + usd) / newQty
-      : price;
+      ? ((cur.qty * cur.avg_entry_usd) + cashUsd) / newQty
+      : (qty > 0 ? cashUsd / qty : price);
     await mem.setEntity("position", symbol, {
       qty: newQty, avg_entry_usd: newAvg, updated: new Date().toISOString(),
     });
@@ -164,7 +196,7 @@ export async function runOnce(mem, { execute = IS_FORK, cfgs = {}, market } = {}
         ? verdict.sizeUsd                       // spend USD
         : verdict.sizeUsd / px;                 // sell this much of the asset
       fill = await swap(sell, buy, Number(amountIn.toFixed(TOKENS[sell].decimals > 8 ? 8 : 6)));
-      await applyFill(mem, { symbol: signal.symbol, side: signal.side, usd: verdict.sizeUsd, price: px, agent: signal.agent });
+      await applyFill(mem, { symbol: signal.symbol, side: signal.side, usd: verdict.sizeUsd, price: px, agent: signal.agent, fill });
       await mem.journal({
         evaluated: { signal },
         acted: { action: "FILL", usd: verdict.sizeUsd, executed: true, hash: fill.hash },
