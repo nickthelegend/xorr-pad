@@ -2006,6 +2006,16 @@ try {
   chk("Z8 the mic key refuses server-side, with the reason",
       mic.s === 200 && mic.b?.ok === false && /\/voice/.test(mic.b?.error || ""),
       `"${String(mic.b?.error || "").slice(0, 62)}"`);
+  // Found only in real Chrome: the in-app browser never asks for a favicon, so
+  // ten runs of "zero network errors" had been measured without the one request
+  // every real browser makes before it has a token.
+  const fav = await withDeadline(B + "/favicon.ico", { headers: {} });
+  const favBuf = await fav.arrayBuffer().catch(() => new ArrayBuffer(0));
+  const stillGated = await withDeadline(B + "/pad", { headers: {} });
+  chk("Z9 GET /favicon.ico serves the app's icon unauthenticated",
+      fav.status === 200 && /image\//.test(fav.headers.get("content-type") || "") &&
+      favBuf.byteLength > 1000 && stillGated.status === 401,
+      `${fav.status} ${fav.headers.get("content-type")} ${(favBuf.byteLength / 1024).toFixed(1)}KB without a token · /pad still ${stillGated.status}`);
 } catch (e) { chk("Z crashed", false, String(e.message || e).slice(0, 92)); }
 
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +

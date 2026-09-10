@@ -101,6 +101,7 @@ export function createServer(mem) {
     // the LAN, so it refuses any request that did not come from this machine.
     const open = url.pathname === "/setup" || url.pathname === "/health"
       || url.pathname === "/" || url.pathname === "/index.html"
+      || url.pathname === "/favicon.ico"
       || url.pathname.startsWith("/fonts/");
     if (!open && TOKEN) {
       const auth = req.headers.authorization || "";
@@ -290,6 +291,18 @@ export function createServer(mem) {
       // The two faces ship with the repo rather than loading from a CDN: the
       // pad has to work on venue wi-fi, and a readout whose type fails to
       // arrive is a readout nobody can trust.
+      // Every real browser asks for this before it has a token, and an app
+      // whose first request 401s shows a blank icon in the tab and a red line
+      // in the network panel on every single load. It is the same icon the
+      // packaged .app ships, so there is nothing here to protect.
+      if (url.pathname === "/favicon.ico") {
+        try {
+          const buf = await readFile(new URL("../build/icon.png", import.meta.url));
+          res.writeHead(200, { "content-type": "image/png", "cache-control": "public, max-age=86400" });
+          return res.end(buf);
+        } catch { return send(404, { error: "no icon" }); }
+      }
+
       if (url.pathname.startsWith("/fonts/")) {
         const name = path.basename(url.pathname);
         if (!/^[a-z0-9-]+\.woff2$/.test(name)) return send(404, { error: "no such font" });

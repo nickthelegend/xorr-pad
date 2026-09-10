@@ -1100,3 +1100,4 @@ None turned out to be broken — this is a coverage gap, not a defect list — b
 | Z6 | The `scan` key runs the book and stages the decision | The scan under `scan`, and when something fires, a `signal`, a `verdict`, and `awaiting: "yes/no"` on EXECUTE |
 | Z7 | The `base` key is the `scan` key | The white key is an alias; identical response shape |
 | Z8 | The `mic` key refuses server-side, with the reason | `ok: false` and a message saying to record and POST to `/voice` — the mic is captured on the client, and a silent success would be a lie |
+| Z9 | `GET /favicon.ico` serves the app's icon unauthenticated | 200 `image/png`, no token — a browser asks for it before it has ever seen one, and the routes that matter still 401 |
