@@ -1947,6 +1947,67 @@ section("Y. what the pad thinks it owns");
   }
 }
 
+section("Z. the routes and keys the matrix found");
+try {
+  const press = (id) => j("/key", { method: "POST", body: JSON.stringify({ id }) });
+
+  const qr = await withDeadline(B + "/padqr", { headers: H });
+  const qrNo = await withDeadline(B + "/padqr", { headers: {} });
+  const qrb = await qr.json().catch(() => null);
+  chk("Z1 GET /padqr serves the pad's setup payload",
+      qr.status === 200 && /application\/json/.test(qr.headers.get("content-type") || "") &&
+      !!qrb && qrNo.status === 401,
+      `200 with ${Object.keys(qrb || {}).length} field(s), ${qrNo.status} without the token`);
+
+  const fresh = await press("scan");
+  const last = await j("/scan/last");
+  chk("Z2 GET /scan/last returns the cached book",
+      last.s === 200 && last.b?.at === fresh.b?.scan?.at,
+      `same scan at ${String(last.b?.at || "").slice(11, 19)} — a read, not a re-run`);
+
+  const idx = await withDeadline(B + "/index.html", { headers: {} });
+  const idxText = await idx.text().catch(() => "");
+  chk("Z3 GET /index.html serves the desk unauthenticated",
+      idx.status === 200 && /text\/html/.test(idx.headers.get("content-type") || "") && idxText.length > 1000,
+      `200 text/html, ${(idxText.length / 1024).toFixed(0)}KB, no token needed`);
+
+  const m0 = (await j("/health")).b?.market;
+  const m1 = await press("market");
+  const m2 = await press("market");
+  const mNow = (await j("/health")).b?.market;
+  chk("Z4 the market key cycles the allowlist",
+      m1.s === 200 && m1.b?.market && m1.b.market !== m0 &&
+      m2.b?.market !== m1.b.market && mNow === m2.b.market,
+      `${m0} -> ${m1.b?.market} -> ${m2.b?.market}, and /health agrees`);
+
+  const pk = await press("portfolio");
+  const pr = await j("/portfolio");
+  chk("Z5 the portfolio key equals GET /portfolio",
+      pk.s === 200 && pk.b?.ok === true &&
+      ["chain", "route", "balances", "memory", "agents", "prices"].every((k) => k in (pk.b || {})) &&
+      Object.keys(pk.b.balances || {}).length === Object.keys(pr.b?.balances || {}).length,
+      `same snapshot: ${Object.keys(pk.b?.balances || {}).length} balance(s), route ${pk.b?.route?.name ?? pk.b?.route ?? "?"}`);
+
+  chk("Z6 the scan key runs the book and stages the decision",
+      fresh.s === 200 && fresh.b?.ok === true && (fresh.b.scan?.markets || []).length === SYMBOLS.length &&
+      (fresh.b.signal ? (!!fresh.b.verdict && (fresh.b.verdict.action !== "EXECUTE" || fresh.b.awaiting === "yes/no")) : fresh.b.verdict === null),
+      fresh.b?.signal
+        ? `${fresh.b.scan.summary} -> ${fresh.b.signal.agent} ${fresh.b.verdict.action}` +
+          `${fresh.b.awaiting ? ` awaiting ${fresh.b.awaiting}` : ""}`
+        : `${fresh.b?.scan?.summary} — nothing staged, verdict null`);
+
+  const base = await press("base");
+  chk("Z7 the base key is the scan key",
+      base.s === 200 && base.b?.ok === true &&
+      JSON.stringify(Object.keys(base.b).sort()) === JSON.stringify(Object.keys(fresh.b).sort()),
+      `the white key returns the same shape: ${Object.keys(base.b || {}).sort().join(", ")}`);
+
+  const mic = await press("mic");
+  chk("Z8 the mic key refuses server-side, with the reason",
+      mic.s === 200 && mic.b?.ok === false && /\/voice/.test(mic.b?.error || ""),
+      `"${String(mic.b?.error || "").slice(0, 62)}"`);
+} catch (e) { chk("Z crashed", false, String(e.message || e).slice(0, 92)); }
+
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +
             (skipped ? `   (${skipped} skipped)` : "") + "\n");
 process.exit(fail ? 1 : 0);

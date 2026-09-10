@@ -1078,3 +1078,25 @@ proved on a series built to meet every one of `volume_thrust`'s conditions:
 **fires at 3.0x, silent at 2.0x**, threshold 2.5x. The live feed is only
 required to produce finite, positive numbers. Seventh run running that one of my
 own checks, rather than the code, was the thing that was wrong.
+
+## Z. The surface the coverage matrix found — completing the plan
+
+Ten runs of adding sections is not the same as proving the plan covers the
+product. So the enumeration was done mechanically this time: every
+`url.pathname` in `server.mjs`, every `id ===` in the key handler, every pane in
+the renderer, cross-referenced against what the suite actually calls.
+
+Three routes and five of the pad's ten physical keys had never been touched.
+None turned out to be broken — this is a coverage gap, not a defect list — but
+"never tested" and "correct" are different claims and only one of them was true.
+
+| # | Item | Correct means |
+|---|---|---|
+| Z1 | `GET /padqr` serves the pad's setup payload | 200 `application/json` with the encoded URL+token, and 401 without the token |
+| Z2 | `GET /scan/last` returns the cached book | 200 with the same `at` timestamp as the scan that produced it — a cheap read, not a re-run |
+| Z3 | `GET /index.html` serves the desk unauthenticated | 200 `text/html`, the same document `/` serves; it is an open route by design so the app can load before a token exists |
+| Z4 | The `market` key cycles the allowlist | Each press advances to the next allowed symbol and the change survives in `/health` |
+| Z5 | The `portfolio` key equals `GET /portfolio` | Same snapshot: chain, route, balances, memory, agents, prices |
+| Z6 | The `scan` key runs the book and stages the decision | The scan under `scan`, and when something fires, a `signal`, a `verdict`, and `awaiting: "yes/no"` on EXECUTE |
+| Z7 | The `base` key is the `scan` key | The white key is an alias; identical response shape |
+| Z8 | The `mic` key refuses server-side, with the reason | `ok: false` and a message saying to record and POST to `/voice` — the mic is captured on the client, and a silent success would be a lie |
