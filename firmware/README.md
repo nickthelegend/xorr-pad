@@ -107,6 +107,13 @@ No CS pin on your module? Set `TFT_CS -1` in `config.h`. Picture upside down in
 the pod? `TFT_ROTATION 2`. These pins avoid the octal PSRAM (35–37), USB (19/20),
 UART0 (43/44) and the strapping pins (0, 3, 45, 46).
 
+**2.4" UNO shield:** the pod fits it (`exports/display-pod-24.stl`), but this
+firmware does not drive it. That shield is an **8-bit parallel** display — 12
+pins for the LCD alone, and its resistive touch shares four of them — while the
+pad's ESP32-S3 has 10 free. The SPI version of the same 2.4" ILI9341 panel (with
+XPT2046 touch) fits the pin budget; the pod is parametric (`MODULES` in
+`cad/part_display.py`), so another board is a few numbers.
+
 All pins live in [`orchestrator_pad/config.h`](orchestrator_pad/config.h) — change
 them there if your wiring differs.
 

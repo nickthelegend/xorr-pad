@@ -293,23 +293,36 @@ off the floor). Caps upside down (top face on bed) or with tree supports;
 57.5). Every part = union of closed shells; slicers merge
 coplanar/overlapping shells.
 
-## Display pod — `part_display.py`
+## Display pods — `part_display.py`
 
-A slanted stand for a 1.54" ST7789 240×240 SPI module, directly behind the pad.
-Checked by `cad/audit_display.py`.
+Slanted stands that sit directly behind the pad and key onto it. One profile,
+one pod per screen: each entry in `MODULES` gets its own pod and coupon, and
+`cad/audit_display.py` checks every one.
 
-- Footprint **90.0 W** (the pad's width) × **40.4 D** × **89.1 H**; back corners
-  R8 in plan, and the lower front wraps the tray's R8 back corners up to the
-  plate top, 0.2 off the case everywhere.
-- Keyed to the pad by a **1.6 lip resting on the plate top (Z 41.5)**, Y
-  39.0..45.2, spanning **|X| ≤ 35.0** — 1.3 behind the back-row caps, 1.9 behind
-  the knob, 1.15 clear of the M3 button heads at |X| 36.2. No part of the pad
-  changes.
-- Face **52.6 long at 55°** from horizontal, bottom edge Z 46.0. Window
-  **28.9 square** over the 27.72 active area, its bottom edge at Z 58.2 — clear
-  over the cap tops for viewing angles 40–60° down.
-- Module envelope **44.6 × 32.6 × 4.3** (44 × 32 × 4 + 0.3/side), located by
-  2.0 side rails and 2.0 end stops, taped in through the open back. The AA is
-  assumed 3.0 off the PCB centre, away from the header — **measure yours**.
-- Prints lying on a side wall (40.4 × 89.1 × 90.0), no supports; bridges of
-  ~29 (window) and ~45 (module pocket).
+Shared by every pod:
+- **90.0 W**, the pad's own width. Back corners R8 in plan; the lower front
+  wraps the tray's R8 back corners up to the plate top, 0.2 off the case.
+- Keyed by a **1.6 lip resting on the plate top (Z 41.5)**, Y 39.0..45.2,
+  **|X| ≤ 35.0** — 1.3 behind the back-row caps, 1.9 behind the knob, 1.15
+  clear of the M3 button heads. No part of the pad changes.
+- The window is **centred on the pad**. Where a module's active area sits off
+  its PCB centre, the PCB pocket moves instead. The window's outer 1.2 is
+  bevelled 45°, leaving a 0.8 land.
+- 2.0 walls and bezel; 2.0 side rails and end stops locate the PCB, taped in
+  through the open back — which is also where headers and wires leave.
+- Four **10 × 10 × 0.6 recesses** under the base for stick-on rubber feet.
+- Prints lying on a side wall, no supports.
+
+| | 1.54" ST7789 (SPI) | 2.4" ILI9341 UNO shield |
+|---|---|---|
+| Exports | `display-pod.stl`, `display-coupon.stl` | `display-pod-24.stl`, `display-coupon-24.stl` |
+| PCB (listed) | 44 × 32 | 72.20 × 52.7 |
+| Active area | 27.72 × 27.72 | 48.96 × 36.72 |
+| Glass front to PCB back | 4.0 | 6.6 (panel + touch **estimated**) |
+| AA offset from PCB centre | 3.0 along the slant | 3.6 across, away from the reset button (**from a photo**) |
+| Window | 28.9 × 28.9 | 52.6 × 40.3 |
+| Face | 52.6 at 55° | 61.3 at 50° — it gets touched |
+| Pod W × D × H | 90 × 40.4 × 89.1 | 90 × 49.6 × 93.0 |
+| Room behind the PCB | 10 | 25 (headers + dupont housings) |
+
+**Measure your module and print its coupon before the pod.**

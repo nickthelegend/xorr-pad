@@ -1,23 +1,20 @@
-"""part_display.py — a slanted pod for a 1.54" ST7789 SPI TFT (240x240).
+"""part_display.py — slanted display pods that key onto the back of the pad.
 
-It stands on the desk directly behind the pad and keys onto it with a lip that
-rests on the plate's back strip — the one band of the plate top that nothing
-else uses (cap backs end at Y 37.7, the knob at 37.1, the M3 button heads start
-at |X| 36.2). No existing part changes, no screws.
+Each pod stands on the desk directly behind the pad at its full 90 mm width,
+wraps the tray's R8 back corners, and rests a lip on the plate's back strip —
+the one band of the plate top nothing else uses (cap backs end at Y 37.7, the
+knob at 37.1, the M3 button heads start at |X| 36.2). No part of the pad changes.
 
-The kernel only extrudes along Z, so the pod is a SIDE PROFILE in (Y, Z)
-extruded across X in bands (the tray's band-split trick, turned sideways),
-then mapped (x,y,z) -> (z,x,y). That map is a cyclic axis permutation — a
-proper rotation — so every shell keeps its outward winding. The same fact makes
-it print support-free: lay it on a side wall and every layer is the profile.
+The kernel only extrudes along Z, so a pod is a SIDE PROFILE in (Y, Z) extruded
+across X in bands, then mapped (x,y,z) -> (z,x,y) — a cyclic axis permutation,
+a proper rotation, so every shell keeps its outward winding. The same fact
+makes it print support-free lying on a side wall.
 
-The module drops in through the open back, face-down against the inside of the
-bezel, located by side rails and end stops; a strip of foam tape holds it (the
-same way the amp and mic are mounted in the tray).
+The window is always centred on the pad. Where a module's active area sits off
+its PCB centre, the PCB pocket moves instead, so the screen reads centred.
 
-MEASURE YOUR MODULE before printing the pod — or print display-coupon.stl
-first (~10 min): it is the pod's face alone, and the module should drop in
-and show its whole active area through the window.
+MEASURE YOUR MODULE, then print its coupon (the face alone, printed flat)
+before the pod: the module should drop in and show its whole active area.
 """
 from __future__ import annotations
 
@@ -25,6 +22,7 @@ import math
 import os
 import sys
 
+from shapely import affinity
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
@@ -32,26 +30,43 @@ import partlib as pl
 
 OVL = 0.2
 
-# ---- the module (one sourced listing: 44 x 32 x 4, AA 27.72 sq) -- MEASURE --
-PCB_L = 44.0        # along the slant (the header strip is on this axis)
-PCB_W = 32.0        # across X
-MODULE_T = 4.0      # PCB + glass + backlight, front face to back of PCB
-AA = 27.72          # active area, square
-AA_SHIFT = 3.0      # AA centre offset from PCB centre, away from the header end
-CLR = 0.3           # clearance per side around the PCB
+# All lengths mm. "u" runs up the slant, "x" across the pad.
+MODULES = {
+    "st7789_154": dict(
+        label='1.54" ST7789 SPI, 240x240', suffix="",
+        pcb_x=32.0, pcb_u=44.0,          # one sourced listing: 44 x 32 x 4
+        front_t=2.4, pcb_t=1.6,          # glass + backlight above the PCB, the PCB
+        aa_x=27.72, aa_u=27.72,
+        aa_dx=0.0, aa_du=3.0,            # AA centre vs PCB centre (du: away from the header)
+        win_margin=0.6, button_x=0.0, pin_depth=10.0, tilt=55.0),
+    "tft24_uno": dict(
+        label='2.4" ILI9341 UNO shield, 320x240, resistive touch', suffix="-24",
+        pcb_x=72.2, pcb_u=52.7,          # listed PCB 72.20 x 52.7
+        front_t=5.0, pcb_t=1.6,          # panel + touch film + tape, estimated
+        aa_x=48.96, aa_u=36.72,          # listed active area
+        aa_dx=3.6, aa_du=0.0,            # panel sits right of centre, away from the reset button
+        win_margin=1.8,                  # generous: the offset is read off a product photo
+        button_x=-2.0,                   # the reset button pokes past the PCB's -X edge
+        pin_depth=25.0,                  # shield headers (~8.5) + dupont housings behind the PCB
+        tilt=50.0),                      # laid back further than the 1.54": this one gets touched
+}
 
 # ---- the pod ---------------------------------------------------------------
-TILT = 55.0         # face inclination from horizontal (90 = upright)
 POD_W = pl.CASE_W   # 90 — the pad's own width, so the two read as one body
 WALL = 2.0          # shell + side walls
 SKIN = 2.0          # bezel thickness in front of the glass
+BEVEL = 1.2         # 45-degree bevel on the window's outer edge, leaving a 0.8 land
+BEVEL_STEPS = 3     # across X the bevel is drawn in 0.4-wide steps
 BEZEL = 2.0         # solid face margin beyond the stops, along the slant
 STOP = 2.0          # end stops that locate the PCB along the slant
 RAIL = 2.0          # side rails that locate the PCB across X
-WIN_MARGIN = 0.6    # window over the AA, per side (hides no pixels at AA_SHIFT +-0.6)
+CLR = 0.3           # clearance per side around the PCB
 FRONT_Y = pl.CASE_W / 2 + 0.2          # 45.2 — 0.2 off the tray's back wall
 FACE_Z0 = 46.0      # bottom edge of the face (plate top 41.5, cap tops 54.5)
 TOP_FLAT = 4.0      # flat top behind the face's upper edge
+FOOT = 10.0         # square recesses for stick-on rubber feet, so a press never slides it
+FOOT_DEPTH = 0.6
+FOOT_X = (28.0,)    # mirrored to +-28
 
 # ---- the lip on the plate's back strip ----------------------------------------
 LIP_Y0 = 39.0                          # 1.3 behind the cap backs (37.7)
@@ -60,63 +75,20 @@ LIP_T = 1.6
 LIP_HALF = 35.0     # the M3 button heads start at |X| 36.2
 CORNER_STEP = 0.5   # plan-corner bands: R8 drawn as 0.5-wide steps
 
-T = math.radians(TILT)
-TU = (math.cos(T), math.sin(T))        # up the face (toward +Y, +Z)
-TN = (math.sin(T), -math.cos(T))       # into the pod, normal to the face
-FACE_L = BEZEL + STOP + CLR + PCB_L + CLR + STOP + BEZEL
-U_PCB0 = BEZEL + STOP                  # PCB envelope along the slant
-U_PCB1 = U_PCB0 + 2 * CLR + PCB_L
-WIN = AA + 2 * WIN_MARGIN
-U_WIN_C = U_PCB0 + CLR + PCB_L / 2 + AA_SHIFT
 
-FACE0 = (FRONT_Y, FACE_Z0)
-FACE1 = (FRONT_Y + FACE_L * TU[0], FACE_Z0 + FACE_L * TU[1])
-BACK_Y = FACE1[0] + TOP_FLAT
-TOP_Z = FACE1[1]
-
-
-def face_quad(u0, u1, n0, n1):
-    """A rectangle in face coordinates (u along the slant, n into the pod)."""
-    def p(u, n):
-        return (FACE0[0] + u * TU[0] + n * TN[0], FACE0[1] + u * TU[1] + n * TN[1])
-    return Polygon([p(u0, n0), p(u1, n0), p(u1, n1), p(u0, n1)])
-
-
-def outer_profile():
-    return Polygon([
-        (FRONT_Y, 0.0), (BACK_Y, 0.0), (BACK_Y, TOP_Z), FACE1, FACE0,
-        (FRONT_Y, LIP_Z0 + LIP_T), (LIP_Y0, LIP_Z0 + LIP_T),
-        (LIP_Y0, LIP_Z0), (FRONT_Y, LIP_Z0),
-    ])
-
-
-def profiles():
-    outer = outer_profile()
-    # hollow, open at the back: the module goes in and the wires come out there
-    inner = outer.buffer(-WALL, join_style=2).union(
-        box(BACK_Y - WALL - OVL, WALL, BACK_Y + 5.0, TOP_Z - WALL))
-    shell = outer.difference(inner)
-    n_back = SKIN + MODULE_T + CLR
-    cradle = face_quad(BEZEL, FACE_L - BEZEL, SKIN - OVL, n_back)
-    envelope = face_quad(U_PCB0, U_PCB1, SKIN, n_back + 1.0)
-    window = face_quad(U_WIN_C - WIN / 2, U_WIN_C + WIN / 2, -1.0, SKIN + OVL)
-    stops = cradle.difference(envelope)
-    return {
-        "side": outer,
-        "shell": shell,
-        "rail": shell.union(cradle.intersection(outer)),
-        "pcb": shell.difference(envelope).union(stops.intersection(outer)),
-        "win": shell.difference(envelope).difference(window).union(
-            stops.intersection(outer)),
-    }
+def _case_back_y(ax):
+    """The tray/plate outline's back edge at |X| = ax (R8 corners at +-37)."""
+    c = pl.CASE_W / 2 - pl.CASE_R
+    if ax <= c:
+        return pl.CASE_W / 2
+    return c + math.sqrt(max(pl.CASE_R ** 2 - (ax - c) ** 2, 0.0))
 
 
 def _as_polys(geom, min_area=0.05):
-    if geom.is_empty:
+    if geom is None or geom.is_empty:
         return []
-    parts = getattr(geom, "geoms", [geom])
     out = []
-    for g in parts:
+    for g in getattr(geom, "geoms", [geom]):
         if g.geom_type == "Polygon" and g.area > min_area:
             out.append(g)
         elif g.geom_type in ("MultiPolygon", "GeometryCollection"):
@@ -134,78 +106,142 @@ def _band(profile, x0, x1):
     return m
 
 
-def _case_back_y(ax):
-    """The tray/plate outline's back edge at |X| = ax (R8 corners at +-37)."""
-    c = pl.CASE_W / 2 - pl.CASE_R
-    if ax <= c:
-        return pl.CASE_W / 2
-    return c + math.sqrt(max(pl.CASE_R ** 2 - (ax - c) ** 2, 0.0))
+class Pod:
+    def __init__(self, key):
+        m = self.m = MODULES[key]
+        self.key = key
+        t = math.radians(m["tilt"])
+        self.TU = (math.cos(t), math.sin(t))        # up the face
+        self.TN = (math.sin(t), -math.cos(t))       # into the pod
+        self.env_t = m["front_t"] + m["pcb_t"]
+        self.FACE_L = BEZEL + STOP + CLR + m["pcb_u"] + CLR + STOP + BEZEL
+        self.U_PCB0 = BEZEL + STOP
+        self.U_PCB1 = self.U_PCB0 + 2 * CLR + m["pcb_u"]
+        self.WIN_U = m["aa_u"] + 2 * m["win_margin"]
+        self.WIN_X = m["aa_x"] + 2 * m["win_margin"]
+        self.U_WIN_C = self.U_PCB0 + CLR + m["pcb_u"] / 2 + m["aa_du"]
+        cx = -m["aa_dx"]                              # the AA lands on x = 0
+        self.X_LO = cx - m["pcb_x"] / 2 - CLR + min(m["button_x"], 0.0)
+        self.X_HI = cx + m["pcb_x"] / 2 + CLR + max(m["button_x"], 0.0)
+        self.FACE0 = (FRONT_Y, FACE_Z0)
+        self.FACE1 = self.p(self.FACE_L, 0.0)
+        self.BACK_Y = self.FACE1[0] + TOP_FLAT
+        self.TOP_Z = self.FACE1[1]
+        self.prof = self._profiles()
 
+    # -- face coordinates -> (Y, Z)
+    def p(self, u, n):
+        return FRONT_Y + u * self.TU[0] + n * self.TN[0], FACE_Z0 + u * self.TU[1] + n * self.TN[1]
 
-def _band_profile(prof, key, ax0, ax1):
-    """Profile for the band |X| in [ax0, ax1]."""
-    base = prof["side" if key == "side" else key if key in prof else "shell"]
-    lip = box(LIP_Y0 - 1.0, LIP_Z0 - OVL, FRONT_Y + OVL, LIP_Z0 + LIP_T + OVL)
-    if ax0 >= LIP_HALF - 1e-9:
-        base = base.difference(lip)
-    c = pl.CASE_W / 2 - pl.CASE_R
-    if ax1 > c + 1e-9:
-        # back corner: the pod's own R8, judged at the band's OUTER edge so no
-        # step pokes past the rounded outline
-        axo = min(ax1 + OVL / 2, POD_W / 2)          # the band is stretched by OVL/2
-        yb = BACK_Y - pl.CASE_R + math.sqrt(max(pl.CASE_R ** 2 - (axo - c) ** 2, 0.0))
-        base = base.intersection(box(-1.0, -1.0, yb, TOP_Z + 1.0))
-        # front corner: wrap the tray's R8 up to the plate top, judged at the
-        # band's INNER edge so the pod never touches the case
-        yf = _case_back_y(max(ax0 - OVL / 2, 0.0)) + 0.2
-        if yf < FRONT_Y - 0.05:
-            base = base.union(box(yf, 0.0, FRONT_Y + OVL, LIP_Z0))
-    return base
+    def poly(self, pts):
+        return Polygon([self.p(u, n) for u, n in pts])
 
+    def quad(self, u0, u1, n0, n1):
+        return self.poly([(u0, n0), (u1, n0), (u1, n1), (u0, n1)])
 
-def bands():
-    """(|X| inner, |X| outer, key) — mirrored into both halves by build()."""
-    h, c = POD_W / 2, pl.CASE_W / 2 - pl.CASE_R
-    edges = [(0.0, WIN / 2, "win"),
-             (WIN / 2, PCB_W / 2 + CLR, "pcb"),
-             (PCB_W / 2 + CLR, PCB_W / 2 + CLR + RAIL, "rail"),
-             (PCB_W / 2 + CLR + RAIL, LIP_HALF, "shell"),
-             (LIP_HALF, c, "shell")]
-    x = c
-    while x < h - 1e-9:
-        nx = min(x + CORNER_STEP, h)
-        edges.append((x, nx, "side" if nx > h - WALL + 1e-9 else "shell"))
-        x = nx
-    return edges
+    def outer(self):
+        return Polygon([
+            (FRONT_Y, 0.0), (self.BACK_Y, 0.0), (self.BACK_Y, self.TOP_Z), self.FACE1, self.FACE0,
+            (FRONT_Y, LIP_Z0 + LIP_T), (LIP_Y0, LIP_Z0 + LIP_T), (LIP_Y0, LIP_Z0), (FRONT_Y, LIP_Z0),
+        ])
 
+    def _profiles(self):
+        outer = self.outer()
+        inner = outer.buffer(-WALL, join_style=2).union(      # open back: module in, wires out
+            box(self.BACK_Y - WALL - OVL, WALL, self.BACK_Y + 5.0, self.TOP_Z - WALL))
+        shell = outer.difference(inner)
+        n_back = SKIN + self.env_t + CLR
+        cradle = self.quad(BEZEL, self.FACE_L - BEZEL, SKIN - OVL, n_back).intersection(outer)
+        envelope = self.quad(self.U_PCB0, self.U_PCB1, SKIN, n_back + 1.0)
+        return {"side": outer, "shell": shell, "rail": shell.union(cradle),
+                "pcb": shell.difference(envelope).union(cradle.difference(envelope))}
 
-def build():
-    prof = profiles()
-    m = pl.Mesh()
-    for ax0, ax1, key in bands():
-        p = _band_profile(prof, key, ax0, ax1)
-        for x0, x1 in ((ax0, ax1), (-ax1, -ax0)):
-            h = POD_W / 2                               # never past the pad's sides
-            band = _band(p, max(x0 - OVL / 2, -h), min(x1 + OVL / 2, h))
+    def window_cut(self, d):
+        """The window, bevelled 45 deg on its outer BEVEL mm; d = mm beyond its X edge."""
+        u0, u1 = self.U_WIN_C - self.WIN_U / 2, self.U_WIN_C + self.WIN_U / 2
+        e = BEVEL + 1.0
+        if d <= 0:
+            return self.poly([(u0 - e, -1.0), (u1 + e, -1.0), (u1, BEVEL), (u1, SKIN + OVL),
+                              (u0, SKIN + OVL), (u0, BEVEL)])
+        if d >= BEVEL:
+            return None
+        return self.poly([(u0 - e, -1.0), (u1 + e, -1.0), (u1 + d, BEVEL - d), (u0 - d, BEVEL - d)])
+
+    def lip_box(self):
+        return box(LIP_Y0 - 1.0, LIP_Z0 - OVL, FRONT_Y + OVL, LIP_Z0 + LIP_T + OVL)
+
+    def edges(self):
+        h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
+        E = {-h, h, 0.0, -(h - WALL), h - WALL, self.X_LO, self.X_HI,
+             self.X_LO - RAIL, self.X_HI + RAIL, -LIP_HALF, LIP_HALF}
+        for s in (-1, 1):
+            for k in range(BEVEL_STEPS + 1):
+                E.add(s * (self.WIN_X / 2 + k * BEVEL / BEVEL_STEPS))
+            x = c
+            while x < h - 1e-9:
+                E.add(s * x)
+                x += CORNER_STEP
+            for fx in FOOT_X:
+                E.add(s * (fx - FOOT / 2)); E.add(s * (fx + FOOT / 2))
+        E = sorted(e for e in E if -h - 1e-9 <= e <= h + 1e-9)
+        out = [E[0]]
+        for e in E[1:]:
+            if e - out[-1] > 0.05:
+                out.append(e)
+        return out
+
+    def band_profile(self, a, b):
+        h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
+        mid, prof = (a + b) / 2, self.prof
+        am, inner, outer_ax = abs(mid), min(abs(a), abs(b)), max(abs(a), abs(b))
+        if am > h - WALL:
+            p = prof["side"]
+        elif self.X_LO < mid < self.X_HI:
+            p = prof["pcb"]
+            cut = self.window_cut(am - self.WIN_X / 2)
+            if cut is not None:
+                p = p.difference(cut)
+        elif self.X_LO - RAIL <= mid <= self.X_HI + RAIL:
+            p = prof["rail"]
+        else:
+            p = prof["shell"]
+        if inner >= LIP_HALF - 1e-9:                  # lip only between the screw heads
+            p = p.difference(self.lip_box())
+        for fx in FOOT_X:                            # rubber-foot recesses under the base
+            if fx - FOOT / 2 < am < fx + FOOT / 2:
+                for yc in (FRONT_Y + 9.0, self.BACK_Y - 9.0):
+                    p = p.difference(box(yc - FOOT / 2, -1.0, yc + FOOT / 2, FOOT_DEPTH))
+        if outer_ax > c + 1e-9:
+            axo = min(outer_ax + OVL / 2, h)             # the band is stretched by OVL/2
+            yb = self.BACK_Y - pl.CASE_R + math.sqrt(max(pl.CASE_R ** 2 - (axo - c) ** 2, 0.0))
+            p = p.intersection(box(-1.0, -1.0, yb, self.TOP_Z + 1.0))
+            yf = _case_back_y(max(inner - OVL / 2, 0.0)) + 0.2
+            if yf < FRONT_Y - 0.05:                     # wrap the tray's R8 up to the plate top
+                p = p.union(box(yf, 0.0, FRONT_Y + OVL, LIP_Z0))
+        return p
+
+    def build(self):
+        h, mesh = POD_W / 2, pl.Mesh()
+        E = self.edges()
+        for a, b in zip(E, E[1:]):
+            band = _band(self.band_profile(a, b), max(a - OVL / 2, -h), min(b + OVL / 2, h))
             if band is not None:
-                m += band
-    return [("display-pod", m, pl.COLORS["plate"])]
+                mesh += band
+        return [("display-pod" + self.m["suffix"], mesh, pl.COLORS["plate"])]
 
-
-def build_coupon():
-    """The pod's face alone, printed flat: does the module drop in and does the
-    window show its whole active area?"""
-    ow = PCB_W + 2 * CLR + 2 * RAIL
-    ol = FACE_L
-    outline = pl.rounded_rect(ow, ol, 2.0)
-    y_env0, y_env1 = -ol / 2 + U_PCB0, -ol / 2 + U_PCB1
-    env = box(-(PCB_W / 2 + CLR), y_env0, PCB_W / 2 + CLR, y_env1)
-    wy = -ol / 2 + U_WIN_C
-    win = box(-WIN / 2, wy - WIN / 2, WIN / 2, wy + WIN / 2)
-    m = pl.Mesh()
-    m += pl.prism(outline.difference(win), 0.0, SKIN)
-    m += pl.prism(outline.difference(env), SKIN - OVL, SKIN + MODULE_T + CLR)
-    return [("display-coupon", m, pl.COLORS["plate"])]
+    def build_coupon(self):
+        """The pod's face alone, printed flat: does the module drop in and does the
+        window show its whole active area?"""
+        x0, x1 = self.X_LO - RAIL, self.X_HI + RAIL
+        outline = affinity.translate(pl.rounded_rect(x1 - x0, self.FACE_L, 2.0),
+                                     (x0 + x1) / 2, self.FACE_L / 2)
+        win = box(-self.WIN_X / 2, self.U_WIN_C - self.WIN_U / 2,
+                  self.WIN_X / 2, self.U_WIN_C + self.WIN_U / 2)
+        env = box(self.X_LO, self.U_PCB0, self.X_HI, self.U_PCB1)
+        m = pl.Mesh()
+        m += pl.prism(outline.difference(win), 0.0, SKIN)
+        m += pl.prism(outline.difference(env), SKIN - OVL, SKIN + self.env_t + CLR)
+        return [("display-coupon" + self.m["suffix"], m, pl.COLORS["plate"])]
 
 
 def print_orientation(mesh):
@@ -221,15 +257,19 @@ if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     exports = os.path.normpath(os.path.join(here, "..", "exports"))
     ok = True
-    for name, mesh, color in build() + build_coupon():
-        rep = pl.validate(mesh)
-        print(f"{name}: shells={rep['shells']} tris={rep['triangles']} "
-              f"watertight={rep['watertight']} {rep['problems'][:2]}")
-        ok &= rep["watertight"]
-    pod = build()[0][1]
-    pl.stl_write(os.path.join(exports, "display-pod.stl"), print_orientation(pod))
-    pl.stl_write(os.path.join(exports, "display-coupon.stl"), build_coupon()[0][1])
-    pl.glb_write(os.path.join(exports, "preview-display-pod.glb"), build())
-    print(f"face {FACE_L:.1f} long at {TILT:.0f} deg; pod {POD_W:.0f} W x "
-          f"{BACK_Y - LIP_Y0:.1f} D x {TOP_Z:.1f} H (Z0 = desk)")
+    for key in MODULES:
+        pod = Pod(key)
+        items, coupon = pod.build(), pod.build_coupon()
+        for name, mesh, _ in items + coupon:
+            rep = pl.validate(mesh)
+            print(f"{name}: shells={rep['shells']} tris={rep['triangles']} "
+                  f"watertight={rep['watertight']} {rep['problems'][:2]}")
+            ok &= rep["watertight"]
+        sfx = pod.m["suffix"]
+        pl.stl_write(os.path.join(exports, f"display-pod{sfx}.stl"), print_orientation(items[0][1]))
+        pl.stl_write(os.path.join(exports, f"display-coupon{sfx}.stl"), coupon[0][1])
+        pl.glb_write(os.path.join(exports, f"preview-display-pod{sfx}.glb"), items)
+        print(f"  {pod.m['label']}: face {pod.FACE_L:.1f} at {pod.m['tilt']:.0f} deg, "
+              f"window {pod.WIN_X:.1f} x {pod.WIN_U:.1f}; pod 90 W x "
+              f"{pod.BACK_Y - LIP_Y0:.1f} D x {pod.TOP_Z:.1f} H")
     sys.exit(0 if ok else 1)
