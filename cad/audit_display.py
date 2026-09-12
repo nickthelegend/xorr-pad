@@ -4,6 +4,8 @@ from __future__ import annotations
 import math
 import sys
 
+from shapely.ops import unary_union
+
 import partlib as pl
 import part_display as d
 
@@ -58,6 +60,29 @@ for key in d.MODULES:
                for ua, ub in ((pod.U_PCB0, pod.U_PCB0 + 4.0), (pod.U_PCB1 - 4.0, pod.U_PCB1)))
     chk("headers + connectors clear the walls behind the PCB", wall < 0.5,
         f"{wall:.2f} mm2 of wall in a {m['pin_depth']:.0f} mm path")
+    yi = pod.Y_COVER_IN
+    pin_y = max(pod.p(u, nb + m["pin_depth"])[0] for u in (pod.U_PCB0, pod.U_PCB1))
+    chk("headers + connectors end in front of the back cover", pin_y + d.PIN_CLEAR <= yi + 1e-9,
+        f"they reach Y {pin_y:.1f}; the cover starts at {yi:.1f}")
+    pins = unary_union([pod.quad(ua, ub, nb, nb + m["pin_depth"])
+                        for ua, ub in ((pod.U_PCB0, pod.U_PCB0 + 4.0), (pod.U_PCB1 - 4.0, pod.U_PCB1))])
+    hit = pins.intersection(pod.boss_region(False)).area
+    chk("screw bosses clear the headers' path", hit < 0.01, f"{hit:.2f} mm2")
+    chk("cable exit right of the screen, clear of the PCB rail",
+        d.CABLE_X[0] >= pod.X_HI + d.RAIL + 0.5 and d.CABLE_X[1] <= h - d.WALL - 1.0,
+        f"x {d.CABLE_X[0]}..{d.CABLE_X[1]}; rail ends at {pod.X_HI + d.RAIL:.1f}")
+    chk("cable exit inside the face", d.BEZEL <= d.CABLE_U[0] and d.CABLE_U[1] <= pod.FACE_L - d.BEZEL,
+        f"u {d.CABLE_U[0]}..{d.CABLE_U[1]} of {pod.FACE_L:.1f}")
+    cover = pod.build_cover()[0][1]
+    chk("back cover is watertight", pl.validate(cover)["watertight"])
+    cx = [v[0] for v in cover.V]; cy = [v[1] for v in cover.V]; cz = [v[2] for v in cover.V]
+    chk("cover clears the back opening on every side",
+        max(abs(min(cx)), max(cx)) <= h - d.WALL - 0.2 and min(cz) >= d.WALL + 0.2
+        and max(cz) <= pod.TOP_Z - d.WALL - 0.2, f"{max(cx) - min(cx):.1f} x {max(cz) - min(cz):.1f} mm")
+    ax = max(abs(min(cx)), max(cx))
+    c = h - pl.CASE_R
+    yb = pod.BACK_Y - pl.CASE_R + math.sqrt(max(pl.CASE_R ** 2 - (ax + d.OVL - c) ** 2, 0.0))
+    chk("cover sits inside the rounded back corners", max(cy) <= yb, f"outer face Y {max(cy):.2f} <= {yb:.2f}")
     chk("coupon is watertight", pl.validate(pod.build_coupon()[0][1])["watertight"])
     dims = [max(c) - min(c) for c in zip(*d.print_orientation(mesh).V)]
     chk("fits a 180 mm bed lying on its side", max(dims) <= 180, " x ".join(f"{v:.1f}" for v in dims) + " mm")

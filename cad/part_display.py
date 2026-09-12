@@ -13,6 +13,11 @@ makes it print support-free lying on a side wall.
 The window is always centred on the pad. Where a module's active area sits off
 its PCB centre, the PCB pocket moves instead, so the screen reads centred.
 
+The back closes with a recessed cover on four M2.5 self-tappers (the speaker's
+hardware). Each pod is deep enough that its module's headers and their
+connectors stay inside, and the wires leave through a cable exit on the face,
+right of the screen, low on the slant so they drop toward the pad's side window.
+
 MEASURE YOUR MODULE, then print its coupon (the face alone, printed flat)
 before the pod: the module should drop in and show its whole active area.
 """
@@ -67,6 +72,16 @@ TOP_FLAT = 4.0      # flat top behind the face's upper edge
 FOOT = 10.0         # square recesses for stick-on rubber feet, so a press never slides it
 FOOT_DEPTH = 0.6
 FOOT_X = (28.0,)    # mirrored to +-28
+COVER_T = 2.0       # back cover: a flat plate recessed into the back opening
+COVER_RECESS = 3.0  # its outer face sits this far in — clears the R8 back corners
+COVER_CLR = 0.25    # per side, around the cover
+BOSS_X = 35.5       # four M2.5 x 6 self-tapper bosses at +-X, top and bottom
+BOSS_W, BOSS_H, BOSS_D = 7.0, 7.0, 8.0    # across X, up Z, deep in Y
+PILOT = 2.2         # square pilot: an M2.5 self-tapper bites on the flats
+COVER_HOLE_D = 2.9
+PIN_CLEAR = 1.0     # between the headers' connectors and the cover
+CABLE_X = (36.0, 41.5)   # cable exit on the face, right of the screen (+X)
+CABLE_U = (8.0, 22.0)    # low on the slant, so the wires drop toward the pad's side window
 
 # ---- the lip on the plate's back strip ----------------------------------------
 LIP_Y0 = 39.0                          # 1.3 behind the cap backs (37.7)
@@ -125,8 +140,20 @@ class Pod:
         self.X_HI = cx + m["pcb_x"] / 2 + CLR + max(m["button_x"], 0.0)
         self.FACE0 = (FRONT_Y, FACE_Z0)
         self.FACE1 = self.p(self.FACE_L, 0.0)
-        self.BACK_Y = self.FACE1[0] + TOP_FLAT
+        # Deep enough that the headers and their connectors end in front of the cover.
+        nb = SKIN + self.env_t + CLR
+        pin_y = max(self.p(u, nb + m["pin_depth"])[0] for u in (self.U_PCB0, self.U_PCB1))
+        self.BACK_Y = max(self.FACE1[0] + TOP_FLAT, pin_y + PIN_CLEAR + COVER_T + COVER_RECESS)
+        self.Y_COVER_IN = self.BACK_Y - COVER_RECESS - COVER_T
         self.TOP_Z = self.FACE1[1]
+        # ...and clear of the cover's screw bosses. On a shallow pod the top boss
+        # hangs into the top header's connector path, so push the back out until
+        # it doesn't.
+        pins = unary_union([self.quad(ua, ub, nb, nb + m["pin_depth"])
+                            for ua, ub in ((self.U_PCB0, self.U_PCB0 + 4.0), (self.U_PCB1 - 4.0, self.U_PCB1))])
+        while pins.intersection(self.boss_region(False)).area > 0.0:
+            self.BACK_Y += 0.5
+            self.Y_COVER_IN = self.BACK_Y - COVER_RECESS - COVER_T
         self.prof = self._profiles()
 
     # -- face coordinates -> (Y, Z)
@@ -147,7 +174,7 @@ class Pod:
 
     def _profiles(self):
         outer = self.outer()
-        inner = outer.buffer(-WALL, join_style=2).union(      # open back: module in, wires out
+        inner = outer.buffer(-WALL, join_style=2).union(      # the back opening: module in, then the cover
             box(self.BACK_Y - WALL - OVL, WALL, self.BACK_Y + 5.0, self.TOP_Z - WALL))
         shell = outer.difference(inner)
         n_back = SKIN + self.env_t + CLR
@@ -170,6 +197,25 @@ class Pod:
     def lip_box(self):
         return box(LIP_Y0 - 1.0, LIP_Z0 - OVL, FRONT_Y + OVL, LIP_Z0 + LIP_T + OVL)
 
+    def boss_region(self, with_pilot):
+        """The cover's screw bosses: one on the floor, one hung from the top."""
+        yi, out = self.Y_COVER_IN, []
+        for z0, z1 in ((WALL - OVL, WALL + BOSS_H),
+                       (self.TOP_Z - WALL - BOSS_H, self.TOP_Z - WALL + OVL)):
+            b = box(yi - BOSS_D, z0, yi, z1)
+            if with_pilot:
+                zc = (max(z0, WALL) + min(z1, self.TOP_Z - WALL)) / 2
+                b = b.difference(box(yi - BOSS_D - 1.0, zc - PILOT / 2, yi + 1.0, zc + PILOT / 2))
+            out.append(b)
+        return unary_union(out)
+
+    def cable_cut(self):
+        """The cable exit through the face, bevelled like the window."""
+        u0, u1 = CABLE_U
+        e = BEVEL + 1.0
+        return self.poly([(u0 - e, -1.0), (u1 + e, -1.0), (u1, BEVEL), (u1, SKIN + OVL),
+                          (u0, SKIN + OVL), (u0, BEVEL)])
+
     def edges(self):
         h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
         E = {-h, h, 0.0, -(h - WALL), h - WALL, self.X_LO, self.X_HI,
@@ -183,6 +229,9 @@ class Pod:
                 x += CORNER_STEP
             for fx in FOOT_X:
                 E.add(s * (fx - FOOT / 2)); E.add(s * (fx + FOOT / 2))
+            for bx in (BOSS_X - BOSS_W / 2, BOSS_X + BOSS_W / 2, BOSS_X - PILOT / 2, BOSS_X + PILOT / 2):
+                E.add(s * bx)
+        E.add(CABLE_X[0]); E.add(CABLE_X[1])
         E = sorted(e for e in E if -h - 1e-9 <= e <= h + 1e-9)
         out = [E[0]]
         for e in E[1:]:
@@ -205,6 +254,10 @@ class Pod:
             p = prof["rail"]
         else:
             p = prof["shell"]
+        if mid > 0 and CABLE_X[0] < am < CABLE_X[1]:  # cable exit, right of the screen
+            p = p.difference(self.cable_cut())
+        if BOSS_X - BOSS_W / 2 < am < BOSS_X + BOSS_W / 2:
+            p = p.union(self.boss_region(abs(am - BOSS_X) < PILOT / 2))
         if inner >= LIP_HALF - 1e-9:                  # lip only between the screw heads
             p = p.difference(self.lip_box())
         for fx in FOOT_X:                            # rubber-foot recesses under the base
@@ -228,6 +281,23 @@ class Pod:
             if band is not None:
                 mesh += band
         return [("display-pod" + self.m["suffix"], mesh, pl.COLORS["plate"])]
+
+    def build_cover(self, world=True):
+        """The back cover: a flat plate recessed into the back opening, on four
+        M2.5 self-tappers. Drawn in (Z, X) and extruded along Y, so the same
+        cyclic remap as the pod puts it in place."""
+        hx = POD_W / 2 - WALL - COVER_CLR
+        z0, z1 = WALL + COVER_CLR, self.TOP_Z - WALL - COVER_CLR
+        plate = affinity.translate(pl.rounded_rect(z1 - z0, 2 * hx, 1.0), (z0 + z1) / 2, 0.0)
+        holes = unary_union([affinity.translate(pl.circle(COVER_HOLE_D), zc, sx * BOSS_X)
+                             for zc in (WALL + BOSS_H / 2, self.TOP_Z - WALL - BOSS_H / 2)
+                             for sx in (-1, 1)])
+        m = pl.prism(plate.difference(holes), self.Y_COVER_IN, self.Y_COVER_IN + COVER_T)
+        if world:
+            m.V = [(y, z, x) for x, y, z in m.V]   # (Z, X, Y) -> (X, Y, Z): cyclic, det +1
+        else:
+            m.translate(0.0, 0.0, -self.Y_COVER_IN)
+        return [("display-cover" + self.m["suffix"], m, pl.COLORS["plate"])]
 
     def build_coupon(self):
         """The pod's face alone, printed flat: does the module drop in and does the
@@ -259,8 +329,8 @@ if __name__ == "__main__":
     ok = True
     for key in MODULES:
         pod = Pod(key)
-        items, coupon = pod.build(), pod.build_coupon()
-        for name, mesh, _ in items + coupon:
+        items, coupon, cover = pod.build(), pod.build_coupon(), pod.build_cover()
+        for name, mesh, _ in items + coupon + cover:
             rep = pl.validate(mesh)
             print(f"{name}: shells={rep['shells']} tris={rep['triangles']} "
                   f"watertight={rep['watertight']} {rep['problems'][:2]}")
@@ -268,7 +338,8 @@ if __name__ == "__main__":
         sfx = pod.m["suffix"]
         pl.stl_write(os.path.join(exports, f"display-pod{sfx}.stl"), print_orientation(items[0][1]))
         pl.stl_write(os.path.join(exports, f"display-coupon{sfx}.stl"), coupon[0][1])
-        pl.glb_write(os.path.join(exports, f"preview-display-pod{sfx}.glb"), items)
+        pl.stl_write(os.path.join(exports, f"display-cover{sfx}.stl"), pod.build_cover(world=False)[0][1])
+        pl.glb_write(os.path.join(exports, f"preview-display-pod{sfx}.glb"), items + cover)
         print(f"  {pod.m['label']}: face {pod.FACE_L:.1f} at {pod.m['tilt']:.0f} deg, "
               f"window {pod.WIN_X:.1f} x {pod.WIN_U:.1f}; pod 90 W x "
               f"{pod.BACK_Y - LIP_Y0:.1f} D x {pod.TOP_Z:.1f} H")

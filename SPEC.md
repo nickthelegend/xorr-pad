@@ -309,20 +309,28 @@ Shared by every pod:
   its PCB centre, the PCB pocket moves instead. The window's outer 1.2 is
   bevelled 45°, leaving a 0.8 land.
 - 2.0 walls and bezel; 2.0 side rails and end stops locate the PCB, taped in
-  through the open back — which is also where headers and wires leave.
+  through the back.
+- **Back cover**: a 2.0 plate recessed 3.0 into the back (clear of the R8 back
+  corners) on **4 × M2.5 × 6 self-tappers** — the speaker's hardware — into
+  square-pilot bosses top and bottom at X ±35.5. Each pod is made deep enough
+  that its headers and their connectors end 1.0 in front of the cover and clear
+  of the bosses.
+- **Cable exit**: a 5.5 × 14 bevelled slot through the face right of the screen,
+  X 36.0..41.5, low on the slant so the wires drop toward the pad's side USB
+  window.
 - Four **10 × 10 × 0.6 recesses** under the base for stick-on rubber feet.
-- Prints lying on a side wall, no supports.
+- Prints lying on a side wall, no supports; the cover prints flat.
 
 | | 1.54" ST7789 (SPI) | 2.4" ILI9341 UNO shield |
 |---|---|---|
-| Exports | `display-pod.stl`, `display-coupon.stl` | `display-pod-24.stl`, `display-coupon-24.stl` |
+| Exports | `display-pod.stl`, `display-cover.stl`, `display-coupon.stl` | `display-pod-24.stl`, `display-cover-24.stl`, `display-coupon-24.stl` |
 | PCB (listed) | 44 × 32 | 72.20 × 52.7 |
 | Active area | 27.72 × 27.72 | 48.96 × 36.72 |
 | Glass front to PCB back | 4.0 | 6.6 (panel + touch **estimated**) |
 | AA offset from PCB centre | 3.0 along the slant | 3.6 across, away from the reset button (**from a photo**) |
 | Window | 28.9 × 28.9 | 52.6 × 40.3 |
 | Face | 52.6 at 55° | 61.3 at 50° — it gets touched |
-| Pod W × D × H | 90 × 40.4 × 89.1 | 90 × 49.6 × 93.0 |
+| Pod W × D × H | 90 × 55.4 × 89.1 | 90 × 75.0 × 93.0 |
 | Room behind the PCB | 10 | 25 (headers + dupont housings) |
 
 **Measure your module and print its coupon before the pod.**
