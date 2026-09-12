@@ -131,12 +131,14 @@ def check(path):
     wanted = sorted({int(o.get("extruder", "1")) for o in objs.values()})
     chk("loads the filament the parts print from", len(wanted) == 1 and bool(load) and int(load[0]) == wanted[0] - 1,
         f"parts on filament {wanted}, G-code loads M620 S{load[0] if load else '?'}A")
-    for name, o in objs.items():
-        chk(f"{name}: supports on", o.get("enable_support") == "1",
-            f"filament {o.get('extruder')}, {o.get('support_type', '?')}, "
-            f"build plate only {o.get('support_on_build_plate_only', '0')}")
+    wants = sorted(name for name, o in objs.items() if o.get("enable_support") == "1")
     support = g.count("; FEATURE: Support")
-    chk("supports generated", kv.get("support_used") == "true" and support > 0, f"{support} support blocks")
+    if wants:
+        chk("supports generated for the parts that ask", kv.get("support_used") == "true" and support > 0,
+            f"{support} support blocks; supports on {', '.join(wants)}")
+    else:
+        chk("no supports: none asked for, none generated", support == 0 and kv.get("support_used") != "true",
+            f"{support} support blocks across {len(objs)} objects")
     bed = re.search(r"^M190 S(\d+)", g, re.M)
     grams = sum(float(u[2] or 0) for u in used)
     t = int(float(kv.get("prediction", 0)))

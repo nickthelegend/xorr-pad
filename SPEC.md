@@ -227,6 +227,18 @@ is taken from these values, not the other way round.
   print top-face-down), or skip the file and paint-fill the recesses. Legend
   colors per key live in `partlib.key_layout()` (white on colored caps, dark
   gray on white caps).
+- **One-filament reprint** (`export_caps_plate.py` →
+  `exports/print/caps-plate.3mf`): every cap but MIC, no legend infills.
+  Symbols use the `outline` style — a bold mark (BUY, SELL, BASE, RISK,
+  PORTFOLIO) is cut as a **0.9 outline** with its middle left standing; a mark
+  under ~2.4 across (DCA, GRID, MOMENTUM, REBALANCE, YIELD, YES, NO, KILL) is
+  cut as a single line, and so is any middle under 3 mm² (the dot an X would
+  keep where its strokes cross). Caps lie **upside down on their top faces**,
+  stems up, where they sit on the pad, 26 apart. No cut is wider than 2.6
+  (every ceiling a short bridge), no groove pinches under 0.8, no wall under
+  0.6 stands between cuts, and the wall leans out 7.4° — so the plate prints
+  **with no supports**. RISK's bar stops 0.9 above its dot and YIELD's rings sit 0.75 off
+  the slash, so those gaps print.
 
 ### Knob — `part_knob.py` (v7.1 MOCK, no potentiometer)
 - Ø17.0, height 15.0. Knurl: 24 flutes (Ø1.6 scallops on the rim).

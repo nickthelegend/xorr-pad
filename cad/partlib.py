@@ -298,19 +298,21 @@ def _g_rebalance():
 
 
 def _g_yield():
-    """Percent — the yield agent."""
+    """Percent — the yield agent. The rings sit 0.75 off the slash, so the wall
+    left standing between them still prints."""
     return unary_union([
         _stroke([(-2.7, -3.7), (2.7, 3.7)], 1.5),
-        _stroke(_arc(-2.2, 2.4, 1.5, 0, 360, 40), 1.3),
-        _stroke(_arc(2.2, -2.4, 1.5, 0, 360, 40), 1.3),
+        _stroke(_arc(-2.55, 2.45, 1.35, 0, 360, 40), 1.3),
+        _stroke(_arc(2.55, -2.45, 1.35, 0, 360, 40), 1.3),
     ])
 
 
 def _g_risk():
-    """Shield with a raised exclamation — the risk agent."""
+    """Shield with a raised exclamation — the risk agent. The bar stops 0.9
+    above the dot, wide enough for the cut between them to stay open."""
     shield = _smooth(Polygon([(0, 4.5), (3.9, 2.3), (3.9, -1.2),
                               (0, -4.5), (-3.9, -1.2), (-3.9, 2.3)]), 0.6)
-    bang = unary_union([box(-0.6, -0.9, 0.6, 2.5),
+    bang = unary_union([box(-0.6, -0.4, 0.6, 2.5),
                         Point(0, -2.1).buffer(0.8, quad_segs=12)])
     return shield.difference(bang)
 
