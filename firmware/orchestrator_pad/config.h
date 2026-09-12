@@ -56,3 +56,15 @@ static const uint8_t COL_PINS[MATRIX_COLS] = {18, 17, 8, 14};  // columns revers
 // ---- The kill key is HELD, not tapped. A brush against a key that stops all
 //      trading is not acceptable, so it needs a deliberate hold. ----
 #define HOLD_TO_KILL_MS 600
+
+// ---- Display pod: 1.54" ST7789 240x240 on SPI (cad/part_display.py) ----
+//      Free pins only — 35-37 are the octal PSRAM, 19/20 USB, 43/44 UART0,
+//      0/3/45/46 strapping. Module VCC -> 3V3, GND -> GND.
+#define TFT_SCK       39            // module pin SCL
+#define TFT_MOSI      40            // module pin SDA
+#define TFT_DC        41
+#define TFT_RST       42            // module pin RES
+#define TFT_CS        1             // -1 if your module has no CS pin
+#define TFT_BLK       2             // -1 if BLK is tied to 3V3
+#define TFT_ROTATION  0             // 2 if the picture is upside down in the pod
+#define CHART_POLL_MS 60000         // the chart is hourly candles; once a minute is plenty

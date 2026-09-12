@@ -28,6 +28,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
 import { stt, tts, think, parseIntent, pcmToWav } from "./voice.mjs";
 import { scan } from "./scan.mjs";
+import { klines } from "./candles.mjs";
 import { MARKETS, SYMBOLS, DELISTED, delistReason } from "./markets.mjs";
 import { STOCKS, STOCKS_UNLISTED, STOCK_SYMBOLS, isStock, stockBlocker, stockPrices } from "./stocks.mjs";
 import { usable } from "./routers/index.mjs";
@@ -311,6 +312,33 @@ export function createServer(mem) {
           res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" });
           return res.end(buf);
         } catch { return send(404, { error: "no such font" }); }
+      }
+
+      // ── the display pod's chart ─────────────────────────────────────────
+      // The pad's 1.54" screen draws the market in hand as a line. Hourly
+      // closes from the same cached candle feed /pad prices from, so this
+      // never touches the chain either, and the newest close is the live
+      // price. A dead feed still answers 200 — with no closes and the reason —
+      // so the screen can say why instead of freezing on a stale line.
+      if (url.pathname === "/pad/chart" && req.method === "GET") {
+        const sym = state.market;
+        const hours = Math.min(Math.max(Number(url.searchParams.get("hours")) || 48, 12), 168);
+        try {
+          const ref = MARKETS[sym]?.binance;
+          if (!ref) throw new Error(`${sym} has no reference feed`);
+          const c = await klines(ref, { limit: hours + 1 });
+          const closes = c.map((k) => Number(k.close.toPrecision(6)));
+          const last = closes[closes.length - 1];
+          const dayAgo = closes.length > 24 ? closes[closes.length - 25] : NaN;
+          return send(200, {
+            symbol: sym, price: last,
+            change24h: dayAgo > 0 ? +(((last - dayAgo) / dayAgo) * 100).toFixed(2) : null,
+            hi: Math.max(...closes), lo: Math.min(...closes), hours, closes,
+          });
+        } catch (e) {
+          return send(200, { symbol: sym, price: null, change24h: null, closes: [],
+                             error: String(e.message || e).slice(0, 80) });
+        }
       }
 
       // ── the physical pad's one poll ──────────────────────────────────────
@@ -894,6 +922,7 @@ async function warmFork() {
  * a truthful 405 instead of a 404 that claims the route does not exist.
  */
 const ROUTE_METHODS = {
+  "/pad/chart": ["GET"],
   "/health": ["GET"], "/pad": ["GET"], "/speak": ["GET"], "/portfolio": ["GET"],
   "/markets": ["GET"], "/memory": ["GET"], "/memory/full": ["GET"], "/log": ["GET"],
   "/briefing": ["GET"], "/reflect": ["GET"], "/pending": ["GET"], "/scan/last": ["GET"],

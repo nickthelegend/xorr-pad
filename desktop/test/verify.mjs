@@ -2016,6 +2016,20 @@ try {
       fav.status === 200 && /image\//.test(fav.headers.get("content-type") || "") &&
       favBuf.byteLength > 1000 && stillGated.status === 401,
       `${fav.status} ${fav.headers.get("content-type")} ${(favBuf.byteLength / 1024).toFixed(1)}KB without a token · /pad still ${stillGated.status}`);
+  // The display pod's chart: the market in hand as hourly closes, from the
+  // same cached candle feed /pad prices from, and gated like every pad route.
+  const pc = await j("/pad/chart");
+  const pcNoAuth = await withDeadline(B + "/pad/chart", { headers: {} });
+  const pcPost = await withDeadline(B + "/pad/chart", { method: "POST", headers: H });
+  const pcMax = await j("/pad/chart?hours=500");
+  const series = pc.b?.closes || [];
+  chk("Z10 GET /pad/chart gives the screen a real series",
+      pc.s === 200 && pc.b?.symbol === (await j("/health")).b?.market &&
+      series.length === 49 && series.every(Number.isFinite) &&
+      Math.abs(pc.b.hi - Math.max(...series)) < 1e-9 && Math.abs(pc.b.lo - Math.min(...series)) < 1e-9 &&
+      pcNoAuth.status === 401 && pcPost.status === 405 && pcMax.b?.hours === 168,
+      `${pc.b?.symbol} ${series.length} closes, ${pc.b?.change24h}% 24h · no token ${pcNoAuth.status} · ` +
+      `POST ${pcPost.status} · hours=500 -> ${pcMax.b?.hours}`);
 } catch (e) { chk("Z crashed", false, String(e.message || e).slice(0, 92)); }
 
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m` +

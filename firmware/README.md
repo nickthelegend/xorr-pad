@@ -94,6 +94,19 @@ no diodes needed):
 
 **Status LED:** onboard WS2812 on **GPIO 48**.
 
+**Display pod (optional):** a 1.54" ST7789 240×240 SPI screen showing the market
+in hand — price, 24h move and a 48-hour chart from `GET /pad/chart`. The
+enclosure is `exports/display-pod.stl` (`cad/part_display.py`); print
+`exports/display-coupon.stl` first to check your module fits the window.
+
+| Module pin | VCC | GND | SCL | SDA | RES | DC | CS | BLK |
+|---|---|---|---|---|---|---|---|---|
+| Goes to | 3V3 | GND | GPIO **39** | GPIO **40** | GPIO **42** | GPIO **41** | GPIO **1** | GPIO **2** |
+
+No CS pin on your module? Set `TFT_CS -1` in `config.h`. Picture upside down in
+the pod? `TFT_ROTATION 2`. These pins avoid the octal PSRAM (35–37), USB (19/20),
+UART0 (43/44) and the strapping pins (0, 3, 45, 46).
+
 All pins live in [`orchestrator_pad/config.h`](orchestrator_pad/config.h) — change
 them there if your wiring differs.
 
@@ -107,6 +120,7 @@ enabled at build time. It is off in the default board config.
 ```bash
 arduino-cli core install esp32:esp32
 arduino-cli lib install WiFiManager
+arduino-cli lib install "Adafruit ST7735 and ST7789 Library"
 
 arduino-cli compile \
   --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi \

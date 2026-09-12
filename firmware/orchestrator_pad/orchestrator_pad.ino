@@ -30,6 +30,12 @@
 #include "telnet.h"
 #include "net.h"
 #include "provision.h"
+#include "display.h"
+
+Display    screen;            // the display pod
+ChartState chartNow;
+uint32_t   nextChart   = 0;
+bool       screenDirty = true;
 
 Matrix     matrix;
 Audio      audio;
@@ -250,6 +256,7 @@ void setup() {
   led(0, 0, 60);                        // blue = booting
 
   matrix.begin();
+  screen.begin();
   if (!audio.begin()) Serial.println("!! audio init failed");
   recBuf = (int16_t *)ps_malloc(REC_CAP * sizeof(int16_t));
   if (!recBuf) Serial.println("!! PSRAM alloc failed — enable Tools → PSRAM: OPI PSRAM");
@@ -310,8 +317,21 @@ void loop() {
     nextPoll = millis() + PAD_POLL_MS;
     PadState fresh;
     if (net.pad(fresh)) pad = fresh; else pad.ok = false;
+    screenDirty = true;
   }
   ledFromState();
+
+  // The display pod. The chart is hourly candles, so it is fetched once a
+  // minute — or at once when the market in hand changes — while the screen
+  // redraws after every poll so the price and the state stay live.
+  if (!recording && millis() >= nextChart) {
+    nextChart = millis() + CHART_POLL_MS;
+    ChartState fresh;
+    if (net.chart(fresh)) chartNow = fresh; else chartNow.ok = false;
+    screenDirty = true;
+  }
+  if (pad.ok && chartNow.ok && chartNow.symbol != pad.market) nextChart = 0;
+  if (!recording && screenDirty) { screenDirty = false; screen.draw(pad, chartNow); }
 
   // Held long enough? Fire the kill switch without waiting for the release, so
   // the operator sees it stop under their finger.

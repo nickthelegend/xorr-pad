@@ -292,3 +292,24 @@ off the floor). Caps upside down (top face on bed) or with tree supports;
 ~41.5 tall; with caps ≈ 54.5 overall (knob crown at
 57.5). Every part = union of closed shells; slicers merge
 coplanar/overlapping shells.
+
+## Display pod — `part_display.py`
+
+A slanted stand for a 1.54" ST7789 240×240 SPI module, directly behind the pad.
+Checked by `cad/audit_display.py`.
+
+- Footprint **90.0 W** (the pad's width) × **40.4 D** × **89.1 H**; back corners
+  R8 in plan, and the lower front wraps the tray's R8 back corners up to the
+  plate top, 0.2 off the case everywhere.
+- Keyed to the pad by a **1.6 lip resting on the plate top (Z 41.5)**, Y
+  39.0..45.2, spanning **|X| ≤ 35.0** — 1.3 behind the back-row caps, 1.9 behind
+  the knob, 1.15 clear of the M3 button heads at |X| 36.2. No part of the pad
+  changes.
+- Face **52.6 long at 55°** from horizontal, bottom edge Z 46.0. Window
+  **28.9 square** over the 27.72 active area, its bottom edge at Z 58.2 — clear
+  over the cap tops for viewing angles 40–60° down.
+- Module envelope **44.6 × 32.6 × 4.3** (44 × 32 × 4 + 0.3/side), located by
+  2.0 side rails and 2.0 end stops, taped in through the open back. The AA is
+  assumed 3.0 off the PCB centre, away from the header — **measure yours**.
+- Prints lying on a side wall (40.4 × 89.1 × 90.0), no supports; bridges of
+  ~29 (window) and ~45 (module pocket).

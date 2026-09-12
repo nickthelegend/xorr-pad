@@ -24,6 +24,16 @@ struct PadState {
   int    spentToday = -1, dayLimit = -1;
 };
 
+// GET /pad/chart — the market in hand as hourly closes, for the display pod.
+struct ChartState {
+  bool    ok = false;
+  String  symbol, error;
+  float   price = 0, change24h = 0, hi = 0, lo = 0;
+  bool    hasChange = false;
+  uint8_t n = 0;
+  float   closes[169];
+};
+
 // Talks to the xorr-pad backend — the Mac's LAN IP over plain HTTP, or a
 // Tailscale Funnel URL over HTTPS. The backend runs the gate, signs the swaps
 // and does STT → brain → TTS, handing back raw 16 kHz PCM with a Content-Length
@@ -64,6 +74,41 @@ public:
     st.dayLimit   = (int)jsonNum(b, "dayLimit", -1);
     st.hasPnl     = hasField(b, "unrealised") && !jsonNull(b, "unrealised");
     st.unrealised = st.hasPnl ? jsonNum(b, "unrealised", 0) : 0;
+    return true;
+  }
+
+  // GET /pad/chart — flat JSON with one numeric array, parsed by hand like /pad.
+  bool chart(ChartState &st) {
+    HTTPClient http; WiFiClient plain; WiFiClientSecure tls;
+    if (!beginReq(http, plain, tls, url("/pad/chart"))) return false;
+    auth(http);
+    http.setTimeout(8000);
+    int code = http.GET();
+    if (code != 200) { http.end(); return false; }
+    String b = http.getString();
+    http.end();
+
+    st.ok        = true;
+    st.symbol    = jsonStr(b, "symbol");
+    st.error     = jsonStr(b, "error");
+    st.price     = jsonNum(b, "price", 0);
+    st.hasChange = hasField(b, "change24h") && !jsonNull(b, "change24h");
+    st.change24h = st.hasChange ? jsonNum(b, "change24h", 0) : 0;
+    st.hi        = jsonNum(b, "hi", 0);
+    st.lo        = jsonNum(b, "lo", 0);
+    st.n = 0;
+    int at = b.indexOf("\"closes\":[");
+    if (at >= 0) {
+      const char *p = b.c_str() + at + 10;
+      while (*p && *p != ']' && st.n < sizeof(st.closes) / sizeof(st.closes[0])) {
+        char *end;
+        float v = strtof(p, &end);
+        if (end == p) break;
+        st.closes[st.n++] = v;
+        p = end;
+        while (*p == ',' || *p == ' ') p++;
+      }
+    }
     return true;
   }
 
