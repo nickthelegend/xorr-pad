@@ -325,6 +325,9 @@ Shared by every pod:
   one.
 - Four **10 × 10 × 0.6 recesses** under the base for stick-on rubber feet.
 - The body prints lying on a side wall, no supports; the cap prints lying on its back.
+- **One plate**: `exports/print/display-plate*.3mf` (Bambu Studio, two named
+  objects) and `exports/display-plate*.stl` lay the body and cap out side by
+  side, 10 apart — inside a 180 mm bed.
 
 | | 1.54" ST7789 (SPI) | 2.4" ILI9341 UNO shield |
 |---|---|---|

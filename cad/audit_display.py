@@ -2,7 +2,9 @@
 Read-only. Prints PASS/FAIL per item; exits non-zero on any FAIL."""
 from __future__ import annotations
 import math
+import os
 import sys
+import zipfile
 
 import partlib as pl
 import part_display as d
@@ -33,7 +35,8 @@ for key in d.MODULES:
     pod = d.Pod(key)
     m = pod.m
     print(f"\n=== {key} — {m['label']} ===")
-    (_, body, _), (_, cap, _) = pod.build()
+    items = pod.build()
+    (_, body, _), (_, cap, _) = items
     for name, mesh in (("body", body), ("cap", cap)):
         rep = pl.validate(mesh)
         chk(f"{name} is watertight", rep["watertight"], f"{rep['shells']} shells")
@@ -100,6 +103,21 @@ for key in d.MODULES:
         z0 > d.WALL + 2.0 and y0 > d.FRONT_Y + d.WALL and y1 < pod.Y_S - 2.0,
         f"Y {y0:.1f}..{y1:.1f}, seam at {pod.Y_S:.1f}")
     chk("coupon is watertight", pl.validate(pod.build_coupon()[0][1])["watertight"])
+    (_, bp), (_, cp) = d.plate_layout(pod, items)
+    bxs = [v[0] for v in bp.V]; cxs = [v[0] for v in cp.V]
+    allx, ally = bxs + cxs, [v[1] for v in bp.V] + [v[1] for v in cp.V]
+    chk("one plate: both parts sit flat on it",
+        abs(min(v[2] for v in bp.V)) < 1e-6 and abs(min(v[2] for v in cp.V)) < 1e-6, "Z min 0 for both")
+    chk("one plate: the parts don't touch", max(bxs) + d.PLATE_GAP - 1e-6 <= min(cxs),
+        f"{min(cxs) - max(bxs):.1f} mm apart")
+    pw, pd = max(allx) - min(allx), max(ally) - min(ally)
+    chk("one plate: fits a 180 mm bed", pw <= d.PLATE_BED and pd <= d.PLATE_BED, f"{pw:.1f} x {pd:.1f} mm")
+    f3 = os.path.join("..", "exports", "print", f"display-plate{m['suffix']}.3mf")
+    n_obj = 0
+    if os.path.exists(f3):
+        with zipfile.ZipFile(f3) as z:
+            n_obj = z.read("3D/3dmodel.model").decode().count("<object id=")
+    chk("one plate: the 3MF holds the body and the cap", n_obj == 2, f"{n_obj} objects in {os.path.basename(f3)}")
     bd = [max(c) - min(c) for c in zip(*d.print_orientation(body).V)]
     cd = [max(c) - min(c) for c in zip(*d.print_on_back(cap).V)]
     chk("body fits a 180 mm bed on its side; cap lies on its back", max(bd) <= 180 and max(cd) <= 180,

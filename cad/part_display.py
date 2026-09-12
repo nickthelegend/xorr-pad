@@ -379,6 +379,71 @@ def print_on_back(mesh):
     return out.translate(-min(xs), -min(ys), -min(zs))
 
 
+
+PLATE_GAP = 10.0    # between the two parts on the build plate
+PLATE_BED = 180.0   # the smallest bed the plate should land on (A1 mini); X1/P1 is 256
+
+
+def plate_layout(pod, items):
+    """The body on its side and the cap on its back, side by side on one plate.
+    -> [(name, mesh)] in plate coordinates: bottoms at Z 0, centred on (0, 0)."""
+    (bname, body, _), (cname, cap, _) = items
+    body_p, cap_p = print_orientation(body), print_on_back(cap)
+    cap_p.translate(max(v[0] for v in body_p.V) + PLATE_GAP, 0.0, 0.0)
+    xs = [v[0] for m in (body_p, cap_p) for v in m.V]
+    ys = [v[1] for m in (body_p, cap_p) for v in m.V]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    for m in (body_p, cap_p):
+        m.translate(-cx, -cy, 0.0)
+    return [(bname, body_p), (cname, cap_p)]
+
+
+def write_plate(pod, items, exports):
+    """One print plate for a pod: a Bambu Studio 3MF with the body and cap as two
+    named objects on slot 1 (white), built the way export_3mf.py builds the
+    keycaps, and the same layout as one merged STL for any other slicer."""
+    import zipfile
+    from export_3mf import BED, CT, RELS
+    parts = plate_layout(pod, items)
+    sfx = pod.m["suffix"]
+    objects, build, cfg = [], [], []
+    for i, (name, mesh) in enumerate(parts, start=1):
+        verts = "".join(f'<vertex x="{x:.4f}" y="{y:.4f}" z="{z:.4f}"/>' for x, y, z in mesh.V)
+        tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in mesh.F)
+        objects.append(
+            f'<object id="{i}" type="model" p:UUID="{i:08d}-0000-0000-0000-000000000000">'
+            f'<mesh><vertices>{verts}</vertices><triangles>{tris}</triangles></mesh></object>')
+        build.append(f'<item objectid="{i}" transform="1 0 0 0 1 0 0 0 1 '
+                     f'{BED / 2:.4f} {BED / 2:.4f} 0" printable="1"/>')
+        cfg.append(f'<object id="{i}"><metadata key="name" value="{name}"/>'
+                   f'<metadata key="extruder" value="1"/><part id="{i}" subtype="normal_part">'
+                   f'<metadata key="name" value="{name}"/><metadata key="extruder" value="1"/>'
+                   f'</part></object>')
+    model = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+             '<model unit="millimeter" xml:lang="en-US" '
+             'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+             'xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06">'
+             '<metadata name="Application">xorr-pad cad</metadata>'
+             f'<metadata name="Title">xorr-pad display pod — {pod.m["label"]}</metadata>'
+             f'<resources>{"".join(objects)}</resources><build>{"".join(build)}</build></model>')
+    settings = f'<?xml version="1.0" encoding="UTF-8"?>\n<config>{"".join(cfg)}</config>'
+    out = os.path.join(exports, "print")
+    os.makedirs(out, exist_ok=True)
+    with zipfile.ZipFile(os.path.join(out, f"display-plate{sfx}.3mf"), "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", CT)
+        z.writestr("_rels/.rels", RELS)
+        z.writestr("3D/3dmodel.model", model)
+        z.writestr("Metadata/model_settings.config", settings)
+    merged = pl.Mesh()
+    for _name, mesh in parts:
+        merged += mesh
+    pl.stl_write(os.path.join(exports, f"display-plate{sfx}.stl"), merged)
+    pl.glb_write(os.path.join(exports, f"preview-display-plate{sfx}.glb"),
+                 [(name, mesh, pl.COLORS["plate"]) for name, mesh in parts])
+    xs = [v[0] for _n, m in parts for v in m.V]
+    ys = [v[1] for _n, m in parts for v in m.V]
+    return max(xs) - min(xs), max(ys) - min(ys)
+
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     exports = os.path.normpath(os.path.join(here, "..", "exports"))
@@ -396,6 +461,8 @@ if __name__ == "__main__":
         pl.stl_write(os.path.join(exports, f"display-cap{sfx}.stl"), print_on_back(items[1][1]))
         pl.stl_write(os.path.join(exports, f"display-coupon{sfx}.stl"), coupon[0][1])
         pl.glb_write(os.path.join(exports, f"preview-display-pod{sfx}.glb"), items)
+        pw, pd = write_plate(pod, items, exports)
+        print(f"  one plate: print/display-plate{sfx}.3mf + display-plate{sfx}.stl, {pw:.1f} x {pd:.1f} mm")
         print(f"  {pod.m['label']}: face {pod.FACE_L:.1f} at {pod.m['tilt']:.0f} deg, window "
               f"{pod.WIN_X:.1f} x {pod.WIN_U:.1f}; pod 90 W x {pod.BACK_Y - LIP_Y0:.1f} D x "
               f"{pod.TOP_Z:.1f} H, seam {CAP_D:.0f} from the back")
