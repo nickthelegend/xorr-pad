@@ -10,6 +10,7 @@ desktop/.fork-state.json
 desktop/.fork-block
 
 # Build output and the generated icon artefacts
+exports/print/*.gcode.3mf
 desktop/dist/
 desktop/build/icon.png
 desktop/build/icon.icns

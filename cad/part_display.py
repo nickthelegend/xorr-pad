@@ -7,18 +7,19 @@ knob at 37.1, the M3 button heads start at |X| 36.2). No part of the pad changes
 
 Two printed parts, one outline: the BODY, and a CAP that is simply the last
 CAP_D mm of the same shape — rounded back corners and all — so closed up they
-read as one piece with a single seam. Cap tongues slide inside the body's floor
-and roof; four M2.5 x 6 self-tappers (the speaker's hardware) go through the
-cap's back into bosses rooted in the body. Wires leave through an opening in the
-RIGHT side wall, at the height of the pad's own side USB windows, so the cable
-runs straight along the tray into one.
+read as one piece with a single seam. Cap tongues slide inside the body's floor,
+roof and side walls; four M2.5 x 6 self-tappers (the speaker's hardware) go
+through the cap's back into bosses rooted in the body. Wires leave through an
+opening in the RIGHT side wall, at the height of the pad's own side USB windows,
+so the cable runs straight along the tray into one.
 
 The kernel only extrudes along Z, so every part is a SIDE PROFILE in (Y, Z)
 extruded across X in bands, then mapped (x,y,z) -> (z,x,y) — a cyclic axis
 permutation, a proper rotation, so each shell keeps its outward winding.
 
-The window is always centred on the pad. Where a module's active area sits off
-its PCB centre, the PCB pocket moves instead, so the screen reads centred.
+Where a module's active area sits off its PCB centre, the PCB pocket moves so
+the screen reads centred on the pad — unless the PCB fills the pod's width (the
+2.8"): then the PCB stays centred and the window follows the active area.
 
 MEASURE YOUR MODULE, then print its coupon (the face alone, printed flat)
 before the pod: the module should drop in and show its whole active area.
@@ -56,11 +57,29 @@ MODULES = {
         button_x=-2.0,                   # the reset button pokes past the PCB's -X edge
         pin_depth=25.0,                  # shield headers (~8.5) + dupont housings behind the PCB
         tilt=50.0),                      # laid back further than the 1.54": this one gets touched
+    "tft28_spi": dict(
+        # LCDwiki MSP2807 outline drawing (LCM OUTLINE V1.0), laid landscape with
+        # the 14-pin header on the +X short edge, beside the cable opening.
+        label='2.8" ILI9341 SPI (MSP2807), 320x240, resistive touch', suffix="-28",
+        pcb_x=86.0, pcb_u=50.0,
+        front_t=4.0, pcb_t=1.6,          # touch panel 1.20 + LCD 2.30 + tape 0.50; 5.60 with the PCB
+        smd_t=2.2,                       # parts on the PCB's back, at most
+        aa_x=57.6, aa_u=43.2,
+        aa_dx=-4.9, aa_du=0.0,           # AA 9.30..66.90 along the 86 from the SD end: 4.9 off centre
+        win_margin=1.6,                  # window 60.8 x 46.4
+        va_x=59.45, va_u=45.2, va_dx=0.075,   # touch viewing area: the bezel must land outside it
+        glass_x=69.2, glass_u=49.6, glass_dx=-2.0,   # glass 6.40..75.60 from the SD end
+        button_x=0.0,
+        pin_depth=22.0,                  # 2.78 of header behind the PCB, a 14 mm dupont housing, the bend
+        tilt=50.0,                       # touch, like the 2.4"
+        pcb_centred=True,                # 86 of the pod's 90: the PCB can't slide, so the window moves
+        side_wall=1.6,                   # an 86.6 pocket inside 90
+        header="x_end", header_s=2.0, header_span=33.02),   # pin row 2.00 in, 13 x 2.54 long, centred
 }
 
 # ---- the pod ---------------------------------------------------------------
 POD_W = pl.CASE_W   # 90 — the pad's own width, so the two read as one body
-WALL = 2.0          # shell + side walls
+WALL = 2.0          # shell + side walls (a module may thin its side walls)
 SKIN = 2.0          # bezel thickness in front of the glass
 BEVEL = 1.2         # 45-degree bevel on the window's outer edge, leaving a 0.8 land
 BEVEL_STEPS = 3     # across X the bevel is drawn in 0.4-wide steps
@@ -74,6 +93,7 @@ TOP_FLAT = 4.0      # minimum flat top behind the face's upper edge
 FOOT = 10.0         # square recesses for stick-on rubber feet, so a press never slides it
 FOOT_DEPTH = 0.6
 FOOT_X = (28.0,)    # mirrored to +-28
+DUPONT = 2.54       # a dupont housing's square section
 
 # ---- the cap: the body's own back, as a separate part -------------------------
 CAP_D = 8.0         # the cap is the last 8 mm — the whole R8 back curve lives in it
@@ -129,6 +149,10 @@ def _band(profile, x0, x1):
     return m
 
 
+def _overlaps(a, b, span):
+    return min(a, b) < span[1] and max(a, b) > span[0]
+
+
 class Pod:
     def __init__(self, key):
         m = self.m = MODULES[key]
@@ -136,6 +160,7 @@ class Pod:
         t = math.radians(m["tilt"])
         self.TU = (math.cos(t), math.sin(t))        # up the face
         self.TN = (math.sin(t), -math.cos(t))       # into the pod
+        self.SW = m.get("side_wall", WALL)          # floor, roof, face and back stay WALL
         self.env_t = m["front_t"] + m["pcb_t"]
         self.FACE_L = BEZEL + STOP + CLR + m["pcb_u"] + CLR + STOP + BEZEL
         self.U_PCB0 = BEZEL + STOP
@@ -143,24 +168,50 @@ class Pod:
         self.WIN_U = m["aa_u"] + 2 * m["win_margin"]
         self.WIN_X = m["aa_x"] + 2 * m["win_margin"]
         self.U_WIN_C = self.U_PCB0 + CLR + m["pcb_u"] / 2 + m["aa_du"]
-        cx = -m["aa_dx"]                              # the AA lands on x = 0
+        if m.get("pcb_centred"):
+            cx, self.WX_C = 0.0, m["aa_dx"]            # the window sits where the AA does
+        else:
+            cx, self.WX_C = -m["aa_dx"], 0.0           # the AA lands on x = 0
+        self.PCB_CX = cx
         self.X_LO = cx - m["pcb_x"] / 2 - CLR + min(m["button_x"], 0.0)
         self.X_HI = cx + m["pcb_x"] / 2 + CLR + max(m["button_x"], 0.0)
         self.FACE0 = (FRONT_Y, FACE_Z0)
         self.FACE1 = self.p(self.FACE_L, 0.0)
         self.TOP_Z = self.FACE1[1]
         # Deep enough that the headers and their connectors end in front of the
-        # cap's back wall, and clear of its bosses and tongues.
-        nb = SKIN + self.env_t + CLR
-        self.pins = unary_union([self.quad(ua, ub, nb, nb + m["pin_depth"])
-                                 for ua, ub in ((self.U_PCB0, self.U_PCB0 + 4.0),
-                                                (self.U_PCB1 - 4.0, self.U_PCB1))])
-        self.pin_y = max(self.p(u, nb + m["pin_depth"])[0] for u in (self.U_PCB0, self.U_PCB1))
+        # cap's back wall, and neither they nor the module touch a boss or tongue.
+        nb = self.NB = SKIN + self.env_t + CLR
+        if m.get("header") == "x_end":
+            # one row of pins along the PCB's +X short edge, standing straight back
+            uc = self.U_PCB0 + CLR + m["pcb_u"] / 2
+            half = m["header_span"] / 2 + DUPONT / 2
+            spans = ((uc - half, uc + half),)
+            xp = cx + m["pcb_x"] / 2 - m["header_s"]
+            self.PINS_X = (xp - DUPONT / 2 - PIN_CLEAR, xp + DUPONT / 2 + PIN_CLEAR)
+        else:
+            # header rows along the PCB's lower and upper edges
+            spans = ((self.U_PCB0, self.U_PCB0 + 4.0), (self.U_PCB1 - 4.0, self.U_PCB1))
+            self.PINS_X = (self.X_LO, self.X_HI)
+        self.pins = unary_union([self.quad(ua, ub, nb, nb + m["pin_depth"]) for ua, ub in spans])
+        self.pin_y = max(self.p(u, nb + m["pin_depth"])[0] for span in spans for u in span)
+        self.module = self.quad(self.U_PCB0, self.U_PCB1, SKIN, nb + m.get("smd_t", 0.0))
         self.BACK_Y = max(self.FACE1[0] + TOP_FLAT, self.pin_y + PIN_CLEAR + WALL)
-        while self.pins.intersection(unary_union([self.boss_region(False),
-                                                  self.tongue_region()])).area > 0.0:
+        while self._keep_out_hit() > 0.0:
             self.BACK_Y += 0.5
         self.prof = self._profiles()
+
+    def _keep_out_hit(self):
+        """Overlap (mm2, in Y-Z) between what stands behind the face — headers and
+        module — and the bosses and tongues at the seam. Side tongues step around a
+        header row, so against them only the module counts, where it shares X."""
+        hit = unary_union([self.pins, self.module]).intersection(
+            unary_union([self.boss_region(False), self.tongue_region()])).area
+        st0, _, st_root = self.side_tongue_x()
+        span = (self.X_LO, self.X_HI)
+        if _overlaps(st0, st_root, span) or _overlaps(-st_root, -st0, span):
+            for root in (False, True):
+                hit += self.module.intersection(self.side_tongue_region(0.0, 0.0, root, cut=False)).area
+        return hit
 
     @property
     def Y_S(self):
@@ -241,17 +292,28 @@ class Pod:
 
     def side_tongue_x(self):
         """|X| span of the side tongues, and of their root behind the seam."""
-        x1 = POD_W / 2 - WALL - SIDE_TONGUE_CLR
-        return x1 - TONGUE_T, x1, POD_W / 2 - WALL
+        x1 = POD_W / 2 - self.SW - SIDE_TONGUE_CLR
+        return x1 - TONGUE_T, x1, POD_W / 2 - self.SW
+
+    def side_tongue_region(self, a, b, root, cut=True):
+        """A side tongue in (Y, Z) for the band [a, b] — or its root behind the seam —
+        stepped around a header row standing at that side."""
+        ys = self.Y_S
+        zlo, zhi = WALL + TONGUE_CLR, self.TOP_Z - WALL - TONGUE_CLR
+        r = (box(ys + CAP_CLR, zlo, ys + CAP_CLR + 1.0, zhi) if root
+             else box(ys - TONGUE_L, zlo, ys + CAP_CLR + OVL, zhi))
+        if cut and _overlaps(a, b, self.PINS_X):
+            r = r.difference(self.pins.buffer(PIN_CLEAR, join_style=2))
+        return r
 
     def edges(self):
-        h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
+        h, c, sw = POD_W / 2, POD_W / 2 - pl.CASE_R, self.SW
         st0, st1, _ = self.side_tongue_x()
-        E = {-h, h, 0.0, -(h - WALL), h - WALL, -(h - WALL - 0.3), h - WALL - 0.3, -st0, st0, -st1, st1,
+        E = {-h, h, 0.0, -(h - sw), h - sw, -(h - sw - 0.3), h - sw - 0.3, -st0, st0, -st1, st1,
              self.X_LO, self.X_HI, self.X_LO - RAIL, self.X_HI + RAIL, -LIP_HALF, LIP_HALF}
         for s in (-1, 1):
             for k in range(BEVEL_STEPS + 1):
-                E.add(s * (self.WIN_X / 2 + k * BEVEL / BEVEL_STEPS))
+                E.add(self.WX_C + s * (self.WIN_X / 2 + k * BEVEL / BEVEL_STEPS))
             x = c
             while x < h - 1e-9:
                 E.add(s * x)
@@ -272,13 +334,13 @@ class Pod:
         h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
         mid, prof = (a + b) / 2, self.prof
         am, inner, outer_ax = abs(mid), min(abs(a), abs(b)), max(abs(a), abs(b))
-        if am > h - WALL:
+        if am > h - self.SW:
             p = prof["side"]
             if mid > 0:                                   # the cable opening, right wall
                 p = p.difference(self.side_opening())
         elif self.X_LO < mid < self.X_HI:
             p = prof["pcb"]
-            cut = self.window_cut(am - self.WIN_X / 2)
+            cut = self.window_cut(abs(mid - self.WX_C) - self.WIN_X / 2)
             if cut is not None:
                 p = p.difference(cut)
         elif self.X_LO - RAIL <= mid <= self.X_HI + RAIL:
@@ -307,19 +369,18 @@ class Pod:
         mid_ax = (abs(a) + abs(b)) / 2
         p = self.prof["outer"].intersection(
             box(self.Y_S + CAP_CLR, -1.0, self.BACK_Y + 1.0, self.TOP_Z + 1.0))
-        if am <= h - WALL:
+        if am <= h - self.SW:
             p = p.difference(self.prof["inner"])
-            if outer_ax <= h - WALL - 0.3 + 1e-9 and not (BOSS_X - BOSS_W / 2 - 0.3 < am < BOSS_X + BOSS_W / 2 + 0.3):
+            if outer_ax <= h - self.SW - 0.3 + 1e-9 and not (BOSS_X - BOSS_W / 2 - 0.3 < am < BOSS_X + BOSS_W / 2 + 0.3):
                 p = p.union(self.tongue_region())
             # side tongues: with only a floor and roof lap, the seam went straight
             # through the side walls and showed daylight; lap those too
             st0, st1, st_root = self.side_tongue_x()
-            ys, inner_ax = self.Y_S, min(abs(a), abs(b))
-            zlo, zhi = WALL + TONGUE_CLR, self.TOP_Z - WALL - TONGUE_CLR
+            inner_ax = min(abs(a), abs(b))
             if inner_ax >= st0 - 1e-9 and outer_ax <= st1 + 1e-9:
-                p = p.union(box(ys - TONGUE_L, zlo, ys + CAP_CLR + OVL, zhi))
+                p = p.union(self.side_tongue_region(a, b, root=False))
             elif inner_ax >= st1 - 1e-9 and outer_ax <= st_root + 1e-9:
-                p = p.union(box(ys + CAP_CLR, zlo, ys + CAP_CLR + 1.0, zhi))   # root, behind the seam
+                p = p.union(self.side_tongue_region(a, b, root=True))
             if abs(am - BOSS_X) < HOLE / 2:
                 for zc in (WALL + BOSS_H / 2, self.TOP_Z - WALL - BOSS_H / 2):
                     p = p.difference(box(self.BACK_Y - WALL - 1.0, zc - HOLE / 2,
@@ -352,8 +413,8 @@ class Pod:
         x0, x1 = self.X_LO - RAIL, self.X_HI + RAIL
         outline = affinity.translate(pl.rounded_rect(x1 - x0, self.FACE_L, 2.0),
                                      (x0 + x1) / 2, self.FACE_L / 2)
-        win = box(-self.WIN_X / 2, self.U_WIN_C - self.WIN_U / 2,
-                  self.WIN_X / 2, self.U_WIN_C + self.WIN_U / 2)
+        win = box(self.WX_C - self.WIN_X / 2, self.U_WIN_C - self.WIN_U / 2,
+                  self.WX_C + self.WIN_X / 2, self.U_WIN_C + self.WIN_U / 2)
         env = box(self.X_LO, self.U_PCB0, self.X_HI, self.U_PCB1)
         m = pl.Mesh()
         m += pl.prism(outline.difference(win), 0.0, SKIN)
@@ -362,9 +423,12 @@ class Pod:
 
 
 def print_orientation(mesh):
-    """World -> lying on its -X side wall, min corner at the origin (the body)."""
+    """World -> upright on its floor, as it stands on the desk, min corner at the
+    origin (the body). Upright only the roof behind the face, the top bosses and
+    the lip hang over air — tree supports reach the first two from inside, through
+    the open back. On its side, the whole upper side wall hung over the cavity."""
     out = pl.Mesh()
-    out.V = [(y, z, x) for x, y, z in mesh.V]   # inverse cyclic map, det +1
+    out.V = list(mesh.V)
     out.F = list(mesh.F)
     xs, ys, zs = zip(*out.V)
     return out.translate(-min(xs), -min(ys), -min(zs))
@@ -379,17 +443,33 @@ def print_on_back(mesh):
     return out.translate(-min(xs), -min(ys), -min(zs))
 
 
-
-PLATE_GAP = 10.0    # between the two parts on the build plate
-PLATE_BED = 180.0   # the smallest bed the plate should land on (A1 mini); X1/P1 is 256
+# The body's tree supports reach ~9 mm past its right wall (under the cable
+# opening) and ~16 mm behind it (under the top bosses): with the cap 10 behind
+# the body, Bambu Studio refused the plate for G-code path conflicts. So the
+# cap lies 20 to the body's left, where nothing of the body's reaches.
+PLATE_GAP = 20.0
+PLATE_BED = 256.0   # the P1S/X1 bed: side by side the plate is 200 wide
+# Filament 1; the AMS slot is picked when the job is sent. With the parts on
+# filament 2, Bambu Studio 2.8's CLI crashed slicing the plate three runs in
+# three (its log: no nozzle-group info for that filament); on 1, three in three.
+PLATE_FILAMENT = 1
+# Tree supports on both parts, per object. The body's stand inside it and come out
+# through its open back; the cap's only reach the bed, under its rounded corners.
+PLATE_SUPPORT = {
+    "display-pod": (("enable_support", "1"), ("support_type", "tree(auto)"),
+                    ("support_on_build_plate_only", "0")),
+    "display-cap": (("enable_support", "1"), ("support_type", "tree(auto)"),
+                    ("support_on_build_plate_only", "1")),
+}
 
 
 def plate_layout(pod, items):
-    """The body on its side and the cap on its back, side by side on one plate.
+    """The body upright with the cap on its back to its left, on one plate.
     -> [(name, mesh)] in plate coordinates: bottoms at Z 0, centred on (0, 0)."""
     (bname, body, _), (cname, cap, _) = items
-    body_p, cap_p = print_orientation(body), print_on_back(cap)
-    cap_p.translate(max(v[0] for v in body_p.V) + PLATE_GAP, 0.0, 0.0)
+    body_p, cap_p = print_orientation(body), print_on_back(cap)   # min corners at the origin
+    cap_d, body_d = max(v[1] for v in cap_p.V), max(v[1] for v in body_p.V)
+    body_p.translate(max(v[0] for v in cap_p.V) + PLATE_GAP, (cap_d - body_d) / 2, 0.0)
     xs = [v[0] for m in (body_p, cap_p) for v in m.V]
     ys = [v[1] for m in (body_p, cap_p) for v in m.V]
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
@@ -400,25 +480,31 @@ def plate_layout(pod, items):
 
 def write_plate(pod, items, exports):
     """One print plate for a pod: a Bambu Studio 3MF with the body and cap as two
-    named objects on slot 1 (white), built the way export_3mf.py builds the
-    keycaps, and the same layout as one merged STL for any other slicer."""
+    named objects on filament 1, tree supports on each, built the way
+    export_3mf.py builds the keycaps — and the same layout as one merged STL for
+    any other slicer."""
     import zipfile
     from export_3mf import BED, CT, RELS
     parts = plate_layout(pod, items)
     sfx = pod.m["suffix"]
     objects, build, cfg = [], [], []
     for i, (name, mesh) in enumerate(parts, start=1):
-        verts = "".join(f'<vertex x="{x:.4f}" y="{y:.4f}" z="{z:.4f}"/>' for x, y, z in mesh.V)
+        # each mesh about its own centre, placed on the bed by its build item
+        xs, ys = [v[0] for v in mesh.V], [v[1] for v in mesh.V]
+        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+        verts = "".join(f'<vertex x="{x - cx:.4f}" y="{y - cy:.4f}" z="{z:.4f}"/>' for x, y, z in mesh.V)
         tris = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in mesh.F)
         objects.append(
             f'<object id="{i}" type="model" p:UUID="{i:08d}-0000-0000-0000-000000000000">'
             f'<mesh><vertices>{verts}</vertices><triangles>{tris}</triangles></mesh></object>')
         build.append(f'<item objectid="{i}" transform="1 0 0 0 1 0 0 0 1 '
-                     f'{BED / 2:.4f} {BED / 2:.4f} 0" printable="1"/>')
+                     f'{BED / 2 + cx:.4f} {BED / 2 + cy:.4f} 0" printable="1"/>')
+        kind = "display-pod" if name.startswith("display-pod") else "display-cap"
+        support = "".join(f'<metadata key="{k}" value="{v}"/>' for k, v in PLATE_SUPPORT[kind])
         cfg.append(f'<object id="{i}"><metadata key="name" value="{name}"/>'
-                   f'<metadata key="extruder" value="1"/><part id="{i}" subtype="normal_part">'
-                   f'<metadata key="name" value="{name}"/><metadata key="extruder" value="1"/>'
-                   f'</part></object>')
+                   f'<metadata key="extruder" value="{PLATE_FILAMENT}"/>{support}'
+                   f'<part id="{i}" subtype="normal_part"><metadata key="name" value="{name}"/>'
+                   f'<metadata key="extruder" value="{PLATE_FILAMENT}"/></part></object>')
     model = ('<?xml version="1.0" encoding="UTF-8"?>\n'
              '<model unit="millimeter" xml:lang="en-US" '
              'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
@@ -444,6 +530,7 @@ def write_plate(pod, items, exports):
     ys = [v[1] for _n, m in parts for v in m.V]
     return max(xs) - min(xs), max(ys) - min(ys)
 
+
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
     exports = os.path.normpath(os.path.join(here, "..", "exports"))
@@ -464,6 +551,6 @@ if __name__ == "__main__":
         pw, pd = write_plate(pod, items, exports)
         print(f"  one plate: print/display-plate{sfx}.3mf + display-plate{sfx}.stl, {pw:.1f} x {pd:.1f} mm")
         print(f"  {pod.m['label']}: face {pod.FACE_L:.1f} at {pod.m['tilt']:.0f} deg, window "
-              f"{pod.WIN_X:.1f} x {pod.WIN_U:.1f}; pod 90 W x {pod.BACK_Y - LIP_Y0:.1f} D x "
-              f"{pod.TOP_Z:.1f} H, seam {CAP_D:.0f} from the back")
+              f"{pod.WIN_X:.1f} x {pod.WIN_U:.1f} centred at x {pod.WX_C:+.1f}; pod 90 W x "
+              f"{pod.BACK_Y - LIP_Y0:.1f} D x {pod.TOP_Z:.1f} H, seam {CAP_D:.0f} from the back")
     sys.exit(0 if ok else 1)
