@@ -310,27 +310,32 @@ Shared by every pod:
   bevelled 45°, leaving a 0.8 land.
 - 2.0 walls and bezel; 2.0 side rails and end stops locate the PCB, taped in
   through the back.
-- **Back cover**: a 2.0 plate recessed 3.0 into the back (clear of the R8 back
-  corners) on **4 × M2.5 × 6 self-tappers** — the speaker's hardware — into
-  square-pilot bosses top and bottom at X ±35.5. Each pod is made deep enough
-  that its headers and their connectors end 1.0 in front of the cover and clear
-  of the bosses.
-- **Cable exit**: a 5.5 × 14 bevelled slot through the face right of the screen,
-  X 36.0..41.5, low on the slant so the wires drop toward the pad's side USB
-  window.
+- **Cap**: the back of the pod is a separate part cut from the same outline —
+  the body's last 8.0, rounded R8 corners and all — so closed up the two read as
+  one piece with a single 0.15 seam. Tongues on the cap (1.2 thick, 6.0 long)
+  slide inside the body's floor, roof and both side walls, so the seam is a lap
+  with no line of sight through it; **4 × M2.5 × 6
+  self-tappers** — the speaker's hardware — pass through the cap's back into
+  square-pilot bosses rooted in the body, top and bottom at X ±35.5. Each pod is
+  made deep enough that its headers and their connectors end 1.0 in front of the
+  cap's back wall and clear of the bosses and tongues.
+- **Cable opening**: a 14 × 8 R3 slot in the **right side wall**, 5.0..19.0
+  behind the pod's front face at **Z 16.25..24.25** — level with the pad's own
+  side USB windows (Z 17.0..23.5), so the cable runs straight along the tray into
+  one.
 - Four **10 × 10 × 0.6 recesses** under the base for stick-on rubber feet.
-- Prints lying on a side wall, no supports; the cover prints flat.
+- The body prints lying on a side wall, no supports; the cap prints lying on its back.
 
 | | 1.54" ST7789 (SPI) | 2.4" ILI9341 UNO shield |
 |---|---|---|
-| Exports | `display-pod.stl`, `display-cover.stl`, `display-coupon.stl` | `display-pod-24.stl`, `display-cover-24.stl`, `display-coupon-24.stl` |
+| Exports | `display-pod.stl`, `display-cap.stl`, `display-coupon.stl` | `display-pod-24.stl`, `display-cap-24.stl`, `display-coupon-24.stl` |
 | PCB (listed) | 44 × 32 | 72.20 × 52.7 |
 | Active area | 27.72 × 27.72 | 48.96 × 36.72 |
 | Glass front to PCB back | 4.0 | 6.6 (panel + touch **estimated**) |
 | AA offset from PCB centre | 3.0 along the slant | 3.6 across, away from the reset button (**from a photo**) |
 | Window | 28.9 × 28.9 | 52.6 × 40.3 |
 | Face | 52.6 at 55° | 61.3 at 50° — it gets touched |
-| Pod W × D × H | 90 × 55.4 × 89.1 | 90 × 75.0 × 93.0 |
+| Pod W × D × H | 90 × 56.4 × 89.1 | 90 × 72.0 × 93.0 |
 | Room behind the PCB | 10 | 25 (headers + dupont housings) |
 
 **Measure your module and print its coupon before the pod.**

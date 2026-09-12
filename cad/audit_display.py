@@ -4,8 +4,6 @@ from __future__ import annotations
 import math
 import sys
 
-from shapely.ops import unary_union
-
 import partlib as pl
 import part_display as d
 
@@ -23,6 +21,7 @@ knob_back = pl.ROW_Y[0] + 17.0 / 2
 head_in = pl.BOSS_XY - 5.7 / 2                 # M3 button head, ISO 7380 dk 5.7
 cap_top = pl.CAP_Z0 + 7.5
 h = d.POD_W / 2
+USB_WIN_Z = (pl.USB_WIN[1], pl.USB_WIN[2])     # the pad's side windows, Z 17.0..23.5
 
 print("\n=== shared: the lip on the plate ===")
 chk("lip clears the back-row caps", d.LIP_Y0 - cap_back >= 1.0, f"{d.LIP_Y0 - cap_back:.2f} mm")
@@ -34,14 +33,29 @@ for key in d.MODULES:
     pod = d.Pod(key)
     m = pod.m
     print(f"\n=== {key} — {m['label']} ===")
-    mesh = pod.build()[0][1]
-    rep = pl.validate(mesh)
-    chk("pod is watertight", rep["watertight"], f"{rep['shells']} shells")
-    inside = [v for v in mesh.V if v[2] < pl.PLATE_Z1 - 1e-6
+    (_, body, _), (_, cap, _) = pod.build()
+    for name, mesh in (("body", body), ("cap", cap)):
+        rep = pl.validate(mesh)
+        chk(f"{name} is watertight", rep["watertight"], f"{rep['shells']} shells")
+    inside = [v for v in body.V if v[2] < pl.PLATE_Z1 - 1e-6
               and v[1] < d._case_back_y(min(abs(v[0]), h)) + 0.1]
     chk("no vertex within 0.1 mm of the case below the plate", not inside, f"{len(inside)} vertices")
-    xs = [v[0] for v in mesh.V]
-    chk("exactly the pad's width", abs(max(xs) - min(xs) - pl.CASE_W) < 1e-6, f"{max(xs) - min(xs):.3f} mm")
+    bx = [v[0] for v in body.V]
+    chk("exactly the pad's width", abs(max(bx) - min(bx) - pl.CASE_W) < 1e-6, f"{max(bx) - min(bx):.3f} mm")
+
+    # the cap is the body's own back: flush, same height, same width
+    cy = [v[1] for v in cap.V]; cz = [v[2] for v in cap.V]; cx = [v[0] for v in cap.V]
+    chk("cap is flush: it IS the back of the pod", abs(max(cy) - pod.BACK_Y) < 1e-6
+        and abs(max(cz) - pod.TOP_Z) < 1e-6 and abs(min(cz)) < 1e-6,
+        f"back Y {max(cy):.2f}, Z 0..{max(cz):.1f} — body Z 0..{pod.TOP_Z:.1f}")
+    chk("cap carries the body's full width into the R8 corners", max(cx) - min(cx) > 88.5,
+        f"{max(cx) - min(cx):.2f} mm at the seam")
+    body_shell = [v for v in body.V if v[2] < d.WALL - 0.01 or abs(v[0]) > h - d.WALL + 0.01]
+    chk("body's floor and sides end at the seam", max(v[1] for v in body_shell) <= pod.Y_S + 1e-6,
+        f"Y {max(v[1] for v in body_shell):.2f} = seam {pod.Y_S:.2f}")
+    cap_floor = [v[1] for v in cap.V if v[2] < d.WALL - 0.5]
+    chk("seam gap", abs(min(cap_floor) - (pod.Y_S + d.CAP_CLR)) < 1e-6, f"{d.CAP_CLR} mm")
+
     u0 = pod.U_WIN_C - pod.WIN_U / 2
     yw, zw = pod.p(u0, 0.0)
     for a in (40, 50, 60):
@@ -55,37 +69,41 @@ for key in d.MODULES:
     chk("window inside the PCB pocket along the slant",
         pod.U_PCB0 <= u0 and u0 + pod.WIN_U <= pod.U_PCB1,
         f"u {u0:.1f}..{u0 + pod.WIN_U:.1f} in {pod.U_PCB0:.1f}..{pod.U_PCB1:.1f}")
+
     nb = d.SKIN + pod.env_t + d.CLR
-    wall = sum(pod.quad(ua, ub, nb, nb + m["pin_depth"]).intersection(pod.prof["shell"]).area
-               for ua, ub in ((pod.U_PCB0, pod.U_PCB0 + 4.0), (pod.U_PCB1 - 4.0, pod.U_PCB1)))
-    chk("headers + connectors clear the walls behind the PCB", wall < 0.5,
-        f"{wall:.2f} mm2 of wall in a {m['pin_depth']:.0f} mm path")
-    yi = pod.Y_COVER_IN
-    pin_y = max(pod.p(u, nb + m["pin_depth"])[0] for u in (pod.U_PCB0, pod.U_PCB1))
-    chk("headers + connectors end in front of the back cover", pin_y + d.PIN_CLEAR <= yi + 1e-9,
-        f"they reach Y {pin_y:.1f}; the cover starts at {yi:.1f}")
-    pins = unary_union([pod.quad(ua, ub, nb, nb + m["pin_depth"])
-                        for ua, ub in ((pod.U_PCB0, pod.U_PCB0 + 4.0), (pod.U_PCB1 - 4.0, pod.U_PCB1))])
-    hit = pins.intersection(pod.boss_region(False)).area
-    chk("screw bosses clear the headers' path", hit < 0.01, f"{hit:.2f} mm2")
-    chk("cable exit right of the screen, clear of the PCB rail",
-        d.CABLE_X[0] >= pod.X_HI + d.RAIL + 0.5 and d.CABLE_X[1] <= h - d.WALL - 1.0,
-        f"x {d.CABLE_X[0]}..{d.CABLE_X[1]}; rail ends at {pod.X_HI + d.RAIL:.1f}")
-    chk("cable exit inside the face", d.BEZEL <= d.CABLE_U[0] and d.CABLE_U[1] <= pod.FACE_L - d.BEZEL,
-        f"u {d.CABLE_U[0]}..{d.CABLE_U[1]} of {pod.FACE_L:.1f}")
-    cover = pod.build_cover()[0][1]
-    chk("back cover is watertight", pl.validate(cover)["watertight"])
-    cx = [v[0] for v in cover.V]; cy = [v[1] for v in cover.V]; cz = [v[2] for v in cover.V]
-    chk("cover clears the back opening on every side",
-        max(abs(min(cx)), max(cx)) <= h - d.WALL - 0.2 and min(cz) >= d.WALL + 0.2
-        and max(cz) <= pod.TOP_Z - d.WALL - 0.2, f"{max(cx) - min(cx):.1f} x {max(cz) - min(cz):.1f} mm")
-    ax = max(abs(min(cx)), max(cx))
-    c = h - pl.CASE_R
-    yb = pod.BACK_Y - pl.CASE_R + math.sqrt(max(pl.CASE_R ** 2 - (ax + d.OVL - c) ** 2, 0.0))
-    chk("cover sits inside the rounded back corners", max(cy) <= yb, f"outer face Y {max(cy):.2f} <= {yb:.2f}")
+    chk("headers + connectors clear the body's walls", pod.pins.intersection(pod.prof["shell"]).area < 0.5,
+        f"{pod.pins.intersection(pod.prof['shell']).area:.2f} mm2 in a {m['pin_depth']:.0f} mm path")
+    chk("headers + connectors end in front of the cap's back wall",
+        pod.pin_y + d.PIN_CLEAR <= pod.BACK_Y - d.WALL + 1e-9,
+        f"they reach Y {pod.pin_y:.1f}; the back wall starts at {pod.BACK_Y - d.WALL:.1f}")
+    hit = pod.pins.intersection(pod.boss_region(False).union(pod.tongue_region())).area
+    chk("screw bosses and cap tongues clear the headers", hit == 0.0, f"{hit:.2f} mm2")
+    envl = pod.quad(pod.U_PCB0, pod.U_PCB1, d.SKIN, nb)
+    over = pod.X_HI > d.BOSS_X - d.BOSS_W / 2 or pod.X_LO < -(d.BOSS_X - d.BOSS_W / 2)
+    ehit = envl.intersection(pod.boss_region(False)).area if over else 0.0
+    chk("screw bosses clear the module", ehit == 0.0, f"{ehit:.2f} mm2")
+    st0, st1, _ = pod.side_tongue_x()
+    pcb_edge = max(abs(-m["aa_dx"] - m["pcb_x"] / 2), abs(-m["aa_dx"] + m["pcb_x"] / 2))
+    chk("side tongues clear the PCB and its headers", pcb_edge + 1.0 <= st0,
+        f"PCB edge |X| {pcb_edge:.1f}; tongues from {st0:.1f}")
+    chk("side tongues clear the body's walls", (h - d.WALL) - st1 >= 0.25, f"{(h - d.WALL) - st1:.2f} mm")
+
+    zb, zt = d.WALL + d.BOSS_H / 2, pod.TOP_Z - d.WALL - d.BOSS_H / 2
+    chk("screw holes line up with the pilots", abs(zb - 5.5) < 1e-9 and abs((pod.TOP_Z - zt) - 5.5) < 1e-9,
+        f"Z {zb:.1f} and {zt:.1f} at X +-{d.BOSS_X}")
+    so = pod.side_opening()
+    y0, z0, y1, z1 = so.bounds
+    overlap = min(z1, USB_WIN_Z[1]) - max(z0, USB_WIN_Z[0])
+    chk("cable opening on the right wall, level with the pad's USB window", overlap >= 6.0,
+        f"Z {z0:.2f}..{z1:.2f} vs window {USB_WIN_Z[0]}..{USB_WIN_Z[1]}")
+    chk("cable opening sits in the body, clear of the floor and seam",
+        z0 > d.WALL + 2.0 and y0 > d.FRONT_Y + d.WALL and y1 < pod.Y_S - 2.0,
+        f"Y {y0:.1f}..{y1:.1f}, seam at {pod.Y_S:.1f}")
     chk("coupon is watertight", pl.validate(pod.build_coupon()[0][1])["watertight"])
-    dims = [max(c) - min(c) for c in zip(*d.print_orientation(mesh).V)]
-    chk("fits a 180 mm bed lying on its side", max(dims) <= 180, " x ".join(f"{v:.1f}" for v in dims) + " mm")
+    bd = [max(c) - min(c) for c in zip(*d.print_orientation(body).V)]
+    cd = [max(c) - min(c) for c in zip(*d.print_on_back(cap).V)]
+    chk("body fits a 180 mm bed on its side; cap lies on its back", max(bd) <= 180 and max(cd) <= 180,
+        f"body {' x '.join(f'{v:.1f}' for v in bd)} · cap {' x '.join(f'{v:.1f}' for v in cd)} mm")
 
 print(f"\nAUDIT-DISPLAY: {len(FAILS)} failure(s)" + (f" -> {FAILS}" if FAILS else " -> ALL CLEAR"))
 sys.exit(1 if FAILS else 0)

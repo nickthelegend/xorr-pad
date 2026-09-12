@@ -5,18 +5,20 @@ wraps the tray's R8 back corners, and rests a lip on the plate's back strip —
 the one band of the plate top nothing else uses (cap backs end at Y 37.7, the
 knob at 37.1, the M3 button heads start at |X| 36.2). No part of the pad changes.
 
-The kernel only extrudes along Z, so a pod is a SIDE PROFILE in (Y, Z) extruded
-across X in bands, then mapped (x,y,z) -> (z,x,y) — a cyclic axis permutation,
-a proper rotation, so every shell keeps its outward winding. The same fact
-makes it print support-free lying on a side wall.
+Two printed parts, one outline: the BODY, and a CAP that is simply the last
+CAP_D mm of the same shape — rounded back corners and all — so closed up they
+read as one piece with a single seam. Cap tongues slide inside the body's floor
+and roof; four M2.5 x 6 self-tappers (the speaker's hardware) go through the
+cap's back into bosses rooted in the body. Wires leave through an opening in the
+RIGHT side wall, at the height of the pad's own side USB windows, so the cable
+runs straight along the tray into one.
+
+The kernel only extrudes along Z, so every part is a SIDE PROFILE in (Y, Z)
+extruded across X in bands, then mapped (x,y,z) -> (z,x,y) — a cyclic axis
+permutation, a proper rotation, so each shell keeps its outward winding.
 
 The window is always centred on the pad. Where a module's active area sits off
 its PCB centre, the PCB pocket moves instead, so the screen reads centred.
-
-The back closes with a recessed cover on four M2.5 self-tappers (the speaker's
-hardware). Each pod is deep enough that its module's headers and their
-connectors stay inside, and the wires leave through a cable exit on the face,
-right of the screen, low on the slant so they drop toward the pad's side window.
 
 MEASURE YOUR MODULE, then print its coupon (the face alone, printed flat)
 before the pod: the module should drop in and show its whole active area.
@@ -68,20 +70,26 @@ RAIL = 2.0          # side rails that locate the PCB across X
 CLR = 0.3           # clearance per side around the PCB
 FRONT_Y = pl.CASE_W / 2 + 0.2          # 45.2 — 0.2 off the tray's back wall
 FACE_Z0 = 46.0      # bottom edge of the face (plate top 41.5, cap tops 54.5)
-TOP_FLAT = 4.0      # flat top behind the face's upper edge
+TOP_FLAT = 4.0      # minimum flat top behind the face's upper edge
 FOOT = 10.0         # square recesses for stick-on rubber feet, so a press never slides it
 FOOT_DEPTH = 0.6
 FOOT_X = (28.0,)    # mirrored to +-28
-COVER_T = 2.0       # back cover: a flat plate recessed into the back opening
-COVER_RECESS = 3.0  # its outer face sits this far in — clears the R8 back corners
-COVER_CLR = 0.25    # per side, around the cover
-BOSS_X = 35.5       # four M2.5 x 6 self-tapper bosses at +-X, top and bottom
-BOSS_W, BOSS_H, BOSS_D = 7.0, 7.0, 8.0    # across X, up Z, deep in Y
+
+# ---- the cap: the body's own back, as a separate part -------------------------
+CAP_D = 8.0         # the cap is the last 8 mm — the whole R8 back curve lives in it
+CAP_CLR = 0.15      # the seam
+TONGUE_T, TONGUE_L, TONGUE_CLR = 1.2, 6.0, 0.2   # cap tongues inside the body's floor and roof
+SIDE_TONGUE_CLR = 0.3                           # ...and its side walls (0.3: the bands stretch 0.1)
+BOSS_X = 35.5       # four M2.5 x 6 self-tappers, top and bottom at +-X
+BOSS_W, BOSS_H, BOSS_ROOT = 7.0, 7.0, 6.0
 PILOT = 2.2         # square pilot: an M2.5 self-tapper bites on the flats
-COVER_HOLE_D = 2.9
-PIN_CLEAR = 1.0     # between the headers' connectors and the cover
-CABLE_X = (36.0, 41.5)   # cable exit on the face, right of the screen (+X)
-CABLE_U = (8.0, 22.0)    # low on the slant, so the wires drop toward the pad's side window
+HOLE = 2.9          # square screw clearance through the cap's back
+PIN_CLEAR = 1.0     # between the headers' connectors and the cap
+
+# ---- the cable opening, right side wall ----------------------------------------
+SIDE_OPEN_Y = (5.0, 19.0)      # back from the pod's front face
+SIDE_OPEN_Z = (16.25, 24.25)   # centred on the pad's side USB windows (Z 17.0..23.5)
+SIDE_OPEN_R = 3.0
 
 # ---- the lip on the plate's back strip ----------------------------------------
 LIP_Y0 = 39.0                          # 1.3 behind the cap backs (37.7)
@@ -140,21 +148,24 @@ class Pod:
         self.X_HI = cx + m["pcb_x"] / 2 + CLR + max(m["button_x"], 0.0)
         self.FACE0 = (FRONT_Y, FACE_Z0)
         self.FACE1 = self.p(self.FACE_L, 0.0)
-        # Deep enough that the headers and their connectors end in front of the cover.
-        nb = SKIN + self.env_t + CLR
-        pin_y = max(self.p(u, nb + m["pin_depth"])[0] for u in (self.U_PCB0, self.U_PCB1))
-        self.BACK_Y = max(self.FACE1[0] + TOP_FLAT, pin_y + PIN_CLEAR + COVER_T + COVER_RECESS)
-        self.Y_COVER_IN = self.BACK_Y - COVER_RECESS - COVER_T
         self.TOP_Z = self.FACE1[1]
-        # ...and clear of the cover's screw bosses. On a shallow pod the top boss
-        # hangs into the top header's connector path, so push the back out until
-        # it doesn't.
-        pins = unary_union([self.quad(ua, ub, nb, nb + m["pin_depth"])
-                            for ua, ub in ((self.U_PCB0, self.U_PCB0 + 4.0), (self.U_PCB1 - 4.0, self.U_PCB1))])
-        while pins.intersection(self.boss_region(False)).area > 0.0:
+        # Deep enough that the headers and their connectors end in front of the
+        # cap's back wall, and clear of its bosses and tongues.
+        nb = SKIN + self.env_t + CLR
+        self.pins = unary_union([self.quad(ua, ub, nb, nb + m["pin_depth"])
+                                 for ua, ub in ((self.U_PCB0, self.U_PCB0 + 4.0),
+                                                (self.U_PCB1 - 4.0, self.U_PCB1))])
+        self.pin_y = max(self.p(u, nb + m["pin_depth"])[0] for u in (self.U_PCB0, self.U_PCB1))
+        self.BACK_Y = max(self.FACE1[0] + TOP_FLAT, self.pin_y + PIN_CLEAR + WALL)
+        while self.pins.intersection(unary_union([self.boss_region(False),
+                                                  self.tongue_region()])).area > 0.0:
             self.BACK_Y += 0.5
-            self.Y_COVER_IN = self.BACK_Y - COVER_RECESS - COVER_T
         self.prof = self._profiles()
+
+    @property
+    def Y_S(self):
+        """The seam between body and cap."""
+        return self.BACK_Y - CAP_D
 
     # -- face coordinates -> (Y, Z)
     def p(self, u, n):
@@ -174,13 +185,13 @@ class Pod:
 
     def _profiles(self):
         outer = self.outer()
-        inner = outer.buffer(-WALL, join_style=2).union(      # the back opening: module in, then the cover
-            box(self.BACK_Y - WALL - OVL, WALL, self.BACK_Y + 5.0, self.TOP_Z - WALL))
+        inner = outer.buffer(-WALL, join_style=2)
         shell = outer.difference(inner)
         n_back = SKIN + self.env_t + CLR
         cradle = self.quad(BEZEL, self.FACE_L - BEZEL, SKIN - OVL, n_back).intersection(outer)
         envelope = self.quad(self.U_PCB0, self.U_PCB1, SKIN, n_back + 1.0)
-        return {"side": outer, "shell": shell, "rail": shell.union(cradle),
+        return {"outer": outer, "inner": inner, "side": outer, "shell": shell,
+                "rail": shell.union(cradle),
                 "pcb": shell.difference(envelope).union(cradle.difference(envelope))}
 
     def window_cut(self, d):
@@ -197,29 +208,47 @@ class Pod:
     def lip_box(self):
         return box(LIP_Y0 - 1.0, LIP_Z0 - OVL, FRONT_Y + OVL, LIP_Z0 + LIP_T + OVL)
 
+    def side_opening(self):
+        y0, y1 = FRONT_Y + SIDE_OPEN_Y[0], FRONT_Y + SIDE_OPEN_Y[1]
+        return affinity.translate(
+            pl.rounded_rect(y1 - y0, SIDE_OPEN_Z[1] - SIDE_OPEN_Z[0], SIDE_OPEN_R),
+            (y0 + y1) / 2, (SIDE_OPEN_Z[0] + SIDE_OPEN_Z[1]) / 2)
+
     def boss_region(self, with_pilot):
-        """The cover's screw bosses: one on the floor, one hung from the top."""
-        yi, out = self.Y_COVER_IN, []
-        for z0, z1 in ((WALL - OVL, WALL + BOSS_H),
-                       (self.TOP_Z - WALL - BOSS_H, self.TOP_Z - WALL + OVL)):
-            b = box(yi - BOSS_D, z0, yi, z1)
+        """Screw bosses rooted in the body's floor and roof, reaching back to the
+        cap's back wall — 0.2 short of it, and 0.2 off the cap's floor and roof."""
+        ys, yw, out = self.Y_S, self.BACK_Y - WALL - 0.2, []
+        for root, reach, zc in (
+                ((WALL - OVL, WALL + BOSS_H), (WALL + TONGUE_CLR, WALL + BOSS_H), WALL + BOSS_H / 2),
+                ((self.TOP_Z - WALL - BOSS_H, self.TOP_Z - WALL + OVL),
+                 (self.TOP_Z - WALL - BOSS_H, self.TOP_Z - WALL - TONGUE_CLR),
+                 self.TOP_Z - WALL - BOSS_H / 2)):
+            b = box(ys - BOSS_ROOT, root[0], ys, root[1]).union(box(ys - OVL, reach[0], yw, reach[1]))
             if with_pilot:
-                zc = (max(z0, WALL) + min(z1, self.TOP_Z - WALL)) / 2
-                b = b.difference(box(yi - BOSS_D - 1.0, zc - PILOT / 2, yi + 1.0, zc + PILOT / 2))
+                b = b.difference(box(ys - BOSS_ROOT - 1.0, zc - PILOT / 2, yw + 1.0, zc + PILOT / 2))
             out.append(b)
         return unary_union(out)
 
-    def cable_cut(self):
-        """The cable exit through the face, bevelled like the window."""
-        u0, u1 = CABLE_U
-        e = BEVEL + 1.0
-        return self.poly([(u0 - e, -1.0), (u1 + e, -1.0), (u1, BEVEL), (u1, SKIN + OVL),
-                          (u0, SKIN + OVL), (u0, BEVEL)])
+    def tongue_region(self):
+        """The cap's tongues: 6 mm inside the body's floor and roof, rooted in the cap."""
+        ys, out = self.Y_S, []
+        for z0, z1, zf in ((WALL + TONGUE_CLR, WALL + TONGUE_CLR + TONGUE_T, WALL - OVL),
+                           (self.TOP_Z - WALL - TONGUE_CLR - TONGUE_T, self.TOP_Z - WALL - TONGUE_CLR,
+                            self.TOP_Z - WALL + OVL)):
+            out.append(box(ys - TONGUE_L, z0, ys + CAP_CLR + OVL, z1))
+            out.append(box(ys + CAP_CLR, min(z0, zf), ys + CAP_CLR + 1.0, max(z1, zf)))
+        return unary_union(out)
+
+    def side_tongue_x(self):
+        """|X| span of the side tongues, and of their root behind the seam."""
+        x1 = POD_W / 2 - WALL - SIDE_TONGUE_CLR
+        return x1 - TONGUE_T, x1, POD_W / 2 - WALL
 
     def edges(self):
         h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
-        E = {-h, h, 0.0, -(h - WALL), h - WALL, self.X_LO, self.X_HI,
-             self.X_LO - RAIL, self.X_HI + RAIL, -LIP_HALF, LIP_HALF}
+        st0, st1, _ = self.side_tongue_x()
+        E = {-h, h, 0.0, -(h - WALL), h - WALL, -(h - WALL - 0.3), h - WALL - 0.3, -st0, st0, -st1, st1,
+             self.X_LO, self.X_HI, self.X_LO - RAIL, self.X_HI + RAIL, -LIP_HALF, LIP_HALF}
         for s in (-1, 1):
             for k in range(BEVEL_STEPS + 1):
                 E.add(s * (self.WIN_X / 2 + k * BEVEL / BEVEL_STEPS))
@@ -228,10 +257,9 @@ class Pod:
                 E.add(s * x)
                 x += CORNER_STEP
             for fx in FOOT_X:
-                E.add(s * (fx - FOOT / 2)); E.add(s * (fx + FOOT / 2))
-            for bx in (BOSS_X - BOSS_W / 2, BOSS_X + BOSS_W / 2, BOSS_X - PILOT / 2, BOSS_X + PILOT / 2):
-                E.add(s * bx)
-        E.add(CABLE_X[0]); E.add(CABLE_X[1])
+                E.update((s * (fx - FOOT / 2), s * (fx + FOOT / 2)))
+            for d in (BOSS_W / 2 + 0.3, BOSS_W / 2, HOLE / 2, PILOT / 2):
+                E.update((s * (BOSS_X - d), s * (BOSS_X + d)))
         E = sorted(e for e in E if -h - 1e-9 <= e <= h + 1e-9)
         out = [E[0]]
         for e in E[1:]:
@@ -240,11 +268,14 @@ class Pod:
         return out
 
     def band_profile(self, a, b):
+        """The BODY's profile for the band [a, b]."""
         h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
         mid, prof = (a + b) / 2, self.prof
         am, inner, outer_ax = abs(mid), min(abs(a), abs(b)), max(abs(a), abs(b))
         if am > h - WALL:
             p = prof["side"]
+            if mid > 0:                                   # the cable opening, right wall
+                p = p.difference(self.side_opening())
         elif self.X_LO < mid < self.X_HI:
             p = prof["pcb"]
             cut = self.window_cut(am - self.WIN_X / 2)
@@ -254,50 +285,66 @@ class Pod:
             p = prof["rail"]
         else:
             p = prof["shell"]
-        if mid > 0 and CABLE_X[0] < am < CABLE_X[1]:  # cable exit, right of the screen
-            p = p.difference(self.cable_cut())
+        p = p.intersection(box(-1.0, -1.0, self.Y_S, self.TOP_Z + 1.0))   # the body ends at the seam
         if BOSS_X - BOSS_W / 2 < am < BOSS_X + BOSS_W / 2:
             p = p.union(self.boss_region(abs(am - BOSS_X) < PILOT / 2))
         if inner >= LIP_HALF - 1e-9:                  # lip only between the screw heads
             p = p.difference(self.lip_box())
         for fx in FOOT_X:                            # rubber-foot recesses under the base
             if fx - FOOT / 2 < am < fx + FOOT / 2:
-                for yc in (FRONT_Y + 9.0, self.BACK_Y - 9.0):
+                for yc in (FRONT_Y + 9.0, self.Y_S - 7.0):
                     p = p.difference(box(yc - FOOT / 2, -1.0, yc + FOOT / 2, FOOT_DEPTH))
-        if outer_ax > c + 1e-9:
-            axo = min(outer_ax + OVL / 2, h)             # the band is stretched by OVL/2
-            yb = self.BACK_Y - pl.CASE_R + math.sqrt(max(pl.CASE_R ** 2 - (axo - c) ** 2, 0.0))
-            p = p.intersection(box(-1.0, -1.0, yb, self.TOP_Z + 1.0))
+        if outer_ax > c + 1e-9:                       # wrap the tray's R8 up to the plate top
             yf = _case_back_y(max(inner - OVL / 2, 0.0)) + 0.2
-            if yf < FRONT_Y - 0.05:                     # wrap the tray's R8 up to the plate top
+            if yf < FRONT_Y - 0.05:
                 p = p.union(box(yf, 0.0, FRONT_Y + OVL, LIP_Z0))
         return p
 
+    def cap_profile(self, a, b):
+        """The CAP's profile for the band [a, b]: the same outline, behind the seam."""
+        h, c = POD_W / 2, POD_W / 2 - pl.CASE_R
+        am, outer_ax = abs((a + b) / 2), max(abs(a), abs(b))
+        mid_ax = (abs(a) + abs(b)) / 2
+        p = self.prof["outer"].intersection(
+            box(self.Y_S + CAP_CLR, -1.0, self.BACK_Y + 1.0, self.TOP_Z + 1.0))
+        if am <= h - WALL:
+            p = p.difference(self.prof["inner"])
+            if outer_ax <= h - WALL - 0.3 + 1e-9 and not (BOSS_X - BOSS_W / 2 - 0.3 < am < BOSS_X + BOSS_W / 2 + 0.3):
+                p = p.union(self.tongue_region())
+            # side tongues: with only a floor and roof lap, the seam went straight
+            # through the side walls and showed daylight; lap those too
+            st0, st1, st_root = self.side_tongue_x()
+            ys, inner_ax = self.Y_S, min(abs(a), abs(b))
+            zlo, zhi = WALL + TONGUE_CLR, self.TOP_Z - WALL - TONGUE_CLR
+            if inner_ax >= st0 - 1e-9 and outer_ax <= st1 + 1e-9:
+                p = p.union(box(ys - TONGUE_L, zlo, ys + CAP_CLR + OVL, zhi))
+            elif inner_ax >= st1 - 1e-9 and outer_ax <= st_root + 1e-9:
+                p = p.union(box(ys + CAP_CLR, zlo, ys + CAP_CLR + 1.0, zhi))   # root, behind the seam
+            if abs(am - BOSS_X) < HOLE / 2:
+                for zc in (WALL + BOSS_H / 2, self.TOP_Z - WALL - BOSS_H / 2):
+                    p = p.difference(box(self.BACK_Y - WALL - 1.0, zc - HOLE / 2,
+                                         self.BACK_Y + 1.0, zc + HOLE / 2))
+        if outer_ax > c + 1e-9:                       # the pod's own R8 back corners
+            # Judged at the band's middle, not its outer edge: the arc starts at the
+            # seam at full width, so an outer-edge staircase leaves the cap's last
+            # 0.5 mm step empty and draws a slit down each corner. Nothing mates here,
+            # so a half-step either side of the true arc is the right trade.
+            yb = self.BACK_Y - pl.CASE_R + math.sqrt(max(pl.CASE_R ** 2 - (mid_ax - c) ** 2, 0.0))
+            p = p.intersection(box(-1.0, -1.0, yb, self.TOP_Z + 1.0))
+        return p
+
     def build(self):
-        h, mesh = POD_W / 2, pl.Mesh()
+        h, body, cap = POD_W / 2, pl.Mesh(), pl.Mesh()
         E = self.edges()
         for a, b in zip(E, E[1:]):
-            band = _band(self.band_profile(a, b), max(a - OVL / 2, -h), min(b + OVL / 2, h))
-            if band is not None:
-                mesh += band
-        return [("display-pod" + self.m["suffix"], mesh, pl.COLORS["plate"])]
-
-    def build_cover(self, world=True):
-        """The back cover: a flat plate recessed into the back opening, on four
-        M2.5 self-tappers. Drawn in (Z, X) and extruded along Y, so the same
-        cyclic remap as the pod puts it in place."""
-        hx = POD_W / 2 - WALL - COVER_CLR
-        z0, z1 = WALL + COVER_CLR, self.TOP_Z - WALL - COVER_CLR
-        plate = affinity.translate(pl.rounded_rect(z1 - z0, 2 * hx, 1.0), (z0 + z1) / 2, 0.0)
-        holes = unary_union([affinity.translate(pl.circle(COVER_HOLE_D), zc, sx * BOSS_X)
-                             for zc in (WALL + BOSS_H / 2, self.TOP_Z - WALL - BOSS_H / 2)
-                             for sx in (-1, 1)])
-        m = pl.prism(plate.difference(holes), self.Y_COVER_IN, self.Y_COVER_IN + COVER_T)
-        if world:
-            m.V = [(y, z, x) for x, y, z in m.V]   # (Z, X, Y) -> (X, Y, Z): cyclic, det +1
-        else:
-            m.translate(0.0, 0.0, -self.Y_COVER_IN)
-        return [("display-cover" + self.m["suffix"], m, pl.COLORS["plate"])]
+            lo, hi = max(a - OVL / 2, -h), min(b + OVL / 2, h)
+            for mesh, prof in ((body, self.band_profile(a, b)), (cap, self.cap_profile(a, b))):
+                band = _band(prof, lo, hi)
+                if band is not None:
+                    mesh += band
+        sfx = self.m["suffix"]
+        return [("display-pod" + sfx, body, pl.COLORS["plate"]),
+                ("display-cap" + sfx, cap, pl.COLORS["plate"])]
 
     def build_coupon(self):
         """The pod's face alone, printed flat: does the module drop in and does the
@@ -315,9 +362,18 @@ class Pod:
 
 
 def print_orientation(mesh):
-    """World -> lying on its -X side wall, min corner at the origin."""
+    """World -> lying on its -X side wall, min corner at the origin (the body)."""
     out = pl.Mesh()
     out.V = [(y, z, x) for x, y, z in mesh.V]   # inverse cyclic map, det +1
+    out.F = list(mesh.F)
+    xs, ys, zs = zip(*out.V)
+    return out.translate(-min(xs), -min(ys), -min(zs))
+
+
+def print_on_back(mesh):
+    """World -> lying on its back face, min corner at the origin (the cap)."""
+    out = pl.Mesh()
+    out.V = [(x, z, -y) for x, y, z in mesh.V]  # -90 deg about X, det +1
     out.F = list(mesh.F)
     xs, ys, zs = zip(*out.V)
     return out.translate(-min(xs), -min(ys), -min(zs))
@@ -329,18 +385,18 @@ if __name__ == "__main__":
     ok = True
     for key in MODULES:
         pod = Pod(key)
-        items, coupon, cover = pod.build(), pod.build_coupon(), pod.build_cover()
-        for name, mesh, _ in items + coupon + cover:
+        items, coupon = pod.build(), pod.build_coupon()
+        for name, mesh, _ in items + coupon:
             rep = pl.validate(mesh)
             print(f"{name}: shells={rep['shells']} tris={rep['triangles']} "
                   f"watertight={rep['watertight']} {rep['problems'][:2]}")
             ok &= rep["watertight"]
         sfx = pod.m["suffix"]
         pl.stl_write(os.path.join(exports, f"display-pod{sfx}.stl"), print_orientation(items[0][1]))
+        pl.stl_write(os.path.join(exports, f"display-cap{sfx}.stl"), print_on_back(items[1][1]))
         pl.stl_write(os.path.join(exports, f"display-coupon{sfx}.stl"), coupon[0][1])
-        pl.stl_write(os.path.join(exports, f"display-cover{sfx}.stl"), pod.build_cover(world=False)[0][1])
-        pl.glb_write(os.path.join(exports, f"preview-display-pod{sfx}.glb"), items + cover)
-        print(f"  {pod.m['label']}: face {pod.FACE_L:.1f} at {pod.m['tilt']:.0f} deg, "
-              f"window {pod.WIN_X:.1f} x {pod.WIN_U:.1f}; pod 90 W x "
-              f"{pod.BACK_Y - LIP_Y0:.1f} D x {pod.TOP_Z:.1f} H")
+        pl.glb_write(os.path.join(exports, f"preview-display-pod{sfx}.glb"), items)
+        print(f"  {pod.m['label']}: face {pod.FACE_L:.1f} at {pod.m['tilt']:.0f} deg, window "
+              f"{pod.WIN_X:.1f} x {pod.WIN_U:.1f}; pod 90 W x {pod.BACK_Y - LIP_Y0:.1f} D x "
+              f"{pod.TOP_Z:.1f} H, seam {CAP_D:.0f} from the back")
     sys.exit(0 if ok else 1)
