@@ -57,14 +57,17 @@ static const uint8_t COL_PINS[MATRIX_COLS] = {18, 17, 8, 14};  // columns revers
 //      trading is not acceptable, so it needs a deliberate hold. ----
 #define HOLD_TO_KILL_MS 600
 
-// ---- Display pod: 1.54" ST7789 240x240 on SPI (cad/part_display.py) ----
+// ---- Display pod: 2.8" ILI9341 320x240 on SPI — LCDwiki MSP2807, laid landscape
+//      with its header on the right (cad/part_display.py). Eight wires: VCC -> 3V3,
+//      GND -> GND and the pins below; SDO and the touch pins (T_*) stay unconnected.
 //      Free pins only — 35-37 are the octal PSRAM, 19/20 USB, 43/44 UART0,
-//      0/3/45/46 strapping. Module VCC -> 3V3, GND -> GND.
-#define TFT_SCK       39            // module pin SCL
-#define TFT_MOSI      40            // module pin SDA
-#define TFT_DC        41
-#define TFT_RST       42            // module pin RES
-#define TFT_CS        1             // -1 if your module has no CS pin
-#define TFT_BLK       2             // -1 if BLK is tied to 3V3
-#define TFT_ROTATION  0             // 2 if the picture is upside down in the pod
+//      0/3/45/46 strapping.
+#define TFT_SCK       39            // module pin SCK
+#define TFT_MOSI      40            // module pin SDI(MOSI)
+#define TFT_DC        41            // module pin DC
+#define TFT_RST       42            // module pin RESET
+#define TFT_CS        1             // module pin CS
+#define TFT_BLK       2             // module pin LED (high = lit); -1 if LED is tied to 3V3
+#define TFT_ROTATION  1             // landscape; 3 if it reads upside down (try `rot 3` on telnet)
+#define TFT_SPI_HZ    20000000      // 20 MHz — safe over dupont leads
 #define CHART_POLL_MS 60000         // the chart is hourly candles; once a minute is plenty

@@ -94,17 +94,21 @@ no diodes needed):
 
 **Status LED:** onboard WS2812 on **GPIO 48**.
 
-**Display pod (optional):** a 1.54" ST7789 240×240 SPI screen showing the market
-in hand — price, 24h move and a 48-hour chart from `GET /pad/chart`. The
-enclosure is `exports/display-pod.stl` (`cad/part_display.py`); print
-`exports/display-coupon.stl` first to check your module fits the window.
+**Display pod (optional):** a 2.8" ILI9341 320×240 SPI screen (LCDwiki MSP2807),
+laid landscape, showing the market in hand — price, 24h move and a 48-hour chart
+from `GET /pad/chart`. The enclosure is `exports/display-pod-28.stl` and
+`exports/display-cap-28.stl` (`cad/part_display.py`); the print plate is
+`exports/print/display-plate-28.3mf`. Touch is not used.
 
-| Module pin | VCC | GND | SCL | SDA | RES | DC | CS | BLK |
+| Module pin | VCC | GND | CS | RESET | DC | SDI(MOSI) | SCK | LED |
 |---|---|---|---|---|---|---|---|---|
-| Goes to | 3V3 | GND | GPIO **39** | GPIO **40** | GPIO **42** | GPIO **41** | GPIO **1** | GPIO **2** |
+| Goes to | 3V3 | GND | GPIO **1** | GPIO **42** | GPIO **41** | GPIO **40** | GPIO **39** | GPIO **2** |
 
-No CS pin on your module? Set `TFT_CS -1` in `config.h`. Picture upside down in
-the pod? `TFT_ROTATION 2`. These pins avoid the octal PSRAM (35–37), USB (19/20),
+Leave SDO(MISO) and the five touch pins (T_CLK, T_CS, T_DIN, T_DO, T_IRQ)
+unconnected. At power-on the screen shows a test card — colour bars and an arrow
+that should point up the slant. If it points down, type `rot 3` on the telnet
+console to check, then set `TFT_ROTATION 3` in `config.h`; `screen` reports what
+the display last drew. These pins avoid the octal PSRAM (35–37), USB (19/20),
 UART0 (43/44) and the strapping pins (0, 3, 45, 46).
 
 **2.4" UNO shield:** the pod fits it (`exports/display-pod-24.stl`), but this
@@ -127,7 +131,7 @@ enabled at build time. It is off in the default board config.
 ```bash
 arduino-cli core install esp32:esp32
 arduino-cli lib install WiFiManager
-arduino-cli lib install "Adafruit ST7735 and ST7789 Library"
+arduino-cli lib install "Adafruit ILI9341"
 
 arduino-cli compile \
   --fqbn esp32:esp32:esp32s3:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=opi \
@@ -137,15 +141,20 @@ arduino-cli compile \
 **Those board options are not optional.** With the bare `esp32:esp32:esp32s3`
 default you get a 4 MB partition scheme — the binary lands at 90% of the
 available app space — and **PSRAM disabled**, which means the record buffer
-never allocates. With the options above it is 38% and the mic works.
+never allocates. With the options above it is 39% and the mic works.
 
-To flash, add `--port /dev/cu.usbmodem*` and `upload` in place of `compile`.
+To flash, add `--port <the pad's port>` and `upload` in place of `compile` —
+`/dev/cu.usbserial-*` on the board's UART USB-C, where the Serial log also
+comes out. Plugged into its native USB-C instead (`/dev/cu.usbmodem*`), add
+`,CDCOnBoot=cdc` to the FQBN to get the log there. With more than one ESP32
+connected, check the port is the pad's before uploading.
 
 ### From the Arduino IDE
 
 **Libraries** (Library Manager):
 
 - **WiFiManager** by *tzapu* — the captive portal.
+- **Adafruit ILI9341** (pulls in Adafruit GFX) — the display pod.
 - `ESP_I2S`, `WiFi`, `HTTPClient`, `Preferences` ship with the **arduino-esp32
   core 3.x** — nothing to install, but you do need core 3.x (Boards Manager →
   "esp32" by Espressif, ≥ 3.0).

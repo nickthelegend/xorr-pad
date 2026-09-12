@@ -36,6 +36,7 @@ Display    screen;            // the display pod
 ChartState chartNow;
 uint32_t   nextChart   = 0;
 bool       screenDirty = true;
+uint32_t   screenHoldUntil = 0;       // the test card stays up until then
 
 Matrix     matrix;
 Audio      audio;
@@ -167,7 +168,24 @@ void onKey(uint8_t r, uint8_t c, bool pressed) {
 void onTelnetCommand(const String &line) {
   String cmd = line; cmd.toLowerCase();
   if (cmd == "help") {
-    telnet.println("help · status · pad · map · ip · heap · key <id> · say <t> · talk · url <u> · token <t> · reset-wifi · reboot");
+    telnet.println("help · status · pad · map · ip · heap · key <id> · say <t> · talk · url <u> · token <t> · screen · testcard · rot <1|3> · reset-wifi · reboot");
+  } else if (cmd == "screen") {
+    telnet.println(screen.info());
+    telnet.logf("pad %s · market %s · chart %s %s\n", pad.ok ? "ok" : "no backend", pad.market.c_str(),
+                chartNow.ok ? chartNow.symbol.c_str() : "none", chartNow.error.c_str());
+  } else if (cmd == "testcard") {
+    screen.testCard();
+    screenHoldUntil = millis() + 15000;
+    telnet.println("test card up for 15 s");
+  } else if (cmd.startsWith("rot ")) {
+    int r = line.substring(4).toInt();
+    if (screen.rotate(r)) {
+      screen.testCard();
+      screenHoldUntil = millis() + 8000;
+      telnet.logf("display rotation %d — test card up for 8 s (set TFT_ROTATION in config.h to keep it)\n", r);
+    } else {
+      telnet.println("rot 1 or rot 3 — the pod holds the panel landscape");
+    }
   } else if (cmd == "status") {
     telnet.logf("wifi %s  ip %s  rssi %ddBm  heap %u  psram %u\n",
                 WiFi.isConnected() ? "up" : "down", WiFi.localIP().toString().c_str(),
@@ -256,7 +274,8 @@ void setup() {
   led(0, 0, 60);                        // blue = booting
 
   matrix.begin();
-  screen.begin();
+  screen.begin();                       // shows the test card while WiFi comes up
+  screenHoldUntil = millis() + 3000;
   if (!audio.begin()) Serial.println("!! audio init failed");
   recBuf = (int16_t *)ps_malloc(REC_CAP * sizeof(int16_t));
   if (!recBuf) Serial.println("!! PSRAM alloc failed — enable Tools → PSRAM: OPI PSRAM");
@@ -327,11 +346,21 @@ void loop() {
   if (!recording && millis() >= nextChart) {
     nextChart = millis() + CHART_POLL_MS;
     ChartState fresh;
-    if (net.chart(fresh)) chartNow = fresh; else chartNow.ok = false;
+    if (net.chart(fresh)) {
+      chartNow = fresh;
+      telnet.logf("  chart %s: %u closes, $%.2f, %+.2f%% 24h %s\n", fresh.symbol.c_str(),
+                  (unsigned)fresh.n, fresh.price, fresh.change24h, fresh.error.c_str());
+    } else {
+      chartNow.ok = false;
+      telnet.logf("  chart unavailable %s\n", fresh.error.c_str());
+    }
     screenDirty = true;
   }
   if (pad.ok && chartNow.ok && chartNow.symbol != pad.market) nextChart = 0;
-  if (!recording && screenDirty) { screenDirty = false; screen.draw(pad, chartNow); }
+  if (!recording && screenDirty && millis() >= screenHoldUntil) {
+    screenDirty = false;
+    screen.draw(pad, chartNow);
+  }
 
   // Held long enough? Fire the kill switch without waiting for the release, so
   // the operator sees it stop under their finger.
